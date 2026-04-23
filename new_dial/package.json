@@ -1,0 +1,24 @@
+{
+  "name": "com.danilkashulin.newdial.dialogue-editor",
+  "version": "0.1.0",
+  "displayName": "New Dial Dialogue Editor",
+  "description": "MVP dialogue and cutscene node editor for Unity 6.x with reusable runtime data, graph editing, preview, and samples.",
+  "unity": "6000.0",
+  "author": {
+    "name": "Danil Kashulin"
+  },
+  "keywords": [
+    "dialogue",
+    "cutscene",
+    "graph",
+    "editor",
+    "narrative"
+  ],
+  "samples": [
+    {
+      "displayName": "Basic Adventure Sample",
+      "description": "Creates a sample dialogue database with branching choices and simple conditions.",
+      "path": "Samples~/BasicAdventureSample"
+    }
+  ]
+}
