@@ -183,6 +183,7 @@ namespace NewDial.DialogueEditor
             RefreshNodeVisuals();
             SelectNode(view, node);
             FocusCanvas();
+            UpdateEmptyState();
             MarkChanged();
         }
 
@@ -207,6 +208,7 @@ namespace NewDial.DialogueEditor
             RefreshNodeVisuals();
             SelectNode(view, node);
             FocusCanvas();
+            UpdateEmptyState();
             MarkChanged();
         }
 
@@ -1012,13 +1014,17 @@ namespace NewDial.DialogueEditor
         private IEnumerable<GraphElement> GetCommentGroupElements(CommentNodeData rootComment, Rect rootCommentArea)
         {
             var groupedIds = new HashSet<string>();
-            foreach (var element in GetCommentGroupElementsRecursive(rootComment, rootCommentArea, groupedIds))
+            foreach (var element in GetCommentGroupElementsRecursive(rootComment, rootComment, rootCommentArea, groupedIds))
             {
                 yield return element;
             }
         }
 
-        private IEnumerable<GraphElement> GetCommentGroupElementsRecursive(CommentNodeData commentNode, Rect commentArea, HashSet<string> groupedIds)
+        private IEnumerable<GraphElement> GetCommentGroupElementsRecursive(
+            CommentNodeData commentNode,
+            CommentNodeData rootCommentOverride,
+            Rect? rootCommentAreaOverride,
+            HashSet<string> groupedIds)
         {
             if (commentNode == null || !groupedIds.Add(commentNode.Id))
             {
@@ -1030,47 +1036,220 @@ namespace NewDial.DialogueEditor
                 yield return commentView;
             }
 
-            foreach (var nestedComment in _commentNodeViews.Values)
+            foreach (var nestedComment in GetDirectChildComments(commentNode, rootCommentOverride, rootCommentAreaOverride))
             {
-                if (nestedComment.Data.Id == commentNode.Id || groupedIds.Contains(nestedComment.Data.Id))
-                {
-                    continue;
-                }
-
-                var nestedCommentArea = GetCommentArea(nestedComment.Data);
-                if (!IsRectGroupedByComment(nestedCommentArea, commentArea))
-                {
-                    continue;
-                }
-
-                foreach (var element in GetCommentGroupElementsRecursive(nestedComment.Data, nestedCommentArea, groupedIds))
+                foreach (var element in GetCommentGroupElementsRecursive(nestedComment, rootCommentOverride, rootCommentAreaOverride, groupedIds))
                 {
                     yield return element;
                 }
             }
 
-            foreach (var textNode in _textNodeViews.Values)
+            foreach (var textNode in GetDirectChildTextNodes(commentNode, rootCommentOverride, rootCommentAreaOverride))
             {
-                if (groupedIds.Contains(textNode.Data.Id))
+                if (!groupedIds.Add(textNode.Id) ||
+                    !_textNodeViews.TryGetValue(textNode.Id, out var textNodeView))
                 {
                     continue;
                 }
 
-                if (!IsRectGroupedByComment(GetGraphElementRect(textNode), commentArea))
-                {
-                    continue;
-                }
-
-                groupedIds.Add(textNode.Data.Id);
-                yield return textNode;
+                yield return textNodeView;
             }
+        }
+
+        internal CommentNodeData GetOwningCommentNode(
+            DialogueTextNodeData textNode,
+            CommentNodeData rootCommentOverride = null,
+            Rect? rootCommentAreaOverride = null)
+        {
+            if (_graph == null || textNode == null)
+            {
+                return null;
+            }
+
+            var textRect = GetTextNodeRect(textNode);
+            return GetContainingCommentCandidates(textRect.center, null, rootCommentOverride, rootCommentAreaOverride)
+                .Select(candidate => candidate.Comment)
+                .FirstOrDefault();
+        }
+
+        internal CommentNodeData GetParentCommentNode(
+            CommentNodeData commentNode,
+            CommentNodeData rootCommentOverride = null,
+            Rect? rootCommentAreaOverride = null)
+        {
+            if (_graph == null || commentNode == null)
+            {
+                return null;
+            }
+
+            var commentArea = GetCommentArea(commentNode, rootCommentOverride, rootCommentAreaOverride);
+            var commentAreaSize = GetRectArea(commentArea);
+            var commentOrder = GetGraphNodeOrder(commentNode.Id);
+
+            return GetContainingCommentCandidates(commentArea.center, commentNode.Id, rootCommentOverride, rootCommentAreaOverride)
+                .Where(candidate =>
+                {
+                    var sizeDelta = GetRectArea(candidate.Area) - commentAreaSize;
+                    return sizeDelta > 0.001f ||
+                           (Mathf.Abs(sizeDelta) <= 0.001f && candidate.Order < commentOrder);
+                })
+                .Select(candidate => candidate.Comment)
+                .FirstOrDefault();
+        }
+
+        private IEnumerable<CommentNodeData> GetDirectChildComments(
+            CommentNodeData parentComment,
+            CommentNodeData rootCommentOverride = null,
+            Rect? rootCommentAreaOverride = null)
+        {
+            if (_graph == null || parentComment == null)
+            {
+                yield break;
+            }
+
+            foreach (var node in _graph.Nodes.OfType<CommentNodeData>())
+            {
+                if (node.Id == parentComment.Id)
+                {
+                    continue;
+                }
+
+                var ownerComment = GetParentCommentNode(node, rootCommentOverride, rootCommentAreaOverride);
+                if (ownerComment?.Id == parentComment.Id)
+                {
+                    yield return node;
+                }
+            }
+        }
+
+        private IEnumerable<DialogueTextNodeData> GetDirectChildTextNodes(
+            CommentNodeData ownerComment,
+            CommentNodeData rootCommentOverride = null,
+            Rect? rootCommentAreaOverride = null)
+        {
+            if (_graph == null || ownerComment == null)
+            {
+                yield break;
+            }
+
+            foreach (var node in _graph.Nodes.OfType<DialogueTextNodeData>())
+            {
+                var directOwner = GetOwningCommentNode(node, rootCommentOverride, rootCommentAreaOverride);
+                if (directOwner?.Id == ownerComment.Id)
+                {
+                    yield return node;
+                }
+            }
+        }
+
+        private IEnumerable<(CommentNodeData Comment, Rect Area, int Order)> GetContainingCommentCandidates(
+            Vector2 point,
+            string excludedCommentId = null,
+            CommentNodeData rootCommentOverride = null,
+            Rect? rootCommentAreaOverride = null)
+        {
+            if (_graph == null)
+            {
+                return Enumerable.Empty<(CommentNodeData Comment, Rect Area, int Order)>();
+            }
+
+            var candidates = new List<(CommentNodeData Comment, Rect Area, int Order)>();
+            for (var index = 0; index < _graph.Nodes.Count; index++)
+            {
+                if (_graph.Nodes[index] is not CommentNodeData commentNode ||
+                    commentNode.Id == excludedCommentId)
+                {
+                    continue;
+                }
+
+                var commentArea = GetCommentArea(commentNode, rootCommentOverride, rootCommentAreaOverride);
+                if (!commentArea.Contains(point))
+                {
+                    continue;
+                }
+
+                candidates.Add((commentNode, commentArea, index));
+            }
+
+            return candidates
+                .OrderBy(candidate => GetRectArea(candidate.Area))
+                .ThenBy(candidate => (candidate.Area.center - point).sqrMagnitude)
+                .ThenBy(candidate => candidate.Order);
+        }
+
+        private Rect GetCommentArea(
+            CommentNodeData commentNode,
+            CommentNodeData rootCommentOverride = null,
+            Rect? rootCommentAreaOverride = null)
+        {
+            if (commentNode == null)
+            {
+                return default;
+            }
+
+            if (rootCommentOverride != null &&
+                rootCommentAreaOverride.HasValue &&
+                commentNode.Id == rootCommentOverride.Id)
+            {
+                return NormalizeCommentArea(commentNode, rootCommentAreaOverride.Value);
+            }
+
+            return GetCommentArea(commentNode);
         }
 
         private static Rect GetCommentArea(CommentNodeData commentNode)
         {
-            return commentNode.Area.width <= 0f || commentNode.Area.height <= 0f
+            return NormalizeCommentArea(commentNode, commentNode?.Area ?? default);
+        }
+
+        private Rect GetTextNodeRect(DialogueTextNodeData textNode)
+        {
+            if (textNode == null)
+            {
+                return default;
+            }
+
+            if (_textNodeViews.TryGetValue(textNode.Id, out var textNodeView))
+            {
+                return GetGraphElementRect(textNodeView);
+            }
+
+            return new Rect(textNode.Position, TextNodeInitialSize);
+        }
+
+        private int GetGraphNodeOrder(string nodeId)
+        {
+            if (_graph == null || string.IsNullOrWhiteSpace(nodeId))
+            {
+                return int.MaxValue;
+            }
+
+            for (var index = 0; index < _graph.Nodes.Count; index++)
+            {
+                if (_graph.Nodes[index]?.Id == nodeId)
+                {
+                    return index;
+                }
+            }
+
+            return int.MaxValue;
+        }
+
+        private static float GetRectArea(Rect rect)
+        {
+            return Mathf.Max(0f, rect.width) * Mathf.Max(0f, rect.height);
+        }
+
+        private static Rect NormalizeCommentArea(CommentNodeData commentNode, Rect area)
+        {
+            if (commentNode == null)
+            {
+                return default;
+            }
+
+            return area.width <= 0f || area.height <= 0f
                 ? new Rect(commentNode.Position, CommentNodeInitialSize)
-                : commentNode.Area;
+                : area;
         }
 
         private static Rect GetGraphElementRect(GraphElement element)

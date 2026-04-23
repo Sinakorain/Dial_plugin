@@ -2,6 +2,7 @@ using System.Linq;
 using NUnit.Framework;
 using UnityEditor.Experimental.GraphView;
 using UnityEngine;
+using UnityEngine.UIElements;
 
 namespace NewDial.DialogueEditor.Tests
 {
@@ -107,6 +108,55 @@ namespace NewDial.DialogueEditor.Tests
             Assert.That(remaining[0].Order, Is.EqualTo(0));
             Assert.That(remaining[1].Order, Is.EqualTo(1));
             Assert.That(view.GetRenderedLinkCount(), Is.EqualTo(2));
+        }
+
+        [Test]
+        public void CreateTextNode_HidesEmptyStateWarning()
+        {
+            var view = new DialogueGraphView();
+            view.LoadGraph(new DialogueGraphData());
+
+            Assert.That(GetEmptyStateLabel(view).style.display, Is.EqualTo(DisplayStyle.Flex));
+
+            view.CreateTextNode(new Vector2(100f, 100f));
+
+            Assert.That(GetEmptyStateLabel(view).style.display, Is.EqualTo(DisplayStyle.None));
+        }
+
+        [Test]
+        public void CreateCommentNode_HidesEmptyStateWarning()
+        {
+            var view = new DialogueGraphView();
+            view.LoadGraph(new DialogueGraphData());
+
+            Assert.That(GetEmptyStateLabel(view).style.display, Is.EqualTo(DisplayStyle.Flex));
+
+            view.CreateCommentNode(new Vector2(100f, 100f));
+
+            Assert.That(GetEmptyStateLabel(view).style.display, Is.EqualTo(DisplayStyle.None));
+        }
+
+        [Test]
+        public void DeleteLastNode_ShowsEmptyStateWarningAgain()
+        {
+            var graph = new DialogueGraphData();
+            var node = new DialogueTextNodeData
+            {
+                Title = "Only Node",
+                Position = new Vector2(100f, 100f)
+            };
+
+            graph.Nodes.Add(node);
+
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+
+            Assert.That(GetEmptyStateLabel(view).style.display, Is.EqualTo(DisplayStyle.None));
+
+            view.DeleteNode(node);
+
+            Assert.That(graph.Nodes, Is.Empty);
+            Assert.That(GetEmptyStateLabel(view).style.display, Is.EqualTo(DisplayStyle.Flex));
         }
 
         [Test]
@@ -370,6 +420,173 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
+        public void GetOwningCommentNode_PrefersMostSpecificComment()
+        {
+            var graph = new DialogueGraphData();
+            var rootComment = new CommentNodeData
+            {
+                Title = "Root",
+                Position = new Vector2(0f, 0f),
+                Area = new Rect(0f, 0f, 900f, 900f)
+            };
+            var nestedComment = new CommentNodeData
+            {
+                Title = "Nested",
+                Position = new Vector2(100f, 100f),
+                Area = new Rect(100f, 100f, 400f, 400f)
+            };
+            var textNode = new DialogueTextNodeData
+            {
+                Title = "Nested Text",
+                Position = new Vector2(150f, 150f)
+            };
+
+            graph.Nodes.Add(rootComment);
+            graph.Nodes.Add(nestedComment);
+            graph.Nodes.Add(textNode);
+
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+
+            Assert.That(view.GetOwningCommentNode(textNode), Is.EqualTo(nestedComment));
+        }
+
+        [Test]
+        public void GetParentCommentNode_ReturnsDirectContainingComment()
+        {
+            var graph = new DialogueGraphData();
+            var rootComment = new CommentNodeData
+            {
+                Title = "Root",
+                Position = new Vector2(0f, 0f),
+                Area = new Rect(0f, 0f, 900f, 900f)
+            };
+            var nestedComment = new CommentNodeData
+            {
+                Title = "Nested",
+                Position = new Vector2(100f, 100f),
+                Area = new Rect(100f, 100f, 400f, 400f)
+            };
+
+            graph.Nodes.Add(rootComment);
+            graph.Nodes.Add(nestedComment);
+
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+
+            Assert.That(view.GetParentCommentNode(nestedComment), Is.EqualTo(rootComment));
+        }
+
+        [Test]
+        public void GetOwningCommentNode_UsesAreaCenterDistanceAndGraphOrderTieBreakers()
+        {
+            var nearestCenterGraph = new DialogueGraphData();
+            var leftComment = new CommentNodeData
+            {
+                Title = "Left",
+                Position = new Vector2(0f, 0f),
+                Area = new Rect(0f, 0f, 700f, 700f)
+            };
+            var rightComment = new CommentNodeData
+            {
+                Title = "Right",
+                Position = new Vector2(200f, 0f),
+                Area = new Rect(200f, 0f, 700f, 700f)
+            };
+            var nearestCenterText = new DialogueTextNodeData
+            {
+                Title = "Nearest Center",
+                Position = new Vector2(160f, 150f)
+            };
+
+            nearestCenterGraph.Nodes.Add(leftComment);
+            nearestCenterGraph.Nodes.Add(rightComment);
+            nearestCenterGraph.Nodes.Add(nearestCenterText);
+
+            var nearestCenterView = new DialogueGraphView();
+            nearestCenterView.LoadGraph(nearestCenterGraph);
+
+            Assert.That(nearestCenterView.GetOwningCommentNode(nearestCenterText), Is.EqualTo(leftComment));
+
+            var graphOrderGraph = new DialogueGraphData();
+            var firstComment = new CommentNodeData
+            {
+                Title = "First",
+                Position = new Vector2(50f, 50f),
+                Area = new Rect(50f, 50f, 650f, 650f)
+            };
+            var secondComment = new CommentNodeData
+            {
+                Title = "Second",
+                Position = new Vector2(50f, 50f),
+                Area = new Rect(50f, 50f, 650f, 650f)
+            };
+            var graphOrderText = new DialogueTextNodeData
+            {
+                Title = "Graph Order",
+                Position = new Vector2(180f, 150f)
+            };
+
+            graphOrderGraph.Nodes.Add(firstComment);
+            graphOrderGraph.Nodes.Add(secondComment);
+            graphOrderGraph.Nodes.Add(graphOrderText);
+
+            var graphOrderView = new DialogueGraphView();
+            graphOrderView.LoadGraph(graphOrderGraph);
+
+            Assert.That(graphOrderView.GetOwningCommentNode(graphOrderText), Is.EqualTo(firstComment));
+        }
+
+        [Test]
+        public void CutSelectionToClipboard_RemovesEntireNestedCommentHierarchy()
+        {
+            var graph = new DialogueGraphData();
+            var rootComment = new CommentNodeData
+            {
+                Title = "Root",
+                Position = new Vector2(0f, 0f),
+                Area = new Rect(0f, 0f, 900f, 900f)
+            };
+            var nestedComment = new CommentNodeData
+            {
+                Title = "Nested",
+                Position = new Vector2(100f, 100f),
+                Area = new Rect(100f, 100f, 400f, 400f)
+            };
+            var rootText = new DialogueTextNodeData
+            {
+                Title = "Root Text",
+                Position = new Vector2(520f, 150f)
+            };
+            var nestedText = new DialogueTextNodeData
+            {
+                Title = "Nested Text",
+                Position = new Vector2(150f, 150f)
+            };
+            var externalText = new DialogueTextNodeData
+            {
+                Title = "External",
+                Position = new Vector2(1200f, 1200f)
+            };
+
+            graph.Nodes.Add(rootComment);
+            graph.Nodes.Add(nestedComment);
+            graph.Nodes.Add(rootText);
+            graph.Nodes.Add(nestedText);
+            graph.Nodes.Add(externalText);
+
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+            view.SelectCommentGroup(rootComment);
+
+            Assert.That(view.CutSelectionToClipboard(), Is.True);
+            Assert.That(graph.Nodes.Select(node => node.Id), Is.EquivalentTo(new[]
+            {
+                externalText.Id
+            }));
+        }
+
+        [Test]
         public void StepKeyboardPan_MovesOnlyWhileCanvasIsFocused()
         {
             var view = new DialogueGraphView();
@@ -399,6 +616,11 @@ namespace NewDial.DialogueEditor.Tests
 
             Assert.That(view.HasCanvasFocus, Is.False);
             Assert.That(view.viewTransform.position.x, Is.EqualTo(0f));
+        }
+
+        private static Label GetEmptyStateLabel(DialogueGraphView view)
+        {
+            return view.Q<Label>(className: "dialogue-graph-empty-state");
         }
     }
 }

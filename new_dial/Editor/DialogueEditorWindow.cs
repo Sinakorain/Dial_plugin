@@ -35,7 +35,7 @@ namespace NewDial.DialogueEditor
         {
             var window = GetWindow<DialogueEditorWindow>("Dialogue Graph");
             window.minSize = new Vector2(1200f, 700f);
-            window.LoadDatabase(asset);
+            window.TryOpenDatabase(asset);
         }
 
         private void OnEnable()
@@ -326,6 +326,45 @@ namespace NewDial.DialogueEditor
             RefreshAll();
         }
 
+        private bool TryOpenDatabase(DialogueDatabaseAsset asset)
+        {
+            if (!ConfirmDatabaseSwitch(asset))
+            {
+                return false;
+            }
+
+            LoadDatabase(asset);
+            return true;
+        }
+
+        private bool ConfirmDatabaseSwitch(DialogueDatabaseAsset nextAsset)
+        {
+            if (_database == nextAsset)
+            {
+                return true;
+            }
+
+            if (_database == null || !_hasUnsavedChanges)
+            {
+                return true;
+            }
+
+            var shouldDiscard = SaveChangesPromptWindow.ShowDialog(
+                position,
+                "Do you want to save changes before opening another dialogue database?");
+
+            if (!shouldDiscard)
+            {
+                SaveDatabase(false);
+                return true;
+            }
+
+            ClearAutosaveSnapshot();
+            _hasUnsavedChanges = false;
+            RefreshStatus();
+            return true;
+        }
+
         private void LoadDatabaseFromDialog()
         {
             var absolutePath = EditorUtility.OpenFilePanel("Load Dialogue Database", Application.dataPath, "asset");
@@ -341,7 +380,7 @@ namespace NewDial.DialogueEditor
                 return;
             }
 
-            LoadDatabase(AssetDatabase.LoadAssetAtPath<DialogueDatabaseAsset>(relativePath));
+            TryOpenDatabase(AssetDatabase.LoadAssetAtPath<DialogueDatabaseAsset>(relativePath));
         }
 
         private void SaveDatabase()
@@ -1307,11 +1346,15 @@ namespace NewDial.DialogueEditor
 
     internal sealed class SaveChangesPromptWindow : EditorWindow
     {
+        private string _bodyText = "Do you want to save changes before closing Dialogue Graph?";
         private bool _discardChanges = true;
 
-        public static bool ShowDialog(Rect ownerPosition)
+        public static bool ShowDialog(Rect ownerPosition, string bodyText = "Do you want to save changes before closing Dialogue Graph?")
         {
             var window = CreateInstance<SaveChangesPromptWindow>();
+            window._bodyText = string.IsNullOrWhiteSpace(bodyText)
+                ? "Do you want to save changes before closing Dialogue Graph?"
+                : bodyText;
             window.titleContent = new GUIContent("Save changes?");
             window.minSize = new Vector2(360f, 150f);
             window.maxSize = window.minSize;
@@ -1338,7 +1381,7 @@ namespace NewDial.DialogueEditor
             title.style.marginBottom = 6f;
             rootVisualElement.Add(title);
 
-            var body = new Label("Do you want to save changes before closing Dialogue Graph?");
+            var body = new Label(_bodyText);
             body.style.whiteSpace = WhiteSpace.Normal;
             body.style.color = new Color(0.84f, 0.88f, 0.93f, 1f);
             body.style.marginBottom = 14f;
