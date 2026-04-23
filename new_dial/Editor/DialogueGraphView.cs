@@ -47,6 +47,8 @@ namespace NewDial.DialogueEditor
         private double _lastPanTickTime;
         private string _pendingFrameNodeId;
         private int _pendingFrameAttempts;
+        private static DialogueClipboardData _clipboard;
+        internal bool IsApplyingCommentGroupMove { get; private set; }
 
         public DialogueGraphView()
         {
@@ -299,10 +301,133 @@ namespace NewDial.DialogueEditor
                 return;
             }
 
-            DialogueGraphUtility.DeleteNode(_graph, node.Id);
+            if (node is CommentNodeData commentNode)
+            {
+                DeleteCommentGroup(commentNode);
+            }
+            else
+            {
+                DialogueGraphUtility.DeleteNode(_graph, node.Id);
+            }
+
             LoadGraph(_graph);
             SelectionChangedAction?.Invoke(null);
             MarkChanged();
+        }
+
+        public bool CopySelectionToClipboard()
+        {
+            if (_graph == null)
+            {
+                return false;
+            }
+
+            var selectedNodes = GetExpandedSelectedNodeData();
+
+            if (selectedNodes.Count == 0)
+            {
+                return false;
+            }
+
+            var nodeIds = new HashSet<string>(selectedNodes.Select(node => node.Id));
+            var minPosition = new Vector2(
+                selectedNodes.Min(node => node.Position.x),
+                selectedNodes.Min(node => node.Position.y));
+
+            _clipboard = new DialogueClipboardData
+            {
+                Nodes = selectedNodes.Select(node => node.Clone()).ToList(),
+                Links = _graph.Links
+                    .Where(link => link != null && nodeIds.Contains(link.FromNodeId) && nodeIds.Contains(link.ToNodeId))
+                    .Select(link => link.Clone())
+                    .ToList(),
+                ReferencePosition = minPosition
+            };
+
+            return true;
+        }
+
+        public bool CutSelectionToClipboard()
+        {
+            if (!CopySelectionToClipboard())
+            {
+                return false;
+            }
+
+            DeleteSelectedNodes();
+            return true;
+        }
+
+        public bool PasteClipboard()
+        {
+            if (_graph == null || _clipboard == null || _clipboard.Nodes.Count == 0)
+            {
+                return false;
+            }
+
+            var targetPosition = HasCanvasFocus
+                ? WorldToCanvasPosition(_lastPointerPosition)
+                : GetCanvasCenter();
+            var offset = targetPosition - _clipboard.ReferencePosition;
+            var idMap = new Dictionary<string, string>();
+            var pastedNodes = new List<BaseNodeData>();
+
+            foreach (var sourceNode in _clipboard.Nodes)
+            {
+                var clone = sourceNode.Clone();
+                var originalId = clone.Id;
+                clone.Id = GuidUtility.NewGuid();
+                clone.Position += offset;
+
+                if (clone is CommentNodeData commentNode)
+                {
+                    commentNode.Area = new Rect(commentNode.Area.position + offset, commentNode.Area.size);
+                }
+                else if (clone is DialogueTextNodeData textNode)
+                {
+                    textNode.IsStartNode = false;
+                }
+
+                idMap[originalId] = clone.Id;
+                pastedNodes.Add(clone);
+                _graph.Nodes.Add(clone);
+            }
+
+            foreach (var sourceLink in _clipboard.Links)
+            {
+                if (!idMap.TryGetValue(sourceLink.FromNodeId, out var fromId) ||
+                    !idMap.TryGetValue(sourceLink.ToNodeId, out var toId))
+                {
+                    continue;
+                }
+
+                var clonedLink = sourceLink.Clone();
+                clonedLink.Id = GuidUtility.NewGuid();
+                clonedLink.FromNodeId = fromId;
+                clonedLink.ToNodeId = toId;
+                _graph.Links.Add(clonedLink);
+            }
+
+            LoadGraph(_graph);
+            ClearSelection();
+            foreach (var pastedNode in pastedNodes)
+            {
+                if (pastedNode is DialogueTextNodeData textNode &&
+                    _textNodeViews.TryGetValue(textNode.Id, out var textView))
+                {
+                    AddToSelection(textView);
+                }
+                else if (pastedNode is CommentNodeData commentNode &&
+                         _commentNodeViews.TryGetValue(commentNode.Id, out var commentView))
+                {
+                    AddToSelection(commentView);
+                }
+            }
+
+            SelectionChangedAction?.Invoke(pastedNodes.LastOrDefault());
+            FocusCanvas();
+            MarkChanged();
+            return true;
         }
 
         public void RefreshNodeVisuals()
@@ -333,8 +458,8 @@ namespace NewDial.DialogueEditor
 
         public Vector2 GetCanvasCenter()
         {
-            var scale = viewTransform.scale.x == 0f ? 1f : viewTransform.scale.x;
-            var panOffset = new Vector2(viewTransform.position.x, viewTransform.position.y);
+            var scale = GetCurrentGraphScale();
+            var panOffset = GetCurrentGraphPan();
             return (layout.center - panOffset) / scale;
         }
 
@@ -470,8 +595,10 @@ namespace NewDial.DialogueEditor
             }
 
             var delta = worldBound.center - element.worldBound.center;
-            var currentPan = new Vector3(viewTransform.position.x, viewTransform.position.y, 0f);
-            UpdateViewTransform(currentPan + new Vector3(delta.x, delta.y, 0f), viewTransform.scale);
+            var currentPan = GetCurrentGraphPan();
+            UpdateViewTransform(
+                new Vector3(currentPan.x + delta.x, currentPan.y + delta.y, 0f),
+                GetCurrentGraphScaleVector());
         }
 
         internal NodeLinkData CreateLink(string fromNodeId, string toNodeId, bool markChanged = true)
@@ -559,13 +686,59 @@ namespace NewDial.DialogueEditor
                 AddToSelection(element);
             }
 
+            RestoreCommentNodeLayering();
             SelectionChangedAction?.Invoke(commentNode);
         }
 
         internal void NotifyNodeMoved()
         {
-            RefreshNodeVisuals();
+            RefreshEdgeLayer();
+            RestoreCommentNodeLayering();
             MarkChanged();
+        }
+
+        internal void MoveCommentGroup(CommentNodeData rootComment, Vector2 delta, HashSet<string> ignoredNodeIds = null)
+        {
+            MoveCommentGroup(rootComment, delta, GetCommentArea(rootComment), ignoredNodeIds);
+        }
+
+        internal void MoveCommentGroup(CommentNodeData rootComment, Vector2 delta, Rect rootCommentArea, HashSet<string> ignoredNodeIds = null)
+        {
+            if (_graph == null || rootComment == null || delta == Vector2.zero)
+            {
+                return;
+            }
+
+            IsApplyingCommentGroupMove = true;
+            try
+            {
+                var movedIds = new HashSet<string> { rootComment.Id };
+                foreach (var element in GetCommentGroupElements(rootComment, rootCommentArea))
+                {
+                    switch (element)
+                    {
+                        case DialogueTextNodeView textNodeView
+                            when movedIds.Add(textNodeView.Data.Id) &&
+                                 (ignoredNodeIds == null || !ignoredNodeIds.Contains(textNodeView.Data.Id)):
+                            textNodeView.Data.Position += delta;
+                            textNodeView.RefreshFromData();
+                            break;
+                        case DialogueCommentNodeView commentNodeView
+                            when movedIds.Add(commentNodeView.Data.Id) &&
+                                 (ignoredNodeIds == null || !ignoredNodeIds.Contains(commentNodeView.Data.Id)):
+                            commentNodeView.Data.Position += delta;
+                            commentNodeView.Data.Area = new Rect(
+                                commentNodeView.Data.Area.position + delta,
+                                commentNodeView.Data.Area.size);
+                            commentNodeView.RefreshFromData();
+                            break;
+                    }
+                }
+            }
+            finally
+            {
+                IsApplyingCommentGroupMove = false;
+            }
         }
 
         internal void MarkChanged()
@@ -620,8 +793,23 @@ namespace NewDial.DialogueEditor
             var view = new DialogueCommentNodeView(node, this);
             _commentNodeViews[node.Id] = view;
             AddElement(view);
-            view.SendToBack();
+            RestoreCommentNodeLayering();
             return view;
+        }
+
+        internal void RestoreCommentNodeLayering()
+        {
+            foreach (var commentView in _commentNodeViews.Values)
+            {
+                commentView.SendToBack();
+            }
+
+            _edgeLayer.BringToFront();
+
+            foreach (var textNodeView in _textNodeViews.Values)
+            {
+                textNodeView.BringToFront();
+            }
         }
 
         private GraphViewChange OnGraphViewChanged(GraphViewChange change)
@@ -653,11 +841,37 @@ namespace NewDial.DialogueEditor
 
             if (changed)
             {
-                RefreshNodeVisuals();
+                RefreshEdgeLayer();
+                RestoreCommentNodeLayering();
                 MarkChanged();
             }
 
             return change;
+        }
+
+        private void DeleteCommentGroup(CommentNodeData rootComment)
+        {
+            var nodeIdsToDelete = GetCommentGroupElements(rootComment)
+                .OfType<Node>()
+                .Select(element => element switch
+                {
+                    DialogueTextNodeView textNodeView => textNodeView.Data.Id,
+                    DialogueCommentNodeView commentNodeView => commentNodeView.Data.Id,
+                    _ => null
+                })
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct()
+                .ToList();
+
+            if (!nodeIdsToDelete.Contains(rootComment.Id))
+            {
+                nodeIdsToDelete.Add(rootComment.Id);
+            }
+
+            foreach (var nodeId in nodeIdsToDelete)
+            {
+                DialogueGraphUtility.DeleteNode(_graph, nodeId);
+            }
         }
 
         private void OnMouseMove(MouseMoveEvent evt)
@@ -792,14 +1006,19 @@ namespace NewDial.DialogueEditor
 
         private IEnumerable<GraphElement> GetCommentGroupElements(CommentNodeData rootComment)
         {
+            return GetCommentGroupElements(rootComment, GetCommentArea(rootComment));
+        }
+
+        private IEnumerable<GraphElement> GetCommentGroupElements(CommentNodeData rootComment, Rect rootCommentArea)
+        {
             var groupedIds = new HashSet<string>();
-            foreach (var element in GetCommentGroupElementsRecursive(rootComment, groupedIds))
+            foreach (var element in GetCommentGroupElementsRecursive(rootComment, rootCommentArea, groupedIds))
             {
                 yield return element;
             }
         }
 
-        private IEnumerable<GraphElement> GetCommentGroupElementsRecursive(CommentNodeData commentNode, HashSet<string> groupedIds)
+        private IEnumerable<GraphElement> GetCommentGroupElementsRecursive(CommentNodeData commentNode, Rect commentArea, HashSet<string> groupedIds)
         {
             if (commentNode == null || !groupedIds.Add(commentNode.Id))
             {
@@ -811,8 +1030,6 @@ namespace NewDial.DialogueEditor
                 yield return commentView;
             }
 
-            var commentArea = GetCommentArea(commentNode);
-
             foreach (var nestedComment in _commentNodeViews.Values)
             {
                 if (nestedComment.Data.Id == commentNode.Id || groupedIds.Contains(nestedComment.Data.Id))
@@ -820,12 +1037,13 @@ namespace NewDial.DialogueEditor
                     continue;
                 }
 
-                if (!IsRectGroupedByComment(GetCommentArea(nestedComment.Data), commentArea))
+                var nestedCommentArea = GetCommentArea(nestedComment.Data);
+                if (!IsRectGroupedByComment(nestedCommentArea, commentArea))
                 {
                     continue;
                 }
 
-                foreach (var element in GetCommentGroupElementsRecursive(nestedComment.Data, groupedIds))
+                foreach (var element in GetCommentGroupElementsRecursive(nestedComment.Data, nestedCommentArea, groupedIds))
                 {
                     yield return element;
                 }
@@ -928,17 +1146,58 @@ namespace NewDial.DialogueEditor
                 return;
             }
 
-            var scale = viewTransform.scale.x == 0f ? 1f : viewTransform.scale.x;
+            var scale = GetCurrentGraphScale();
             var panDelta = input.normalized * (KeyboardPanSpeed * scale * deltaTimeSeconds);
-            var currentPan = new Vector3(viewTransform.position.x, viewTransform.position.y, 0f);
-            UpdateViewTransform(currentPan + new Vector3(panDelta.x, panDelta.y, 0f), viewTransform.scale);
+            var currentPan = GetCurrentGraphPan();
+            UpdateViewTransform(
+                new Vector3(currentPan.x + panDelta.x, currentPan.y + panDelta.y, 0f),
+                GetCurrentGraphScaleVector());
             RefreshEdgeLayer();
+        }
+
+        private float GetCurrentGraphScale()
+        {
+            var scale = contentViewContainer.resolvedStyle.scale.value;
+            return Mathf.Approximately(scale.x, 0f) ? 1f : scale.x;
+        }
+
+        private Vector3 GetCurrentGraphScaleVector()
+        {
+            var scale = contentViewContainer.resolvedStyle.scale.value;
+            return new Vector3(
+                Mathf.Approximately(scale.x, 0f) ? 1f : scale.x,
+                Mathf.Approximately(scale.y, 0f) ? 1f : scale.y,
+                Mathf.Approximately(scale.z, 0f) ? 1f : scale.z);
+        }
+
+        private Vector2 GetCurrentGraphPan()
+        {
+            var translate = contentViewContainer.resolvedStyle.translate;
+            return new Vector2(translate.x, translate.y);
         }
 
         private void OnKeyDown(KeyDownEvent evt)
         {
             if (!_hasCanvasFocus)
             {
+                return;
+            }
+
+            if (evt.actionKey)
+            {
+                var handled = evt.keyCode switch
+                {
+                    KeyCode.C => CopySelectionToClipboard(),
+                    KeyCode.X => CutSelectionToClipboard(),
+                    KeyCode.V => PasteClipboard(),
+                    _ => false
+                };
+
+                if (handled)
+                {
+                    evt.StopImmediatePropagation();
+                }
+
                 return;
             }
 
@@ -1025,6 +1284,76 @@ namespace NewDial.DialogueEditor
             }
 
             _emptyStateLabel.style.display = DisplayStyle.None;
+        }
+
+        private void DeleteSelectedNodes()
+        {
+            var selectedNodes = GetExpandedSelectedNodeData();
+
+            if (selectedNodes.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var selectedNode in selectedNodes.OfType<CommentNodeData>())
+            {
+                DeleteCommentGroup(selectedNode);
+            }
+
+            foreach (var selectedNode in selectedNodes.Where(node => node is not CommentNodeData))
+            {
+                DialogueGraphUtility.DeleteNode(_graph, selectedNode.Id);
+            }
+
+            LoadGraph(_graph);
+            SelectionChangedAction?.Invoke(null);
+            MarkChanged();
+        }
+
+        private List<BaseNodeData> GetExpandedSelectedNodeData()
+        {
+            var result = new List<BaseNodeData>();
+            var seenIds = new HashSet<string>();
+            foreach (var element in selection.OfType<Node>())
+            {
+                if (element is DialogueTextNodeView textNodeView)
+                {
+                    if (seenIds.Add(textNodeView.Data.Id))
+                    {
+                        result.Add(textNodeView.Data);
+                    }
+                }
+                else if (element is DialogueCommentNodeView commentNodeView)
+                {
+                    foreach (var groupedElement in GetCommentGroupElements(commentNodeView.Data))
+                    {
+                        switch (groupedElement)
+                        {
+                            case DialogueTextNodeView groupedTextNodeView when seenIds.Add(groupedTextNodeView.Data.Id):
+                                result.Add(groupedTextNodeView.Data);
+                                break;
+                            case DialogueCommentNodeView groupedCommentNodeView when seenIds.Add(groupedCommentNodeView.Data.Id):
+                                result.Add(groupedCommentNodeView.Data);
+                                break;
+                        }
+                    }
+                }
+            }
+
+            return result;
+        }
+
+        internal HashSet<string> GetSelectedNodeIds()
+        {
+            return new HashSet<string>(GetExpandedSelectedNodeData().Select(node => node.Id));
+        }
+
+        [Serializable]
+        private sealed class DialogueClipboardData
+        {
+            public List<BaseNodeData> Nodes = new();
+            public List<NodeLinkData> Links = new();
+            public Vector2 ReferencePosition;
         }
 
         private readonly struct DialogueEdgeGeometry
@@ -1207,6 +1536,7 @@ namespace NewDial.DialogueEditor
         private const float ResizeZoneSize = 44f;
         private const string ResizeHotClassName = "dialogue-comment-node--resize-hot";
         private const float FallbackHeaderHeight = 54f;
+        private const float ClickMoveThreshold = 6f;
 
         private readonly DialogueGraphView _graphView;
         private readonly VisualElement _headerBand;
@@ -1214,8 +1544,11 @@ namespace NewDial.DialogueEditor
         private readonly Label _commentLabel;
         private readonly VisualElement _resizeHandle;
         private bool _isResizing;
+        private bool _pendingCommentSelect;
+        private bool _commentDragExceededThreshold;
         private Rect _resizeStartArea;
         private Vector2 _resizeStartCanvasPointer;
+        private Vector2 _commentPressStartLocalPointer;
 
         public DialogueCommentNodeView(CommentNodeData data, DialogueGraphView graphView)
         {
@@ -1275,7 +1608,9 @@ namespace NewDial.DialogueEditor
 
                 if (evt.target is not Button)
                 {
-                    _graphView.SelectCommentGroup(Data);
+                    _pendingCommentSelect = true;
+                    _commentDragExceededThreshold = false;
+                    _commentPressStartLocalPointer = evt.localMousePosition;
                 }
             }, TrickleDown.TrickleDown);
 
@@ -1283,6 +1618,12 @@ namespace NewDial.DialogueEditor
             {
                 var isResizeHot = IsPointerInResizeZone(evt.localMousePosition);
                 EnableInClassList(ResizeHotClassName, isResizeHot || _isResizing);
+
+                if (_pendingCommentSelect && !_commentDragExceededThreshold)
+                {
+                    _commentDragExceededThreshold =
+                        Vector2.Distance(evt.localMousePosition, _commentPressStartLocalPointer) > ClickMoveThreshold;
+                }
 
                 if (!_isResizing)
                 {
@@ -1295,13 +1636,27 @@ namespace NewDial.DialogueEditor
 
             RegisterCallback<MouseUpEvent>(evt =>
             {
-                if (!_isResizing || evt.button != 0)
+                if (evt.button != 0)
                 {
                     return;
                 }
 
-                CancelResize();
-                evt.StopImmediatePropagation();
+                if (_isResizing)
+                {
+                    CancelResize();
+                    evt.StopImmediatePropagation();
+                    return;
+                }
+
+                if (_pendingCommentSelect && !_commentDragExceededThreshold)
+                {
+                    _pendingCommentSelect = false;
+                    schedule.Execute(() => _graphView.SelectCommentGroup(Data));
+                    evt.StopImmediatePropagation();
+                    return;
+                }
+
+                ResetPendingCommentSelect();
             }, TrickleDown.TrickleDown);
 
             RegisterCallback<MouseLeaveEvent>(_ =>
@@ -1312,7 +1667,11 @@ namespace NewDial.DialogueEditor
                 }
             });
 
-            RegisterCallback<MouseCaptureOutEvent>(_ => CancelResize());
+            RegisterCallback<MouseCaptureOutEvent>(_ =>
+            {
+                CancelResize();
+                ResetPendingCommentSelect();
+            });
             RegisterCallback<GeometryChangedEvent>(_ => SyncVisualSize(GetPosition().size));
 
             RefreshFromData();
@@ -1322,10 +1681,22 @@ namespace NewDial.DialogueEditor
 
         public override void SetPosition(Rect newPos)
         {
+            var previousArea = Data.Area.width <= 0f || Data.Area.height <= 0f
+                ? new Rect(Data.Position, DialogueGraphView.CommentNodeInitialSize)
+                : Data.Area;
+            var previousPos = previousArea.position;
             base.SetPosition(newPos);
             SyncVisualSize(newPos.size);
             Data.Position = newPos.position;
             Data.Area = newPos;
+            if (!_isResizing && !_graphView.IsApplyingCommentGroupMove)
+            {
+                var delta = newPos.position - previousPos;
+                if (delta != Vector2.zero)
+                {
+                    _graphView.MoveCommentGroup(Data, delta, previousArea, _graphView.GetSelectedNodeIds());
+                }
+            }
             _graphView.NotifyNodeMoved();
         }
 
@@ -1376,6 +1747,7 @@ namespace NewDial.DialogueEditor
 
         private void BeginResize(Vector2 localPointerPosition)
         {
+            ResetPendingCommentSelect();
             _isResizing = true;
             _resizeStartArea = Data.Area.width <= 0f || Data.Area.height <= 0f
                 ? new Rect(Data.Position, DialogueGraphView.CommentNodeInitialSize)
@@ -1430,6 +1802,12 @@ namespace NewDial.DialogueEditor
             {
                 this.ReleaseMouse();
             }
+        }
+
+        private void ResetPendingCommentSelect()
+        {
+            _pendingCommentSelect = false;
+            _commentDragExceededThreshold = false;
         }
     }
 }
