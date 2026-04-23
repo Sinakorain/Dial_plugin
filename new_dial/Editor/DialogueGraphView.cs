@@ -1343,6 +1343,44 @@ namespace NewDial.DialogueEditor
             return result;
         }
 
+        internal HashSet<string> GetDirectSelectedNodeIds(CommentNodeData rootComment = null, Rect? rootCommentArea = null)
+        {
+            var result = new HashSet<string>();
+            foreach (var element in selection.OfType<Node>())
+            {
+                switch (element)
+                {
+                    case DialogueTextNodeView textNodeView:
+                        result.Add(textNodeView.Data.Id);
+                        break;
+                    case DialogueCommentNodeView commentNodeView:
+                        result.Add(commentNodeView.Data.Id);
+                        break;
+                }
+            }
+
+            if (rootComment == null || !result.Contains(rootComment.Id))
+            {
+                return result;
+            }
+
+            var groupArea = rootCommentArea ?? GetCommentArea(rootComment);
+            foreach (var element in GetCommentGroupElements(rootComment, groupArea))
+            {
+                switch (element)
+                {
+                    case DialogueTextNodeView textNodeView:
+                        result.Remove(textNodeView.Data.Id);
+                        break;
+                    case DialogueCommentNodeView commentNodeView when commentNodeView.Data.Id != rootComment.Id:
+                        result.Remove(commentNodeView.Data.Id);
+                        break;
+                }
+            }
+
+            return result;
+        }
+
         internal HashSet<string> GetSelectedNodeIds()
         {
             return new HashSet<string>(GetExpandedSelectedNodeData().Select(node => node.Id));
@@ -1608,6 +1646,7 @@ namespace NewDial.DialogueEditor
 
                 if (evt.target is not Button)
                 {
+                    _graphView.NotifySelected(Data);
                     _pendingCommentSelect = true;
                     _commentDragExceededThreshold = false;
                     _commentPressStartLocalPointer = evt.localMousePosition;
@@ -1694,7 +1733,7 @@ namespace NewDial.DialogueEditor
                 var delta = newPos.position - previousPos;
                 if (delta != Vector2.zero)
                 {
-                    _graphView.MoveCommentGroup(Data, delta, previousArea, _graphView.GetSelectedNodeIds());
+                    _graphView.MoveCommentGroup(Data, delta, previousArea, _graphView.GetDirectSelectedNodeIds(Data, previousArea));
                 }
             }
             _graphView.NotifyNodeMoved();

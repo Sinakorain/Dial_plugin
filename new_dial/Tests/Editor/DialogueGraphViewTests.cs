@@ -1,5 +1,6 @@
 using System.Linq;
 using NUnit.Framework;
+using UnityEditor.Experimental.GraphView;
 using UnityEngine;
 
 namespace NewDial.DialogueEditor.Tests
@@ -183,6 +184,186 @@ namespace NewDial.DialogueEditor.Tests
             rootCommentView.SetPosition(new Rect(rootComment.Area.position + moveDelta, rootComment.Area.size));
 
             Assert.That(rootComment.Position, Is.EqualTo(new Vector2(350f, 200f)));
+            Assert.That(nestedComment.Position, Is.EqualTo(previousNestedPosition + moveDelta));
+            Assert.That(nestedComment.Area.position, Is.EqualTo(previousNestedAreaPosition + moveDelta));
+            Assert.That(textNode.Position, Is.EqualTo(previousTextPosition + moveDelta));
+        }
+
+        [Test]
+        public void SelectingCommentGroup_DoesNotPreventMovingContainedTextNodes()
+        {
+            var graph = new DialogueGraphData();
+            var comment = new CommentNodeData
+            {
+                Title = "Group",
+                Position = new Vector2(100f, 100f),
+                Area = new Rect(100f, 100f, 420f, 260f)
+            };
+            var textNode = new DialogueTextNodeData
+            {
+                Title = "Inside",
+                Position = new Vector2(105f, 105f)
+            };
+
+            graph.Nodes.Add(comment);
+            graph.Nodes.Add(textNode);
+
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+            view.SelectCommentGroup(comment);
+
+            var commentView = view.graphElements
+                .OfType<DialogueCommentNodeView>()
+                .Single(nodeView => nodeView.Data.Id == comment.Id);
+            var moveDelta = new Vector2(160f, 80f);
+            var previousTextPosition = textNode.Position;
+
+            commentView.SetPosition(new Rect(comment.Area.position + moveDelta, comment.Area.size));
+
+            Assert.That(comment.Position, Is.EqualTo(new Vector2(260f, 180f)));
+            Assert.That(textNode.Position, Is.EqualTo(previousTextPosition + moveDelta));
+        }
+
+        [Test]
+        public void SelectCommentGroup_AddsContainedNodesToSelection()
+        {
+            var graph = new DialogueGraphData();
+            var rootComment = new CommentNodeData
+            {
+                Title = "Root",
+                Position = new Vector2(100f, 100f),
+                Area = new Rect(100f, 100f, 520f, 320f)
+            };
+            var nestedComment = new CommentNodeData
+            {
+                Title = "Nested",
+                Position = new Vector2(110f, 110f),
+                Area = new Rect(110f, 110f, 260f, 160f)
+            };
+            var textNode = new DialogueTextNodeData
+            {
+                Title = "Inside",
+                Position = new Vector2(115f, 115f)
+            };
+
+            graph.Nodes.Add(rootComment);
+            graph.Nodes.Add(nestedComment);
+            graph.Nodes.Add(textNode);
+
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+            view.SelectCommentGroup(rootComment);
+
+            var selectedIds = view.selection
+                .OfType<Node>()
+                .Select(element => element switch
+                {
+                    DialogueTextNodeView textNodeView => textNodeView.Data.Id,
+                    DialogueCommentNodeView commentNodeView => commentNodeView.Data.Id,
+                    _ => null
+                })
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .ToList();
+
+            Assert.That(selectedIds, Is.EquivalentTo(new[]
+            {
+                rootComment.Id,
+                nestedComment.Id,
+                textNode.Id
+            }));
+        }
+
+        [Test]
+        public void GetDirectSelectedNodeIds_OmitsAutoSelectedCommentGroupChildren()
+        {
+            var graph = new DialogueGraphData();
+            var rootComment = new CommentNodeData
+            {
+                Title = "Root",
+                Position = new Vector2(100f, 100f),
+                Area = new Rect(100f, 100f, 520f, 320f)
+            };
+            var nestedComment = new CommentNodeData
+            {
+                Title = "Nested",
+                Position = new Vector2(110f, 110f),
+                Area = new Rect(110f, 110f, 260f, 160f)
+            };
+            var groupedTextNode = new DialogueTextNodeData
+            {
+                Title = "Grouped",
+                Position = new Vector2(115f, 115f)
+            };
+            var externalTextNode = new DialogueTextNodeData
+            {
+                Title = "External",
+                Position = new Vector2(800f, 800f)
+            };
+
+            graph.Nodes.Add(rootComment);
+            graph.Nodes.Add(nestedComment);
+            graph.Nodes.Add(groupedTextNode);
+            graph.Nodes.Add(externalTextNode);
+
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+            view.SelectCommentGroup(rootComment);
+
+            var externalTextView = view.graphElements
+                .OfType<DialogueTextNodeView>()
+                .Single(nodeView => nodeView.Data.Id == externalTextNode.Id);
+            view.AddToSelection(externalTextView);
+
+            var directSelectedIds = view.GetDirectSelectedNodeIds(rootComment, rootComment.Area);
+
+            Assert.That(directSelectedIds, Is.EquivalentTo(new[]
+            {
+                rootComment.Id,
+                externalTextNode.Id
+            }));
+        }
+
+        [Test]
+        public void SelectingCommentGroup_DoesNotPreventMovingNestedCommentGroups()
+        {
+            var graph = new DialogueGraphData();
+            var rootComment = new CommentNodeData
+            {
+                Title = "Root",
+                Position = new Vector2(100f, 100f),
+                Area = new Rect(100f, 100f, 520f, 320f)
+            };
+            var nestedComment = new CommentNodeData
+            {
+                Title = "Nested",
+                Position = new Vector2(110f, 110f),
+                Area = new Rect(110f, 110f, 260f, 160f)
+            };
+            var textNode = new DialogueTextNodeData
+            {
+                Title = "Nested Text",
+                Position = new Vector2(115f, 115f)
+            };
+
+            graph.Nodes.Add(rootComment);
+            graph.Nodes.Add(nestedComment);
+            graph.Nodes.Add(textNode);
+
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+            view.SelectCommentGroup(rootComment);
+
+            var rootCommentView = view.graphElements
+                .OfType<DialogueCommentNodeView>()
+                .Single(nodeView => nodeView.Data.Id == rootComment.Id);
+            var moveDelta = new Vector2(180f, 95f);
+            var previousNestedPosition = nestedComment.Position;
+            var previousNestedAreaPosition = nestedComment.Area.position;
+            var previousTextPosition = textNode.Position;
+
+            rootCommentView.SetPosition(new Rect(rootComment.Area.position + moveDelta, rootComment.Area.size));
+
+            Assert.That(rootComment.Position, Is.EqualTo(new Vector2(280f, 195f)));
             Assert.That(nestedComment.Position, Is.EqualTo(previousNestedPosition + moveDelta));
             Assert.That(nestedComment.Area.position, Is.EqualTo(previousNestedAreaPosition + moveDelta));
             Assert.That(textNode.Position, Is.EqualTo(previousTextPosition + moveDelta));
