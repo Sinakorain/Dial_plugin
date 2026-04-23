@@ -17,6 +17,10 @@ namespace NewDial.DialogueEditor
         private bool _hasUnsavedChanges;
         private bool _stylesApplied;
         private bool _detailsCollapsed;
+        private bool _isAssemblyReloading;
+        private bool _isEditorQuitting;
+        private bool _hasHandledClosePrompt;
+        private bool _lifecycleHooksRegistered;
 
         private DialogueGraphView _graphView;
         private ScrollView _projectView;
@@ -34,13 +38,47 @@ namespace NewDial.DialogueEditor
             window.LoadDatabase(asset);
         }
 
+        private void OnEnable()
+        {
+            _isAssemblyReloading = false;
+            _isEditorQuitting = false;
+            _hasHandledClosePrompt = false;
+            RegisterLifecycleHooks();
+        }
+
         private void OnDisable()
         {
-            SaveAutosave();
+            if (!ShouldPromptForSaveOnClose())
+            {
+                SaveAutosave();
+            }
+
+            UnregisterLifecycleHooks();
+        }
+
+        private void OnDestroy()
+        {
+            if (!ShouldPromptForSaveOnClose())
+            {
+                return;
+            }
+
+            _hasHandledClosePrompt = true;
+            var shouldDiscard = SaveChangesPromptWindow.ShowDialog(position);
+
+            if (!shouldDiscard)
+            {
+                SaveDatabase(false);
+                return;
+            }
+
+            ClearAutosaveSnapshot();
+            _hasUnsavedChanges = false;
         }
 
         private void CreateGUI()
         {
+            RegisterLifecycleHooks();
             ApplyStyles();
             BuildLayout();
             RefreshAll();
@@ -160,16 +198,21 @@ namespace NewDial.DialogueEditor
             panel.AddToClassList("dialogue-editor__panel");
             panel.Add(BuildPanelHeader("Palette"));
 
+            var scroll = new ScrollView();
+            scroll.AddToClassList("dialogue-editor__palette-scroll");
+            scroll.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
+
             var content = new VisualElement();
             content.AddToClassList("dialogue-editor__palette");
 
-            content.Add(new PaletteItem(this, DialoguePaletteItemType.TextNode, "Text Node", "Click to add at center or drag onto the graph."));
-            content.Add(new PaletteItem(this, DialoguePaletteItemType.Comment, "Comment", "Click to add at center or drag onto the graph."));
+            content.Add(new PaletteItem(this, DialoguePaletteItemType.TextNode, "Text Node", "Click to add at center. Drag onto the graph to place."));
+            content.Add(new PaletteItem(this, DialoguePaletteItemType.Comment, "Comment", "Click to add at center. Drag onto the graph to place."));
             content.Add(CreatePaletteButton("Function (Not in MVP)", null, false));
             content.Add(CreatePaletteButton("Scene (Not in MVP)", null, false));
             content.Add(CreatePaletteButton("Debug (Not in MVP)", null, false));
 
-            panel.Add(content);
+            scroll.Add(content);
+            panel.Add(scroll);
             return panel;
         }
 
@@ -303,6 +346,11 @@ namespace NewDial.DialogueEditor
 
         private void SaveDatabase()
         {
+            SaveDatabase(true);
+        }
+
+        private void SaveDatabase(bool showNotification)
+        {
             if (_database == null)
             {
                 return;
@@ -313,7 +361,10 @@ namespace NewDial.DialogueEditor
             DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(_database));
             _hasUnsavedChanges = false;
             RefreshStatus();
-            ShowNotification(new GUIContent("Dialogue database saved."));
+            if (showNotification)
+            {
+                ShowNotification(new GUIContent("Dialogue database saved."));
+            }
         }
 
         private void SaveAutosave()
@@ -598,6 +649,20 @@ namespace NewDial.DialogueEditor
             });
             _inspectorView.Add(commentField);
 
+            var tintField = new ColorField("Tint")
+            {
+                value = node.Tint,
+                showAlpha = true,
+                hdr = false
+            };
+            tintField.RegisterValueChangedCallback(evt =>
+            {
+                node.Tint = evt.newValue;
+                _graphView.RefreshNodeVisuals();
+                MarkChanged();
+            });
+            _inspectorView.Add(tintField);
+
             var areaField = new RectField("Area") { value = node.Area };
             areaField.RegisterValueChangedCallback(evt =>
             {
@@ -853,7 +918,6 @@ namespace NewDial.DialogueEditor
             _selectedNode = resolvedNode;
             RefreshAll();
             _graphView?.FrameAndSelectNode(nodeId);
-            _graphView?.FocusCanvas();
             Focus();
             return true;
         }
@@ -1012,6 +1076,59 @@ namespace NewDial.DialogueEditor
             _hasUnsavedChanges = true;
             SaveAutosave();
             RefreshStatus();
+        }
+
+        private void ClearAutosaveSnapshot()
+        {
+            if (_database == null)
+            {
+                return;
+            }
+
+            DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(_database));
+        }
+
+        private bool ShouldPromptForSaveOnClose()
+        {
+            return _database != null &&
+                   _hasUnsavedChanges &&
+                   !_isAssemblyReloading &&
+                   !_isEditorQuitting &&
+                   !_hasHandledClosePrompt;
+        }
+
+        private void RegisterLifecycleHooks()
+        {
+            if (_lifecycleHooksRegistered)
+            {
+                return;
+            }
+
+            AssemblyReloadEvents.beforeAssemblyReload += OnBeforeAssemblyReload;
+            EditorApplication.quitting += OnEditorQuitting;
+            _lifecycleHooksRegistered = true;
+        }
+
+        private void UnregisterLifecycleHooks()
+        {
+            if (!_lifecycleHooksRegistered)
+            {
+                return;
+            }
+
+            AssemblyReloadEvents.beforeAssemblyReload -= OnBeforeAssemblyReload;
+            EditorApplication.quitting -= OnEditorQuitting;
+            _lifecycleHooksRegistered = false;
+        }
+
+        private void OnBeforeAssemblyReload()
+        {
+            _isAssemblyReloading = true;
+        }
+
+        private void OnEditorQuitting()
+        {
+            _isEditorQuitting = true;
         }
 
         private void ApplyStyles()
@@ -1185,6 +1302,80 @@ namespace NewDial.DialogueEditor
                     this.ReleaseMouse();
                 }
             }
+        }
+    }
+
+    internal sealed class SaveChangesPromptWindow : EditorWindow
+    {
+        private bool _discardChanges = true;
+
+        public static bool ShowDialog(Rect ownerPosition)
+        {
+            var window = CreateInstance<SaveChangesPromptWindow>();
+            window.titleContent = new GUIContent("Save changes?");
+            window.minSize = new Vector2(360f, 150f);
+            window.maxSize = window.minSize;
+            window.position = new Rect(
+                ownerPosition.x + ((ownerPosition.width - window.minSize.x) * 0.5f),
+                ownerPosition.y + ((ownerPosition.height - window.minSize.y) * 0.5f),
+                window.minSize.x,
+                window.minSize.y);
+            window.ShowModal();
+            return window._discardChanges;
+        }
+
+        private void CreateGUI()
+        {
+            rootVisualElement.style.paddingLeft = 14f;
+            rootVisualElement.style.paddingRight = 14f;
+            rootVisualElement.style.paddingTop = 14f;
+            rootVisualElement.style.paddingBottom = 14f;
+            rootVisualElement.style.backgroundColor = new Color(0.15f, 0.17f, 0.21f, 1f);
+
+            var title = new Label("Save changes?");
+            title.style.unityFontStyleAndWeight = FontStyle.Bold;
+            title.style.fontSize = 16;
+            title.style.marginBottom = 6f;
+            rootVisualElement.Add(title);
+
+            var body = new Label("Do you want to save changes before closing Dialogue Graph?");
+            body.style.whiteSpace = WhiteSpace.Normal;
+            body.style.color = new Color(0.84f, 0.88f, 0.93f, 1f);
+            body.style.marginBottom = 14f;
+            rootVisualElement.Add(body);
+
+            var buttons = new VisualElement();
+            buttons.style.flexDirection = FlexDirection.Row;
+            buttons.style.justifyContent = Justify.Center;
+            rootVisualElement.Add(buttons);
+
+            var saveButton = new Button(() =>
+            {
+                _discardChanges = false;
+                Close();
+            })
+            {
+                text = "Yes"
+            };
+            saveButton.style.minWidth = 104f;
+            saveButton.style.height = 32f;
+            saveButton.style.marginRight = 10f;
+            saveButton.style.backgroundColor = new Color(0.2f, 0.44f, 0.83f, 1f);
+            saveButton.style.color = Color.white;
+            saveButton.style.unityFontStyleAndWeight = FontStyle.Bold;
+            buttons.Add(saveButton);
+
+            var discardButton = new Button(() =>
+            {
+                _discardChanges = true;
+                Close();
+            })
+            {
+                text = "No"
+            };
+            discardButton.style.minWidth = 104f;
+            discardButton.style.height = 32f;
+            buttons.Add(discardButton);
         }
     }
 }

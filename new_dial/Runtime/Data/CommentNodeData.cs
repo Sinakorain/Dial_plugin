@@ -8,6 +8,7 @@ namespace NewDial.DialogueEditor
     {
         public Rect Area = new(0f, 0f, 300f, 160f);
         public string Comment = string.Empty;
+        public Color Tint = new(0.23f, 0.34f, 0.56f, 0.26f);
 
         public override BaseNodeData Clone()
         {
@@ -18,7 +19,8 @@ namespace NewDial.DialogueEditor
                 Position = Position,
                 Condition = Condition?.Clone() ?? new ConditionData(),
                 Area = Area,
-                Comment = Comment
+                Comment = Comment,
+                Tint = Tint
             };
         }
     }

@@ -57,10 +57,11 @@ namespace NewDial.DialogueEditor.Tests
 
             Assert.That(session.Choose(1), Is.True);
             Assert.That(session.CurrentNode, Is.EqualTo(right));
-            Assert.That(session.Transcript.Count, Is.EqualTo(3));
+            Assert.That(session.Transcript.Count, Is.EqualTo(2));
             Assert.That(session.Transcript[1].Kind, Is.EqualTo(DialoguePreviewTranscriptEntryKind.Choice));
-            Assert.That(session.Transcript[1].Body, Is.EqualTo("Go right"));
-            Assert.That(session.Transcript[2].NodeId, Is.EqualTo(right.Id));
+            Assert.That(session.Transcript[1].Title, Is.EqualTo("Go right"));
+            Assert.That(session.Transcript[1].Body, Is.EqualTo("We went right."));
+            Assert.That(session.Transcript[1].NodeId, Is.EqualTo(right.Id));
 
             Assert.That(session.Back(), Is.True);
             Assert.That(session.CurrentNode, Is.EqualTo(start));

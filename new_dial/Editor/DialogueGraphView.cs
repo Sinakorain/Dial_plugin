@@ -17,9 +17,10 @@ namespace NewDial.DialogueEditor
     public class DialogueGraphView : GraphView
     {
         private const float AnchorInset = 18f;
-        private const float PlacementGhostWidth = 270f;
-        private const float PlacementGhostHeight = 160f;
         private const float KeyboardPanSpeed = 900f;
+        private const float FrameCenterTolerancePixels = 42f;
+        internal static readonly Vector2 TextNodeInitialSize = new(280f, 170f);
+        internal static readonly Vector2 CommentNodeInitialSize = new(420f, 260f);
 
         private readonly Dictionary<string, DialogueTextNodeView> _textNodeViews = new();
         private readonly Dictionary<string, DialogueCommentNodeView> _commentNodeViews = new();
@@ -44,6 +45,8 @@ namespace NewDial.DialogueEditor
         private bool _moveLeftPressed;
         private bool _moveRightPressed;
         private double _lastPanTickTime;
+        private string _pendingFrameNodeId;
+        private int _pendingFrameAttempts;
 
         public DialogueGraphView()
         {
@@ -192,8 +195,9 @@ namespace NewDial.DialogueEditor
             {
                 Title = "Comment",
                 Position = position,
-                Area = new Rect(position.x, position.y, 320f, 180f),
-                Comment = "Notes"
+                Area = new Rect(position, CommentNodeInitialSize),
+                Comment = "Group related dialogue nodes here.",
+                Tint = new Color(0.23f, 0.34f, 0.56f, 0.26f)
             };
 
             _graph.Nodes.Add(node);
@@ -226,10 +230,12 @@ namespace NewDial.DialogueEditor
 
             _lastPointerPosition = worldPointerPosition;
             var localPoint = this.WorldToLocal(worldPointerPosition);
-            _placementGhost.style.left = localPoint.x - (PlacementGhostWidth * 0.5f);
-            _placementGhost.style.top = localPoint.y - (PlacementGhostHeight * 0.5f);
-            _placementGhost.style.width = PlacementGhostWidth;
-            _placementGhost.style.height = PlacementGhostHeight;
+            var size = GetPlacementSize(_placementNodeType.Value);
+            var topLeft = GetPlacementTopLeft(_placementNodeType.Value, localPoint);
+            _placementGhost.style.left = topLeft.x;
+            _placementGhost.style.top = topLeft.y;
+            _placementGhost.style.width = size.x;
+            _placementGhost.style.height = size.y;
             _placementGhost.style.display = worldBound.Contains(worldPointerPosition) ? DisplayStyle.Flex : DisplayStyle.None;
         }
 
@@ -249,14 +255,15 @@ namespace NewDial.DialogueEditor
                 return false;
             }
 
-            var canvasPosition = GetCanvasPosition(worldPointerPosition);
+            var canvasPointerPosition = WorldToCanvasPosition(worldPointerPosition);
+            var placementPosition = GetPlacementTopLeft(itemType, canvasPointerPosition);
             switch (itemType)
             {
                 case DialoguePaletteItemType.TextNode:
-                    CreateTextNode(canvasPosition);
+                    CreateTextNode(placementPosition);
                     break;
                 case DialoguePaletteItemType.Comment:
-                    CreateCommentNode(canvasPosition);
+                    CreateCommentNode(placementPosition);
                     break;
                 default:
                     return false;
@@ -264,6 +271,19 @@ namespace NewDial.DialogueEditor
 
             FocusCanvas();
             return true;
+        }
+
+        private static Vector2 GetPlacementSize(DialoguePaletteItemType itemType)
+        {
+            return itemType == DialoguePaletteItemType.Comment
+                ? CommentNodeInitialSize
+                : TextNodeInitialSize;
+        }
+
+        private static Vector2 GetPlacementTopLeft(DialoguePaletteItemType itemType, Vector2 pointerPosition)
+        {
+            var size = GetPlacementSize(itemType);
+            return pointerPosition - (size * 0.5f);
         }
 
         internal void CancelNodePlacement()
@@ -337,8 +357,70 @@ namespace NewDial.DialogueEditor
                 return;
             }
 
-            GraphElement element = null;
-            BaseNodeData node = null;
+            _pendingFrameNodeId = nodeId;
+            _pendingFrameAttempts = 0;
+            AttemptPendingFrame();
+        }
+
+        internal bool TryFrameAndSelectNode(string nodeId)
+        {
+            if (!TryResolveFrameTarget(nodeId, out var element, out var node))
+            {
+                return false;
+            }
+
+            SelectNode(element, node);
+            FocusCanvas();
+            FrameSelection();
+
+            if (!IsElementFramed(element))
+            {
+                CenterElementInViewport(element);
+            }
+
+            RefreshEdgeLayer();
+            return IsElementFramed(element);
+        }
+
+        private void AttemptPendingFrame()
+        {
+            if (string.IsNullOrWhiteSpace(_pendingFrameNodeId))
+            {
+                return;
+            }
+
+            if (TryFrameAndSelectNode(_pendingFrameNodeId))
+            {
+                _pendingFrameNodeId = null;
+                _pendingFrameAttempts = 0;
+                return;
+            }
+
+            _pendingFrameAttempts++;
+            if (_pendingFrameAttempts >= 8)
+            {
+                _pendingFrameNodeId = null;
+                _pendingFrameAttempts = 0;
+                return;
+            }
+
+            schedule.Execute(AttemptPendingFrame).ExecuteLater(16);
+        }
+
+        private bool TryResolveFrameTarget(string nodeId, out GraphElement element, out BaseNodeData node)
+        {
+            element = null;
+            node = null;
+
+            if (string.IsNullOrWhiteSpace(nodeId) ||
+                panel == null ||
+                worldBound.width <= 1f ||
+                worldBound.height <= 1f ||
+                layout.width <= 1f ||
+                layout.height <= 1f)
+            {
+                return false;
+            }
 
             if (_textNodeViews.TryGetValue(nodeId, out var textNodeView))
             {
@@ -353,18 +435,43 @@ namespace NewDial.DialogueEditor
 
             if (element == null)
             {
+                return false;
+            }
+
+            return element.worldBound.width > 1f && element.worldBound.height > 1f;
+        }
+
+        private bool IsElementFramed(GraphElement element)
+        {
+            if (element == null ||
+                worldBound.width <= 1f ||
+                worldBound.height <= 1f ||
+                element.worldBound.width <= 1f ||
+                element.worldBound.height <= 1f)
+            {
+                return false;
+            }
+
+            var viewportCenter = worldBound.center;
+            var elementCenter = element.worldBound.center;
+            return Mathf.Abs(elementCenter.x - viewportCenter.x) <= FrameCenterTolerancePixels &&
+                   Mathf.Abs(elementCenter.y - viewportCenter.y) <= FrameCenterTolerancePixels;
+        }
+
+        private void CenterElementInViewport(GraphElement element)
+        {
+            if (element == null ||
+                worldBound.width <= 1f ||
+                worldBound.height <= 1f ||
+                element.worldBound.width <= 1f ||
+                element.worldBound.height <= 1f)
+            {
                 return;
             }
 
-            SelectNode(element, node);
-
-            var scale = viewTransform.scale.x == 0f ? 1f : viewTransform.scale.x;
-            var targetCenter = element.GetPosition().center;
-            var viewportCenter = layout.center;
-            var desiredPan = viewportCenter - (targetCenter * scale);
-            UpdateViewTransform(desiredPan, viewTransform.scale);
-            FocusCanvas();
-            RefreshEdgeLayer();
+            var delta = worldBound.center - element.worldBound.center;
+            var currentPan = new Vector3(viewTransform.position.x, viewTransform.position.y, 0f);
+            UpdateViewTransform(currentPan + new Vector3(delta.x, delta.y, 0f), viewTransform.scale);
         }
 
         internal NodeLinkData CreateLink(string fromNodeId, string toNodeId, bool markChanged = true)
@@ -433,6 +540,28 @@ namespace NewDial.DialogueEditor
             SelectionChangedAction?.Invoke(node);
         }
 
+        internal void SelectCommentGroup(CommentNodeData commentNode)
+        {
+            if (commentNode == null || !_commentNodeViews.TryGetValue(commentNode.Id, out var commentView))
+            {
+                return;
+            }
+
+            var groupedElements = GetCommentGroupElements(commentNode).ToList();
+            if (groupedElements.Count == 0)
+            {
+                groupedElements.Add(commentView);
+            }
+
+            ClearSelection();
+            foreach (var element in groupedElements)
+            {
+                AddToSelection(element);
+            }
+
+            SelectionChangedAction?.Invoke(commentNode);
+        }
+
         internal void NotifyNodeMoved()
         {
             RefreshNodeVisuals();
@@ -491,6 +620,7 @@ namespace NewDial.DialogueEditor
             var view = new DialogueCommentNodeView(node, this);
             _commentNodeViews[node.Id] = view;
             AddElement(view);
+            view.SendToBack();
             return view;
         }
 
@@ -581,7 +711,7 @@ namespace NewDial.DialogueEditor
             }
         }
 
-        private Vector2 GetCanvasPosition(Vector2 worldPosition)
+        internal Vector2 WorldToCanvasPosition(Vector2 worldPosition)
         {
             return contentViewContainer.WorldToLocal(worldPosition);
         }
@@ -658,6 +788,87 @@ namespace NewDial.DialogueEditor
             ClearSelection();
             AddToSelection(element);
             SelectionChangedAction?.Invoke(node);
+        }
+
+        private IEnumerable<GraphElement> GetCommentGroupElements(CommentNodeData rootComment)
+        {
+            var groupedIds = new HashSet<string>();
+            foreach (var element in GetCommentGroupElementsRecursive(rootComment, groupedIds))
+            {
+                yield return element;
+            }
+        }
+
+        private IEnumerable<GraphElement> GetCommentGroupElementsRecursive(CommentNodeData commentNode, HashSet<string> groupedIds)
+        {
+            if (commentNode == null || !groupedIds.Add(commentNode.Id))
+            {
+                yield break;
+            }
+
+            if (_commentNodeViews.TryGetValue(commentNode.Id, out var commentView))
+            {
+                yield return commentView;
+            }
+
+            var commentArea = GetCommentArea(commentNode);
+
+            foreach (var nestedComment in _commentNodeViews.Values)
+            {
+                if (nestedComment.Data.Id == commentNode.Id || groupedIds.Contains(nestedComment.Data.Id))
+                {
+                    continue;
+                }
+
+                if (!IsRectGroupedByComment(GetCommentArea(nestedComment.Data), commentArea))
+                {
+                    continue;
+                }
+
+                foreach (var element in GetCommentGroupElementsRecursive(nestedComment.Data, groupedIds))
+                {
+                    yield return element;
+                }
+            }
+
+            foreach (var textNode in _textNodeViews.Values)
+            {
+                if (groupedIds.Contains(textNode.Data.Id))
+                {
+                    continue;
+                }
+
+                if (!IsRectGroupedByComment(GetGraphElementRect(textNode), commentArea))
+                {
+                    continue;
+                }
+
+                groupedIds.Add(textNode.Data.Id);
+                yield return textNode;
+            }
+        }
+
+        private static Rect GetCommentArea(CommentNodeData commentNode)
+        {
+            return commentNode.Area.width <= 0f || commentNode.Area.height <= 0f
+                ? new Rect(commentNode.Position, CommentNodeInitialSize)
+                : commentNode.Area;
+        }
+
+        private static Rect GetGraphElementRect(GraphElement element)
+        {
+            var rect = element.GetPosition();
+            if (rect.width <= 0f || rect.height <= 0f)
+            {
+                return element.worldBound;
+            }
+
+            return rect;
+        }
+
+        private static bool IsRectGroupedByComment(Rect nodeRect, Rect commentArea)
+        {
+            return commentArea.Contains(nodeRect.center);
         }
 
         private void RefreshEdgeLayer()
@@ -929,7 +1140,7 @@ namespace NewDial.DialogueEditor
             EnableInClassList("dialogue-node--start", Data.IsStartNode);
             base.SetPosition(new Rect(
                 Data.Position,
-                GetPosition().size == Vector2.zero ? new Vector2(280f, 170f) : GetPosition().size));
+                GetPosition().size == Vector2.zero ? DialogueGraphView.TextNodeInitialSize : GetPosition().size));
             RefreshExpandedState();
         }
 
@@ -991,41 +1202,118 @@ namespace NewDial.DialogueEditor
 
     public class DialogueCommentNodeView : Node
     {
+        private const float MinCommentWidth = 260f;
+        private const float MinCommentHeight = 160f;
+        private const float ResizeZoneSize = 44f;
+        private const string ResizeHotClassName = "dialogue-comment-node--resize-hot";
+        private const float FallbackHeaderHeight = 54f;
+
         private readonly DialogueGraphView _graphView;
+        private readonly VisualElement _headerBand;
+        private readonly Label _titleLabel;
         private readonly Label _commentLabel;
+        private readonly VisualElement _resizeHandle;
+        private bool _isResizing;
+        private Rect _resizeStartArea;
+        private Vector2 _resizeStartCanvasPointer;
 
         public DialogueCommentNodeView(CommentNodeData data, DialogueGraphView graphView)
         {
             Data = data;
             _graphView = graphView;
             viewDataKey = data.Id;
-            capabilities |= Capabilities.Deletable | Capabilities.Movable | Capabilities.Selectable | Capabilities.Resizable;
+            capabilities |= Capabilities.Deletable | Capabilities.Movable | Capabilities.Selectable;
 
             AddToClassList("dialogue-comment-node");
+            style.borderTopWidth = 1f;
+            style.borderRightWidth = 1f;
+            style.borderBottomWidth = 1f;
+            style.borderLeftWidth = 1f;
             mainContainer.AddToClassList("dialogue-comment-node__surface");
+            topContainer.AddToClassList("dialogue-comment-node__header");
             extensionContainer.AddToClassList("dialogue-comment-node__content");
+            mainContainer.style.flexGrow = 1f;
+            mainContainer.style.flexShrink = 0f;
+            extensionContainer.style.flexGrow = 1f;
+            extensionContainer.style.flexShrink = 1f;
             inputContainer.style.display = DisplayStyle.None;
             outputContainer.style.display = DisplayStyle.None;
+            titleContainer.style.display = DisplayStyle.None;
+            titleButtonContainer.style.display = DisplayStyle.None;
 
-            var deleteButton = new Button(() => _graphView.DeleteNode(Data))
-            {
-                text = "X"
-            };
-            deleteButton.AddToClassList("dialogue-node__delete-button");
-            titleButtonContainer.Add(deleteButton);
+            _headerBand = new VisualElement();
+            _headerBand.AddToClassList("dialogue-comment-node__header-band");
+            topContainer.Add(_headerBand);
+
+            _titleLabel = new Label();
+            _titleLabel.AddToClassList("dialogue-comment-node__title");
+            _headerBand.Add(_titleLabel);
 
             _commentLabel = new Label();
             _commentLabel.AddToClassList("dialogue-comment-node__label");
             _commentLabel.style.whiteSpace = WhiteSpace.Normal;
             extensionContainer.Add(_commentLabel);
 
+            _resizeHandle = new VisualElement();
+            _resizeHandle.AddToClassList("dialogue-comment-node__resize-handle");
+            _resizeHandle.pickingMode = PickingMode.Ignore;
+            mainContainer.Add(_resizeHandle);
+
             RegisterCallback<MouseDownEvent>(evt =>
             {
-                if (evt.button == 0 && evt.target is not Button)
+                if (evt.button != 0 || evt.target is Button)
                 {
-                    _graphView.NotifySelected(Data);
+                    return;
+                }
+
+                if (IsPointerInResizeZone(evt.localMousePosition))
+                {
+                    BeginResize(evt.localMousePosition);
+                    evt.StopImmediatePropagation();
+                    return;
+                }
+
+                if (evt.target is not Button)
+                {
+                    _graphView.SelectCommentGroup(Data);
                 }
             }, TrickleDown.TrickleDown);
+
+            RegisterCallback<MouseMoveEvent>(evt =>
+            {
+                var isResizeHot = IsPointerInResizeZone(evt.localMousePosition);
+                EnableInClassList(ResizeHotClassName, isResizeHot || _isResizing);
+
+                if (!_isResizing)
+                {
+                    return;
+                }
+
+                ContinueResize(evt.localMousePosition);
+                evt.StopImmediatePropagation();
+            }, TrickleDown.TrickleDown);
+
+            RegisterCallback<MouseUpEvent>(evt =>
+            {
+                if (!_isResizing || evt.button != 0)
+                {
+                    return;
+                }
+
+                CancelResize();
+                evt.StopImmediatePropagation();
+            }, TrickleDown.TrickleDown);
+
+            RegisterCallback<MouseLeaveEvent>(_ =>
+            {
+                if (!_isResizing)
+                {
+                    EnableInClassList(ResizeHotClassName, false);
+                }
+            });
+
+            RegisterCallback<MouseCaptureOutEvent>(_ => CancelResize());
+            RegisterCallback<GeometryChangedEvent>(_ => SyncVisualSize(GetPosition().size));
 
             RefreshFromData();
         }
@@ -1035,6 +1323,7 @@ namespace NewDial.DialogueEditor
         public override void SetPosition(Rect newPos)
         {
             base.SetPosition(newPos);
+            SyncVisualSize(newPos.size);
             Data.Position = newPos.position;
             Data.Area = newPos;
             _graphView.NotifyNodeMoved();
@@ -1042,12 +1331,105 @@ namespace NewDial.DialogueEditor
 
         public void RefreshFromData()
         {
-            title = string.IsNullOrWhiteSpace(Data.Title) ? "Comment" : Data.Title;
-            _commentLabel.text = string.IsNullOrWhiteSpace(Data.Comment) ? "Empty note" : Data.Comment;
-            base.SetPosition(Data.Area.width <= 0f || Data.Area.height <= 0f
-                ? new Rect(Data.Position.x, Data.Position.y, 320f, 180f)
-                : Data.Area);
+            var titleText = string.IsNullOrWhiteSpace(Data.Title) ? "Comment" : Data.Title;
+            title = titleText;
+            _titleLabel.text = titleText;
+            _commentLabel.text = string.IsNullOrWhiteSpace(Data.Comment) ? "Add a description for this comment area." : Data.Comment;
+            ApplyTint();
+            var area = Data.Area.width <= 0f || Data.Area.height <= 0f
+                ? new Rect(Data.Position, DialogueGraphView.CommentNodeInitialSize)
+                : Data.Area;
+            base.SetPosition(area);
+            SyncVisualSize(area.size);
             RefreshExpandedState();
+        }
+
+        private void ApplyTint()
+        {
+            var tint = Data.Tint;
+            var headerTint = new Color(
+                Mathf.Clamp01(tint.r * 1.08f),
+                Mathf.Clamp01(tint.g * 1.08f),
+                Mathf.Clamp01(tint.b * 1.08f),
+                Mathf.Clamp01(Mathf.Max(tint.a, 0.42f)));
+
+            mainContainer.style.backgroundColor = tint;
+            _headerBand.style.backgroundColor = headerTint;
+            mainContainer.style.borderTopColor = headerTint;
+            mainContainer.style.borderRightColor = headerTint;
+            mainContainer.style.borderBottomColor = headerTint;
+            mainContainer.style.borderLeftColor = headerTint;
+            style.borderTopColor = headerTint;
+            style.borderRightColor = headerTint;
+            style.borderBottomColor = headerTint;
+            style.borderLeftColor = headerTint;
+        }
+
+        private bool IsPointerInResizeZone(Vector2 localPointerPosition)
+        {
+            var currentRect = GetPosition();
+            var width = currentRect.width <= 0f ? DialogueGraphView.CommentNodeInitialSize.x : currentRect.width;
+            var height = currentRect.height <= 0f ? DialogueGraphView.CommentNodeInitialSize.y : currentRect.height;
+            return localPointerPosition.x >= width - ResizeZoneSize &&
+                   localPointerPosition.y >= height - ResizeZoneSize;
+        }
+
+        private void BeginResize(Vector2 localPointerPosition)
+        {
+            _isResizing = true;
+            _resizeStartArea = Data.Area.width <= 0f || Data.Area.height <= 0f
+                ? new Rect(Data.Position, DialogueGraphView.CommentNodeInitialSize)
+                : Data.Area;
+            _resizeStartCanvasPointer = _graphView.WorldToCanvasPosition(this.LocalToWorld(localPointerPosition));
+            this.CaptureMouse();
+        }
+
+        private void ContinueResize(Vector2 localPointerPosition)
+        {
+            var currentCanvasPointer = _graphView.WorldToCanvasPosition(this.LocalToWorld(localPointerPosition));
+            var delta = currentCanvasPointer - _resizeStartCanvasPointer;
+            var resizedArea = new Rect(
+                _resizeStartArea.position,
+                new Vector2(
+                    Mathf.Max(MinCommentWidth, _resizeStartArea.width + delta.x),
+                    Mathf.Max(MinCommentHeight, _resizeStartArea.height + delta.y)));
+
+            base.SetPosition(resizedArea);
+            SyncVisualSize(resizedArea.size);
+            Data.Position = resizedArea.position;
+            Data.Area = resizedArea;
+            _graphView.NotifyNodeMoved();
+        }
+
+        private void SyncVisualSize(Vector2 size)
+        {
+            var width = Mathf.Max(MinCommentWidth, size.x <= 0f ? DialogueGraphView.CommentNodeInitialSize.x : size.x);
+            var height = Mathf.Max(MinCommentHeight, size.y <= 0f ? DialogueGraphView.CommentNodeInitialSize.y : size.y);
+            var headerHeight = Mathf.Max(FallbackHeaderHeight, _headerBand.resolvedStyle.height);
+            var contentHeight = Mathf.Max(0f, height - headerHeight);
+
+            style.width = width;
+            style.height = height;
+            mainContainer.style.width = width;
+            mainContainer.style.height = height;
+            topContainer.style.width = width;
+            extensionContainer.style.width = width;
+            extensionContainer.style.height = contentHeight;
+
+            mainContainer.MarkDirtyRepaint();
+            topContainer.MarkDirtyRepaint();
+            extensionContainer.MarkDirtyRepaint();
+            _resizeHandle.MarkDirtyRepaint();
+        }
+
+        private void CancelResize()
+        {
+            _isResizing = false;
+            EnableInClassList(ResizeHotClassName, false);
+            if (this.HasMouseCapture())
+            {
+                this.ReleaseMouse();
+            }
         }
     }
 }

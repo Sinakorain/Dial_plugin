@@ -107,12 +107,8 @@ namespace NewDial.DialogueEditor
                         }
 
                         var choice = _player.CurrentChoices[action.ChoiceIndex];
-                        _transcript.Add(DialoguePreviewTranscriptEntry.Choice(choice.Text));
                         _player.Choose(action.ChoiceIndex);
-                        if (_player.CurrentNode != null)
-                        {
-                            _transcript.Add(DialoguePreviewTranscriptEntry.Node(_player.CurrentNode));
-                        }
+                        _transcript.Add(DialoguePreviewTranscriptEntry.Choice(choice.Text, _player.CurrentNode));
                         break;
                 }
             }
@@ -181,13 +177,13 @@ namespace NewDial.DialogueEditor
                 node?.Id);
         }
 
-        public static DialoguePreviewTranscriptEntry Choice(string choiceText)
+        public static DialoguePreviewTranscriptEntry Choice(string choiceText, DialogueTextNodeData node)
         {
             return new DialoguePreviewTranscriptEntry(
                 DialoguePreviewTranscriptEntryKind.Choice,
-                "Choice",
                 string.IsNullOrWhiteSpace(choiceText) ? "Continue" : choiceText,
-                null);
+                string.IsNullOrWhiteSpace(node?.BodyText) ? "This choice has no dialogue text yet." : node.BodyText,
+                node?.Id);
         }
     }
 }

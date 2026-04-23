@@ -275,6 +275,7 @@ namespace NewDial.DialogueEditor
             public bool UseOutputsAsChoices;
             public Rect Area;
             public string Comment;
+            public Color Tint;
 
             public static NodeSnapshot FromNode(BaseNodeData node)
             {
@@ -298,6 +299,7 @@ namespace NewDial.DialogueEditor
                         snapshot.NodeType = nameof(CommentNodeData);
                         snapshot.Area = commentNode.Area;
                         snapshot.Comment = commentNode.Comment;
+                        snapshot.Tint = commentNode.Tint;
                         break;
                 }
 
@@ -315,7 +317,8 @@ namespace NewDial.DialogueEditor
                         Position = Position,
                         Condition = Condition?.Clone() ?? new ConditionData(),
                         Area = Area,
-                        Comment = Comment
+                        Comment = Comment,
+                        Tint = Tint
                     };
                 }
 
