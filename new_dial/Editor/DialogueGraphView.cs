@@ -19,6 +19,7 @@ namespace NewDial.DialogueEditor
         private const float AnchorInset = 18f;
         private const float PlacementGhostWidth = 270f;
         private const float PlacementGhostHeight = 160f;
+        private const float KeyboardPanSpeed = 900f;
 
         private readonly Dictionary<string, DialogueTextNodeView> _textNodeViews = new();
         private readonly Dictionary<string, DialogueCommentNodeView> _commentNodeViews = new();
@@ -37,11 +38,19 @@ namespace NewDial.DialogueEditor
         private DialogueTextNodeView _activeLinkTarget;
         private Vector2 _activeLinkStartWorld;
         private Vector2 _activeLinkPointerWorld;
+        private bool _hasCanvasFocus;
+        private bool _moveUpPressed;
+        private bool _moveDownPressed;
+        private bool _moveLeftPressed;
+        private bool _moveRightPressed;
+        private double _lastPanTickTime;
 
         public DialogueGraphView()
         {
             AddToClassList("dialogue-graph-view");
             style.flexGrow = 1f;
+            focusable = true;
+            tabIndex = 0;
 
             _gridBackground = new GridBackground();
             _gridBackground.AddToClassList("dialogue-graph-grid");
@@ -84,12 +93,21 @@ namespace NewDial.DialogueEditor
             RegisterCallback<MouseMoveEvent>(OnMouseMove, TrickleDown.TrickleDown);
             RegisterCallback<MouseDownEvent>(OnMouseDown, TrickleDown.TrickleDown);
             RegisterCallback<MouseUpEvent>(OnMouseUp, TrickleDown.TrickleDown);
+            RegisterCallback<KeyDownEvent>(OnKeyDown, TrickleDown.TrickleDown);
+            RegisterCallback<KeyUpEvent>(OnKeyUp, TrickleDown.TrickleDown);
+            RegisterCallback<FocusInEvent>(_ => SetCanvasFocusState(true));
+            RegisterCallback<BlurEvent>(_ => SetCanvasFocusState(false));
+
+            _lastPanTickTime = EditorApplication.timeSinceStartup;
+            schedule.Execute(OnKeyboardPanTick).Every(16);
         }
 
         public Action<BaseNodeData> SelectionChangedAction { get; set; }
         public Action GraphChangedAction { get; set; }
+        public Action<bool> CanvasFocusChangedAction { get; set; }
 
         public DialogueGraphData Graph => _graph;
+        public bool HasCanvasFocus => _hasCanvasFocus;
 
         public override void BuildContextualMenu(ContextualMenuPopulateEvent evt)
         {
@@ -159,6 +177,7 @@ namespace NewDial.DialogueEditor
 
             RefreshNodeVisuals();
             SelectNode(view, node);
+            FocusCanvas();
             MarkChanged();
         }
 
@@ -181,6 +200,7 @@ namespace NewDial.DialogueEditor
             var view = CreateCommentNodeView(node);
             RefreshNodeVisuals();
             SelectNode(view, node);
+            FocusCanvas();
             MarkChanged();
         }
 
@@ -242,6 +262,7 @@ namespace NewDial.DialogueEditor
                     return false;
             }
 
+            FocusCanvas();
             return true;
         }
 
@@ -297,6 +318,18 @@ namespace NewDial.DialogueEditor
             return (layout.center - panOffset) / scale;
         }
 
+        public void FocusCanvas()
+        {
+            Focus();
+            SetCanvasFocusState(true);
+        }
+
+        internal void ReleaseCanvasFocus()
+        {
+            SetCanvasFocusState(false);
+            Blur();
+        }
+
         public void FrameAndSelectNode(string nodeId)
         {
             if (string.IsNullOrWhiteSpace(nodeId))
@@ -330,6 +363,7 @@ namespace NewDial.DialogueEditor
             var viewportCenter = layout.center;
             var desiredPan = viewportCenter - (targetCenter * scale);
             UpdateViewTransform(desiredPan, viewTransform.scale);
+            FocusCanvas();
             RefreshEdgeLayer();
         }
 
@@ -436,6 +470,7 @@ namespace NewDial.DialogueEditor
                 return;
             }
 
+            FocusCanvas();
             _activeLinkSource = sourceView;
             _activeLinkTarget = null;
             _activeLinkStartWorld = sourceView.GetBottomAnchorWorld(worldPointerPosition.x);
@@ -516,6 +551,7 @@ namespace NewDial.DialogueEditor
                 return;
             }
 
+            FocusCanvas();
             if (evt.target == this || evt.target is GridBackground)
             {
                 SelectionChangedAction?.Invoke(null);
@@ -629,9 +665,155 @@ namespace NewDial.DialogueEditor
             _edgeLayer.MarkDirtyRepaint();
         }
 
+        internal void SetMovementKeyState(KeyCode keyCode, bool isPressed)
+        {
+            switch (keyCode)
+            {
+                case KeyCode.W:
+                    _moveUpPressed = isPressed;
+                    break;
+                case KeyCode.S:
+                    _moveDownPressed = isPressed;
+                    break;
+                case KeyCode.A:
+                    _moveLeftPressed = isPressed;
+                    break;
+                case KeyCode.D:
+                    _moveRightPressed = isPressed;
+                    break;
+            }
+        }
+
+        internal void StepKeyboardPan(float deltaTimeSeconds)
+        {
+            if (!_hasCanvasFocus || deltaTimeSeconds <= 0f)
+            {
+                return;
+            }
+
+            var input = Vector2.zero;
+            if (_moveUpPressed)
+            {
+                input.y += 1f;
+            }
+
+            if (_moveDownPressed)
+            {
+                input.y -= 1f;
+            }
+
+            if (_moveLeftPressed)
+            {
+                input.x += 1f;
+            }
+
+            if (_moveRightPressed)
+            {
+                input.x -= 1f;
+            }
+
+            if (input == Vector2.zero)
+            {
+                return;
+            }
+
+            var scale = viewTransform.scale.x == 0f ? 1f : viewTransform.scale.x;
+            var panDelta = input.normalized * (KeyboardPanSpeed * scale * deltaTimeSeconds);
+            var currentPan = new Vector3(viewTransform.position.x, viewTransform.position.y, 0f);
+            UpdateViewTransform(currentPan + new Vector3(panDelta.x, panDelta.y, 0f), viewTransform.scale);
+            RefreshEdgeLayer();
+        }
+
+        private void OnKeyDown(KeyDownEvent evt)
+        {
+            if (!_hasCanvasFocus)
+            {
+                return;
+            }
+
+            if (!TryMapMovementKey(evt.keyCode))
+            {
+                return;
+            }
+
+            SetMovementKeyState(evt.keyCode, true);
+            evt.StopImmediatePropagation();
+        }
+
+        private void OnKeyUp(KeyUpEvent evt)
+        {
+            if (!_hasCanvasFocus)
+            {
+                return;
+            }
+
+            if (!TryMapMovementKey(evt.keyCode))
+            {
+                return;
+            }
+
+            SetMovementKeyState(evt.keyCode, false);
+            evt.StopImmediatePropagation();
+        }
+
+        private void OnKeyboardPanTick()
+        {
+            var now = EditorApplication.timeSinceStartup;
+            var deltaTime = Mathf.Max(0f, (float)(now - _lastPanTickTime));
+            _lastPanTickTime = now;
+            StepKeyboardPan(deltaTime);
+        }
+
+        private void SetCanvasFocusState(bool focused)
+        {
+            if (_hasCanvasFocus == focused)
+            {
+                return;
+            }
+
+            _hasCanvasFocus = focused;
+            if (!focused)
+            {
+                ResetMovementKeys();
+            }
+
+            EnableInClassList("is-focused", focused);
+            CanvasFocusChangedAction?.Invoke(focused);
+        }
+
+        private void ResetMovementKeys()
+        {
+            _moveUpPressed = false;
+            _moveDownPressed = false;
+            _moveLeftPressed = false;
+            _moveRightPressed = false;
+        }
+
+        private static bool TryMapMovementKey(KeyCode keyCode)
+        {
+            return keyCode == KeyCode.W ||
+                   keyCode == KeyCode.A ||
+                   keyCode == KeyCode.S ||
+                   keyCode == KeyCode.D;
+        }
+
         private void UpdateEmptyState()
         {
-            _emptyStateLabel.style.display = _graph == null ? DisplayStyle.Flex : DisplayStyle.None;
+            if (_graph == null)
+            {
+                _emptyStateLabel.text = "Select a dialogue or create a new one to start building nodes.";
+                _emptyStateLabel.style.display = DisplayStyle.Flex;
+                return;
+            }
+
+            if (_graph.Nodes.Count == 0)
+            {
+                _emptyStateLabel.text = "This dialogue is empty. Add your first node from the palette to begin.";
+                _emptyStateLabel.style.display = DisplayStyle.Flex;
+                return;
+            }
+
+            _emptyStateLabel.style.display = DisplayStyle.None;
         }
 
         private readonly struct DialogueEdgeGeometry

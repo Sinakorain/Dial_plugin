@@ -24,6 +24,8 @@ namespace NewDial.DialogueEditor
         private Label _statusLabel;
         private Label _detailsTitleLabel;
         private Button _detailsToggleButton;
+        private Button _focusStartButton;
+        private VisualElement _graphHost;
 
         public static void Open(DialogueDatabaseAsset asset)
         {
@@ -58,22 +60,23 @@ namespace NewDial.DialogueEditor
             var contentSplit = new TwoPaneSplitView(1, 360f, TwoPaneSplitViewOrientation.Horizontal);
             contentSplit.AddToClassList("dialogue-editor__content-split");
 
-            var graphHost = new VisualElement();
-            graphHost.AddToClassList("dialogue-editor__graph-host");
+            _graphHost = new VisualElement();
+            _graphHost.AddToClassList("dialogue-editor__graph-host");
 
             var graphHeader = new VisualElement();
             graphHeader.AddToClassList("dialogue-editor__panel-header");
             graphHeader.Add(new Label("Graph Canvas") { name = "graph-title" });
-            graphHost.Add(graphHeader);
+            _graphHost.Add(graphHeader);
 
             _graphView = new DialogueGraphView
             {
                 GraphChangedAction = OnGraphChanged,
-                SelectionChangedAction = OnNodeSelectionChanged
+                SelectionChangedAction = OnNodeSelectionChanged,
+                CanvasFocusChangedAction = focused => _graphHost?.EnableInClassList("is-focused", focused)
             };
             _graphView.AddToClassList("dialogue-editor__graph-surface");
-            graphHost.Add(_graphView);
-            contentSplit.Add(graphHost);
+            _graphHost.Add(_graphView);
+            contentSplit.Add(_graphHost);
 
             contentSplit.Add(BuildDetailsPanel());
             shell.Add(contentSplit);
@@ -86,23 +89,45 @@ namespace NewDial.DialogueEditor
         {
             var toolbar = new Toolbar();
             toolbar.AddToClassList("dialogue-editor__toolbar");
+            AttachGraphBlurOnInteraction(toolbar);
 
-            toolbar.Add(CreateToolbarButton("New", DialogueStartWindow.ShowWindow));
-            toolbar.Add(CreateToolbarButton("Load", LoadDatabaseFromDialog));
-            toolbar.Add(CreateToolbarButton("Save", SaveDatabase));
-            toolbar.Add(CreateToolbarButton("Preview", OpenPreview));
-            toolbar.Add(CreateToolbarButton("Create NPC", CreateNpc));
-            toolbar.Add(CreateToolbarButton("Create Dialogue", CreateDialogue));
-            toolbar.Add(CreateToolbarButton("Delete", DeleteSelection));
-            toolbar.Add(CreateToolbarButton("Dialogue Settings", ShowDialogueSettings));
+            var mainActions = new VisualElement();
+            mainActions.AddToClassList("dialogue-editor__toolbar-group");
+            mainActions.AddToClassList("dialogue-editor__toolbar-group--main");
+            mainActions.Add(CreateToolbarButton("New", DialogueStartWindow.ShowWindow));
+            mainActions.Add(CreateToolbarButton("Load", LoadDatabaseFromDialog));
+            var saveButton = CreateToolbarButton("Save", SaveDatabase);
+            saveButton.AddToClassList("dialogue-editor__toolbar-button--save");
+            mainActions.Add(saveButton);
+            mainActions.Add(CreateToolbarButton("Preview", OpenPreview));
+            var deleteButton = CreateToolbarButton("Delete", DeleteSelection);
+            deleteButton.AddToClassList("dialogue-editor__toolbar-button--danger");
+            mainActions.Add(deleteButton);
+            mainActions.Add(CreateToolbarButton("Dialogue Settings", ShowDialogueSettings));
+            toolbar.Add(mainActions);
 
             var spacer = new VisualElement();
             spacer.style.flexGrow = 1f;
             toolbar.Add(spacer);
 
+            var utilityActions = new VisualElement();
+            utilityActions.AddToClassList("dialogue-editor__toolbar-group");
+            utilityActions.AddToClassList("dialogue-editor__toolbar-group--utility");
+
             _statusLabel = new Label("No database loaded");
             _statusLabel.AddToClassList("dialogue-editor__status");
-            toolbar.Add(_statusLabel);
+            utilityActions.Add(_statusLabel);
+
+            _focusStartButton = new Button(() => TryFocusStartNode())
+            {
+                text = "⚑ Start"
+            };
+            _focusStartButton.AddToClassList("dialogue-editor__toolbar-button");
+            _focusStartButton.AddToClassList("dialogue-editor__toolbar-button--utility");
+            AttachGraphBlurOnInteraction(_focusStartButton);
+            utilityActions.Add(_focusStartButton);
+
+            toolbar.Add(utilityActions);
             return toolbar;
         }
 
@@ -110,13 +135,16 @@ namespace NewDial.DialogueEditor
         {
             var dock = new VisualElement();
             dock.AddToClassList("dialogue-editor__left-dock");
+            AttachGraphBlurOnInteraction(dock);
 
             var projectSection = new VisualElement();
             projectSection.AddToClassList("dialogue-editor__panel");
             projectSection.Add(BuildPanelHeader("Project"));
+            projectSection.Add(BuildProjectActionsRow());
 
             _projectView = new ScrollView();
             _projectView.AddToClassList("dialogue-editor__project-scroll");
+            _projectView.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
             projectSection.Add(_projectView);
             dock.Add(projectSection);
 
@@ -145,11 +173,27 @@ namespace NewDial.DialogueEditor
             return panel;
         }
 
+        private VisualElement BuildProjectActionsRow()
+        {
+            var row = new VisualElement();
+            row.AddToClassList("dialogue-editor__project-actions-row");
+
+            var createNpcButton = CreateProjectActionButton("Create NPC", CreateNpc);
+            createNpcButton.AddToClassList("dialogue-editor__project-action-button--leading");
+            row.Add(createNpcButton);
+
+            var createDialogueButton = CreateProjectActionButton("Create Dialogue", CreateDialogue);
+            row.Add(createDialogueButton);
+
+            return row;
+        }
+
         private VisualElement BuildDetailsPanel()
         {
             var panel = new VisualElement();
             panel.AddToClassList("dialogue-editor__panel");
             panel.AddToClassList("dialogue-editor__details-panel");
+            AttachGraphBlurOnInteraction(panel);
 
             var header = new VisualElement();
             header.AddToClassList("dialogue-editor__panel-header");
@@ -168,6 +212,7 @@ namespace NewDial.DialogueEditor
 
             _inspectorView = new ScrollView();
             _inspectorView.AddToClassList("dialogue-editor__details-scroll");
+            _inspectorView.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
             panel.Add(_inspectorView);
 
             return panel;
@@ -177,6 +222,7 @@ namespace NewDial.DialogueEditor
         {
             var button = new ToolbarButton(onClick) { text = text };
             button.AddToClassList("dialogue-editor__toolbar-button");
+            AttachGraphBlurOnInteraction(button);
             return button;
         }
 
@@ -185,6 +231,7 @@ namespace NewDial.DialogueEditor
             var button = new Button(onClick) { text = text };
             button.AddToClassList("dialogue-editor__palette-button");
             button.SetEnabled(enabled);
+            AttachGraphBlurOnInteraction(button);
             return button;
         }
 
@@ -192,6 +239,14 @@ namespace NewDial.DialogueEditor
         {
             var button = new Button(onClick) { text = text };
             button.AddToClassList("dialogue-editor__action-button");
+            AttachGraphBlurOnInteraction(button);
+            return button;
+        }
+
+        private Button CreateProjectActionButton(string text, System.Action onClick)
+        {
+            var button = CreateActionButton(text, onClick);
+            button.AddToClassList("dialogue-editor__project-action-button");
             return button;
         }
 
@@ -289,6 +344,8 @@ namespace NewDial.DialogueEditor
             _statusLabel.text = _database == null
                 ? "No database loaded"
                 : $"{_database.name}{(_hasUnsavedChanges ? " (unsaved changes)" : string.Empty)}";
+
+            _focusStartButton?.SetEnabled(_selectedDialogue != null && DialogueGraphUtility.FindStartNode(_selectedDialogue) != null);
         }
 
         private void RefreshProjectPanel()
@@ -314,6 +371,7 @@ namespace NewDial.DialogueEditor
 
                 var npcHeader = new VisualElement();
                 npcHeader.AddToClassList("dialogue-editor__row");
+                npcHeader.AddToClassList("dialogue-editor__project-card-actions");
 
                 var npcSelect = CreateActionButton(_selectedNpc == npc ? "Selected NPC" : "Select NPC", () =>
                 {
@@ -328,29 +386,31 @@ namespace NewDial.DialogueEditor
                 });
                 npcSelect.EnableInClassList("is-selected", _selectedNpc == npc);
                 npcHeader.Add(npcSelect);
+                npcCard.Add(npcHeader);
 
-                var npcName = new TextField("Name") { value = npc.Name };
-                npcName.AddToClassList("dialogue-editor__grow");
-                npcName.RegisterValueChangedCallback(evt =>
+                var npcName = CreateDelayedNameField("NPC Name", npc.Name, newValue =>
                 {
-                    npc.Name = evt.newValue;
+                    npc.Name = newValue;
                     MarkChanged();
                     RefreshProjectPanel();
                 });
-                npcHeader.Add(npcName);
-                npcCard.Add(npcHeader);
+                npcName.AddToClassList("dialogue-editor__project-name-field");
+                npcCard.Add(npcName);
 
                 if (npc.Dialogues.Count == 0)
                 {
-                    npcCard.Add(CreateInlineHelp("No dialogues yet. Use Create Dialogue from the toolbar."));
+                    npcCard.Add(CreateInlineHelp("No dialogues yet. Use Create Dialogue above to add one."));
                 }
 
                 foreach (var dialogue in npc.Dialogues)
                 {
+                    var dialogueCard = new Box();
+                    dialogueCard.AddToClassList("dialogue-editor__project-subcard");
+                    dialogueCard.EnableInClassList("is-selected", _selectedDialogue == dialogue);
+
                     var dialogueRow = new VisualElement();
                     dialogueRow.AddToClassList("dialogue-editor__row");
-                    dialogueRow.AddToClassList("dialogue-editor__dialogue-row");
-                    dialogueRow.EnableInClassList("is-selected", _selectedDialogue == dialogue);
+                    dialogueRow.AddToClassList("dialogue-editor__project-card-actions");
 
                     var openButton = CreateActionButton(_selectedDialogue == dialogue ? "Editing" : "Open", () =>
                     {
@@ -362,17 +422,22 @@ namespace NewDial.DialogueEditor
                     openButton.EnableInClassList("is-selected", _selectedDialogue == dialogue);
                     dialogueRow.Add(openButton);
 
-                    var nameField = new TextField("Dialogue") { value = dialogue.Name };
-                    nameField.AddToClassList("dialogue-editor__grow");
-                    nameField.RegisterValueChangedCallback(evt =>
+                    dialogueCard.Add(dialogueRow);
+
+                    var nameField = CreateDelayedNameField("Dialogue Name", dialogue.Name, newValue =>
                     {
-                        dialogue.Name = evt.newValue;
+                        dialogue.Name = newValue;
                         MarkChanged();
                         RefreshProjectPanel();
+                        if (_selectedDialogue == dialogue && _selectedNode == null)
+                        {
+                            RefreshInspector();
+                        }
                     });
-                    dialogueRow.Add(nameField);
+                    nameField.AddToClassList("dialogue-editor__project-name-field");
+                    dialogueCard.Add(nameField);
 
-                    npcCard.Add(dialogueRow);
+                    npcCard.Add(dialogueCard);
                 }
 
                 _projectView.Add(npcCard);
@@ -424,13 +489,13 @@ namespace NewDial.DialogueEditor
         {
             _inspectorView.Add(CreateSectionTitle("Dialogue Settings"));
 
-            var nameField = new TextField("Name") { value = dialogue.Name };
-            nameField.RegisterValueChangedCallback(evt =>
+            var nameField = CreateDelayedNameField("Name", dialogue.Name, newValue =>
             {
-                dialogue.Name = evt.newValue;
+                dialogue.Name = newValue;
                 MarkChanged();
                 RefreshProjectPanel();
             });
+            nameField.AddToClassList("dialogue-editor__name-field");
             _inspectorView.Add(nameField);
 
             var summaryCard = new Box();
@@ -701,17 +766,9 @@ namespace NewDial.DialogueEditor
                 Name = $"Dialogue {_selectedNpc.Dialogues.Count + 1}"
             };
 
-            var startNode = new DialogueTextNodeData
-            {
-                Title = "Start",
-                BodyText = "New dialogue starts here.",
-                IsStartNode = true,
-                Position = new Vector2(100f, 100f)
-            };
-            dialogue.Graph.Nodes.Add(startNode);
             _selectedNpc.Dialogues.Add(dialogue);
             _selectedDialogue = dialogue;
-            _selectedNode = startNode;
+            _selectedNode = null;
             MarkChanged();
             RefreshAll();
         }
@@ -758,6 +815,7 @@ namespace NewDial.DialogueEditor
         private void ShowDialogueSettings()
         {
             _selectedNode = null;
+            _graphView?.ReleaseCanvasFocus();
             RefreshInspector();
         }
 
@@ -795,8 +853,20 @@ namespace NewDial.DialogueEditor
             _selectedNode = resolvedNode;
             RefreshAll();
             _graphView?.FrameAndSelectNode(nodeId);
+            _graphView?.FocusCanvas();
             Focus();
             return true;
+        }
+
+        public bool TryFocusStartNode()
+        {
+            if (_selectedDialogue == null)
+            {
+                return false;
+            }
+
+            var startNode = DialogueGraphUtility.FindStartNode(_selectedDialogue);
+            return startNode != null && FocusDialogueNode(_selectedDialogue, startNode.Id);
         }
 
         private void OnGraphChanged()
@@ -902,6 +972,39 @@ namespace NewDial.DialogueEditor
         private void CancelPalettePlacement()
         {
             _graphView?.CancelNodePlacement();
+        }
+
+        private TextField CreateDelayedNameField(string label, string value, System.Action<string> onCommitted)
+        {
+            var field = new TextField(label)
+            {
+                value = value ?? string.Empty,
+                isDelayed = true
+            };
+            field.AddToClassList("dialogue-editor__grow");
+            field.AddToClassList("dialogue-editor__name-field");
+            AttachGraphBlurOnInteraction(field);
+            field.RegisterValueChangedCallback(evt =>
+            {
+                if (evt.newValue == evt.previousValue)
+                {
+                    return;
+                }
+
+                onCommitted?.Invoke(evt.newValue);
+            });
+            return field;
+        }
+
+        private void AttachGraphBlurOnInteraction(VisualElement element)
+        {
+            if (element == null)
+            {
+                return;
+            }
+
+            element.RegisterCallback<MouseDownEvent>(_ => _graphView?.ReleaseCanvasFocus(), TrickleDown.TrickleDown);
+            element.RegisterCallback<FocusInEvent>(_ => _graphView?.ReleaseCanvasFocus(), TrickleDown.TrickleDown);
         }
 
         private void MarkChanged()

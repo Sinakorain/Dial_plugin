@@ -5,21 +5,77 @@
 }
 
 .dialogue-editor__toolbar {
-    min-height: 38px;
-    padding-left: 8px;
-    padding-right: 8px;
+    min-height: 44px;
+    padding-left: 10px;
+    padding-right: 10px;
     background-color: #1a2130;
     border-bottom-width: 1px;
     border-bottom-color: #2a3447;
+    align-items: center;
+}
+
+.dialogue-editor__toolbar-group {
+    flex-direction: row;
+    align-items: center;
+}
+
+.dialogue-editor__toolbar-group--utility {
+    justify-content: flex-end;
 }
 
 .dialogue-editor__toolbar-button {
     margin-right: 6px;
+    min-height: 30px;
+    padding-left: 10px;
+    padding-right: 10px;
+    background-color: #2a3345;
+    color: #eef3fa;
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: #374258;
+    border-right-color: #374258;
+    border-bottom-color: #374258;
+    border-left-color: #374258;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+}
+
+.dialogue-editor__toolbar-button--utility {
+    min-width: 78px;
+    margin-right: 0;
+    background-color: #2e4568;
+    border-top-color: #44648f;
+    border-right-color: #44648f;
+    border-bottom-color: #44648f;
+    border-left-color: #44648f;
+}
+
+.dialogue-editor__toolbar-button--save {
+    background-color: #29553d;
+    border-top-color: #3d7b59;
+    border-right-color: #3d7b59;
+    border-bottom-color: #3d7b59;
+    border-left-color: #3d7b59;
+    color: #ecfff4;
+}
+
+.dialogue-editor__toolbar-button--danger {
+    background-color: #5a3038;
+    border-top-color: #7d4650;
+    border-right-color: #7d4650;
+    border-bottom-color: #7d4650;
+    border-left-color: #7d4650;
+    color: #fff5f6;
 }
 
 .dialogue-editor__status {
-    margin-right: 8px;
-    color: #9aa6bc;
+    margin-right: 10px;
+    color: #8f9db3;
+    font-size: 11px;
 }
 
 .dialogue-editor__shell {
@@ -90,10 +146,24 @@
 .dialogue-editor__project-scroll,
 .dialogue-editor__details-scroll {
     flex-grow: 1;
+    min-width: 0;
     padding-left: 10px;
     padding-right: 10px;
     padding-top: 10px;
     padding-bottom: 10px;
+}
+
+.dialogue-editor__project-scroll .unity-scroll-view__content-container,
+.dialogue-editor__details-scroll .unity-scroll-view__content-container {
+    min-width: 0;
+}
+
+.dialogue-editor__project-actions-row {
+    flex-direction: row;
+    padding-left: 10px;
+    padding-right: 10px;
+    padding-top: 10px;
+    padding-bottom: 6px;
 }
 
 .dialogue-editor__palette {
@@ -167,6 +237,21 @@
     flex-grow: 1;
     min-width: 0;
     background-color: #121823;
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: #232b3d;
+    border-right-color: #232b3d;
+    border-bottom-color: #232b3d;
+    border-left-color: #232b3d;
+}
+
+.dialogue-editor__graph-host.is-focused {
+    border-top-color: #4c77b3;
+    border-right-color: #4c77b3;
+    border-bottom-color: #4c77b3;
+    border-left-color: #4c77b3;
 }
 
 .dialogue-editor__graph-surface {
@@ -194,6 +279,7 @@
     border-top-right-radius: 10px;
     border-bottom-left-radius: 10px;
     border-bottom-right-radius: 10px;
+    min-width: 0;
 }
 
 .dialogue-editor__project-card.is-selected {
@@ -207,6 +293,7 @@
     flex-direction: row;
     align-items: center;
     margin-bottom: 8px;
+    min-width: 0;
 }
 
 .dialogue-editor__dialogue-row {
@@ -215,17 +302,84 @@
 
 .dialogue-editor__grow {
     flex-grow: 1;
+    min-width: 0;
+}
+
+.dialogue-editor__project-card-actions {
+    margin-bottom: 8px;
+}
+
+.dialogue-editor__project-subcard {
+    margin-top: 8px;
+    padding-left: 10px;
+    padding-right: 10px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+    background-color: #1b2331;
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: #2a3447;
+    border-right-color: #2a3447;
+    border-bottom-color: #2a3447;
+    border-left-color: #2a3447;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    min-width: 0;
+}
+
+.dialogue-editor__project-subcard.is-selected {
+    border-top-color: #5f8fe8;
+    border-right-color: #5f8fe8;
+    border-bottom-color: #5f8fe8;
+    border-left-color: #5f8fe8;
+}
+
+.dialogue-editor__name-field,
+.dialogue-editor__project-name-field {
+    min-width: 0;
+    margin-bottom: 0;
+}
+
+.dialogue-editor__name-field > .unity-base-field__label,
+.dialogue-editor__project-name-field > .unity-base-field__label {
+    min-width: 82px;
+    color: #b6c5dd;
+}
+
+.dialogue-editor__name-field > .unity-base-field__input,
+.dialogue-editor__project-name-field > .unity-base-field__input {
+    min-width: 0;
 }
 
 .dialogue-editor__action-button {
-    margin-right: 8px;
-    min-width: 82px;
+    margin-right: 0;
+    min-width: 92px;
     background-color: #2c3954;
     color: #edf2f8;
     border-top-left-radius: 8px;
     border-top-right-radius: 8px;
     border-bottom-left-radius: 8px;
     border-bottom-right-radius: 8px;
+    flex-shrink: 0;
+}
+
+.dialogue-editor__project-action-button {
+    flex-grow: 1;
+    min-height: 38px;
+    margin-right: 0;
+    background-color: #2f3b54;
+    border-top-color: #43618d;
+    border-right-color: #43618d;
+    border-bottom-color: #43618d;
+    border-left-color: #43618d;
+}
+
+.dialogue-editor__project-action-button--leading {
+    margin-right: 10px;
 }
 
 .dialogue-editor__action-button.is-selected {
@@ -405,18 +559,24 @@
 }
 
 .dialogue-node__start-badge {
-    min-height: 18px;
+    height: 16px;
+    min-height: 16px;
     margin-right: 6px;
-    padding-left: 8px;
-    padding-right: 8px;
-    background-color: #265138;
-    color: #dbffe6;
-    border-top-left-radius: 9px;
-    border-top-right-radius: 9px;
-    border-bottom-left-radius: 9px;
-    border-bottom-right-radius: 9px;
+    margin-top: 2px;
+    padding-left: 7px;
+    padding-right: 7px;
+    padding-top: 0;
+    padding-bottom: 0;
+    background-color: #2c5d40;
+    color: #eafff0;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
     -unity-font-style: bold;
-    font-size: 10px;
+    font-size: 9px;
+    unity-text-align: middle-center;
+    align-self: center;
 }
 
 .dialogue-node__delete-button {

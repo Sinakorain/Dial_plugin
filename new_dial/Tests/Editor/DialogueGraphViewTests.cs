@@ -1,5 +1,6 @@
 using System.Linq;
 using NUnit.Framework;
+using UnityEngine;
 
 namespace NewDial.DialogueEditor.Tests
 {
@@ -105,6 +106,38 @@ namespace NewDial.DialogueEditor.Tests
             Assert.That(remaining[0].Order, Is.EqualTo(0));
             Assert.That(remaining[1].Order, Is.EqualTo(1));
             Assert.That(view.GetRenderedLinkCount(), Is.EqualTo(2));
+        }
+
+        [Test]
+        public void StepKeyboardPan_MovesOnlyWhileCanvasIsFocused()
+        {
+            var view = new DialogueGraphView();
+            view.LoadGraph(new DialogueGraphData());
+
+            view.SetMovementKeyState(KeyCode.W, true);
+            view.StepKeyboardPan(1f);
+            Assert.That(view.viewTransform.position.y, Is.EqualTo(0f));
+
+            view.FocusCanvas();
+            view.StepKeyboardPan(1f);
+
+            Assert.That(view.HasCanvasFocus, Is.True);
+            Assert.That(view.viewTransform.position.y, Is.GreaterThan(0f));
+        }
+
+        [Test]
+        public void ReleaseCanvasFocus_StopsFurtherKeyboardPan()
+        {
+            var view = new DialogueGraphView();
+            view.LoadGraph(new DialogueGraphData());
+            view.FocusCanvas();
+            view.SetMovementKeyState(KeyCode.D, true);
+            view.ReleaseCanvasFocus();
+
+            view.StepKeyboardPan(1f);
+
+            Assert.That(view.HasCanvasFocus, Is.False);
+            Assert.That(view.viewTransform.position.x, Is.EqualTo(0f));
         }
     }
 }
