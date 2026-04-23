@@ -44,6 +44,19 @@ namespace NewDial.DialogueEditor
             window.SetDialogue(dialogue, owner);
         }
 
+        internal static void RefreshOpenWindows(DialogueEditorWindow owner)
+        {
+            if (owner == null)
+            {
+                return;
+            }
+
+            foreach (var window in Resources.FindObjectsOfTypeAll<DialoguePreviewWindow>())
+            {
+                window.RefreshDialogueReference(owner);
+            }
+        }
+
         private void CreateGUI()
         {
             ApplyStyles();
@@ -57,6 +70,28 @@ namespace NewDial.DialogueEditor
             _ownerWindow = owner;
             _session = dialogue == null ? null : new DialoguePreviewSession(dialogue);
             RefreshView();
+        }
+
+        private void RefreshDialogueReference(DialogueEditorWindow owner)
+        {
+            if (_ownerWindow != owner)
+            {
+                return;
+            }
+
+            if (_dialogue == null)
+            {
+                RefreshView();
+                return;
+            }
+
+            if (owner.TryResolveDialogueById(_dialogue.Id, out _, out var resolvedDialogue))
+            {
+                SetDialogue(resolvedDialogue, owner);
+                return;
+            }
+
+            SetDialogue(null, owner);
         }
 
         private void BuildLayout()

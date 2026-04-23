@@ -1,5 +1,6 @@
 using System.Linq;
 using NUnit.Framework;
+using UnityEditor;
 using UnityEditor.Experimental.GraphView;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -618,9 +619,252 @@ namespace NewDial.DialogueEditor.Tests
             Assert.That(view.viewTransform.position.x, Is.EqualTo(0f));
         }
 
+        [Test]
+        public void CreateTextNode_UndoRedo_RestoresNodeCount()
+        {
+            var graph = new DialogueGraphData();
+            var view = CreateUndoEnabledView(graph, out var database);
+
+            view.CreateTextNode(new Vector2(100f, 100f));
+
+            Assert.That(GetResolvedGraph(database).Nodes.OfType<DialogueTextNodeData>(), Has.Count.EqualTo(1));
+
+            Undo.PerformUndo();
+            Assert.That(GetResolvedGraph(database).Nodes, Is.Empty);
+
+            Undo.PerformRedo();
+            Assert.That(GetResolvedGraph(database).Nodes.OfType<DialogueTextNodeData>(), Has.Count.EqualTo(1));
+        }
+
+        [Test]
+        public void CreateAndDeleteLink_UndoRedo_RestoresLinkCount()
+        {
+            var graph = new DialogueGraphData();
+            var start = new DialogueTextNodeData { Title = "Start" };
+            var end = new DialogueTextNodeData { Title = "End" };
+            graph.Nodes.Add(start);
+            graph.Nodes.Add(end);
+
+            var view = CreateUndoEnabledView(graph, out var database);
+            var link = view.CreateLink(start.Id, end.Id);
+
+            Assert.That(GetResolvedGraph(database).Links, Has.Count.EqualTo(1));
+
+            view.DeleteLink(link);
+            Assert.That(GetResolvedGraph(database).Links, Is.Empty);
+
+            Undo.PerformUndo();
+            Assert.That(GetResolvedGraph(database).Links, Has.Count.EqualTo(1));
+
+            Undo.PerformUndo();
+            Assert.That(GetResolvedGraph(database).Links, Is.Empty);
+
+            Undo.PerformRedo();
+            Assert.That(GetResolvedGraph(database).Links, Has.Count.EqualTo(1));
+        }
+
+        [Test]
+        public void MovingTextNode_UndoRedo_RestoresPosition()
+        {
+            var graph = new DialogueGraphData();
+            var node = new DialogueTextNodeData
+            {
+                Title = "Mover",
+                Position = new Vector2(100f, 100f)
+            };
+            graph.Nodes.Add(node);
+
+            var view = CreateUndoEnabledView(graph, out var database);
+            var textView = view.graphElements
+                .OfType<DialogueTextNodeView>()
+                .Single(nodeView => nodeView.Data.Id == node.Id);
+
+            textView.SetPosition(new Rect(new Vector2(320f, 220f), DialogueGraphView.TextNodeInitialSize));
+            view.EndUndoGesture();
+
+            Assert.That(GetResolvedNode<DialogueTextNodeData>(database, node.Id).Position, Is.EqualTo(new Vector2(320f, 220f)));
+
+            Undo.PerformUndo();
+            Assert.That(GetResolvedNode<DialogueTextNodeData>(database, node.Id).Position, Is.EqualTo(new Vector2(100f, 100f)));
+
+            Undo.PerformRedo();
+            Assert.That(GetResolvedNode<DialogueTextNodeData>(database, node.Id).Position, Is.EqualTo(new Vector2(320f, 220f)));
+        }
+
+        [Test]
+        public void MovingCommentGroup_UndoRedo_RestoresContainedNodePositions()
+        {
+            var graph = new DialogueGraphData();
+            var comment = new CommentNodeData
+            {
+                Title = "Group",
+                Position = new Vector2(100f, 100f),
+                Area = new Rect(100f, 100f, 420f, 260f)
+            };
+            var textNode = new DialogueTextNodeData
+            {
+                Title = "Inside",
+                Position = new Vector2(130f, 130f)
+            };
+
+            graph.Nodes.Add(comment);
+            graph.Nodes.Add(textNode);
+
+            var view = CreateUndoEnabledView(graph, out var database);
+            var commentView = view.graphElements
+                .OfType<DialogueCommentNodeView>()
+                .Single(nodeView => nodeView.Data.Id == comment.Id);
+
+            commentView.SetPosition(new Rect(new Vector2(260f, 220f), comment.Area.size));
+            view.EndUndoGesture();
+
+            Assert.That(GetResolvedNode<CommentNodeData>(database, comment.Id).Area.position, Is.EqualTo(new Vector2(260f, 220f)));
+            Assert.That(GetResolvedNode<DialogueTextNodeData>(database, textNode.Id).Position, Is.EqualTo(new Vector2(290f, 250f)));
+
+            Undo.PerformUndo();
+            Assert.That(GetResolvedNode<CommentNodeData>(database, comment.Id).Area.position, Is.EqualTo(new Vector2(100f, 100f)));
+            Assert.That(GetResolvedNode<DialogueTextNodeData>(database, textNode.Id).Position, Is.EqualTo(new Vector2(130f, 130f)));
+        }
+
+        [Test]
+        public void ResizeCommentNode_UndoRedo_RestoresArea()
+        {
+            var graph = new DialogueGraphData();
+            var comment = new CommentNodeData
+            {
+                Title = "Resizable",
+                Position = new Vector2(100f, 100f),
+                Area = new Rect(100f, 100f, 420f, 260f)
+            };
+            graph.Nodes.Add(comment);
+
+            var view = CreateUndoEnabledView(graph, out var database);
+            var commentView = view.graphElements
+                .OfType<DialogueCommentNodeView>()
+                .Single(nodeView => nodeView.Data.Id == comment.Id);
+
+            commentView.ResizeTo(new Rect(comment.Area.position, new Vector2(620f, 410f)));
+            view.EndUndoGesture();
+
+            Assert.That(GetResolvedNode<CommentNodeData>(database, comment.Id).Area.size, Is.EqualTo(new Vector2(620f, 410f)));
+
+            Undo.PerformUndo();
+            Assert.That(GetResolvedNode<CommentNodeData>(database, comment.Id).Area.size, Is.EqualTo(new Vector2(420f, 260f)));
+
+            Undo.PerformRedo();
+            Assert.That(GetResolvedNode<CommentNodeData>(database, comment.Id).Area.size, Is.EqualTo(new Vector2(620f, 410f)));
+        }
+
+        [Test]
+        public void CutSelectionToClipboard_UndoRedo_RestoresRemovedHierarchy()
+        {
+            var graph = new DialogueGraphData();
+            var rootComment = new CommentNodeData
+            {
+                Title = "Root",
+                Position = new Vector2(0f, 0f),
+                Area = new Rect(0f, 0f, 900f, 900f)
+            };
+            var nestedText = new DialogueTextNodeData
+            {
+                Title = "Nested Text",
+                Position = new Vector2(120f, 120f)
+            };
+            var externalText = new DialogueTextNodeData
+            {
+                Title = "External",
+                Position = new Vector2(1200f, 1200f)
+            };
+
+            graph.Nodes.Add(rootComment);
+            graph.Nodes.Add(nestedText);
+            graph.Nodes.Add(externalText);
+
+            var view = CreateUndoEnabledView(graph, out var database);
+            view.SelectCommentGroup(rootComment);
+
+            Assert.That(view.CutSelectionToClipboard(), Is.True);
+            Assert.That(GetResolvedGraph(database).Nodes.Select(node => node.Id), Is.EquivalentTo(new[] { externalText.Id }));
+
+            Undo.PerformUndo();
+            Assert.That(GetResolvedGraph(database).Nodes.Select(node => node.Id), Is.EquivalentTo(new[]
+            {
+                rootComment.Id,
+                nestedText.Id,
+                externalText.Id
+            }));
+
+            Undo.PerformRedo();
+            Assert.That(GetResolvedGraph(database).Nodes.Select(node => node.Id), Is.EquivalentTo(new[] { externalText.Id }));
+        }
+
         private static Label GetEmptyStateLabel(DialogueGraphView view)
         {
             return view.Q<Label>(className: "dialogue-graph-empty-state");
+        }
+
+        private static DialogueGraphView CreateUndoEnabledView(DialogueGraphData graph, out DialogueDatabaseAsset database)
+        {
+            database = ScriptableObject.CreateInstance<DialogueDatabaseAsset>();
+            var npc = new NpcEntry { Name = "NPC" };
+            var dialogue = new DialogueEntry
+            {
+                Name = "Dialogue",
+                Graph = graph
+            };
+
+            npc.Dialogues.Add(dialogue);
+            database.Npcs.Add(npc);
+
+            var activeUndoGroup = -1;
+            var view = new DialogueGraphView
+            {
+                ApplyUndoableChangeAction = (actionName, mutate) =>
+                {
+                    Undo.IncrementCurrentGroup();
+                    var group = Undo.GetCurrentGroup();
+                    Undo.SetCurrentGroupName(actionName);
+                    Undo.RegisterCompleteObjectUndo(database, actionName);
+                    mutate();
+                    Undo.CollapseUndoOperations(group);
+                },
+                BeginUndoGestureAction = actionName =>
+                {
+                    if (activeUndoGroup != -1)
+                    {
+                        return;
+                    }
+
+                    Undo.IncrementCurrentGroup();
+                    activeUndoGroup = Undo.GetCurrentGroup();
+                    Undo.SetCurrentGroupName(actionName);
+                    Undo.RegisterCompleteObjectUndo(database, actionName);
+                },
+                EndUndoGestureAction = () =>
+                {
+                    if (activeUndoGroup == -1)
+                    {
+                        return;
+                    }
+
+                    var group = activeUndoGroup;
+                    activeUndoGroup = -1;
+                    Undo.CollapseUndoOperations(group);
+                }
+            };
+
+            view.LoadGraph(dialogue.Graph);
+            return view;
+        }
+
+        private static DialogueGraphData GetResolvedGraph(DialogueDatabaseAsset database)
+        {
+            return database.Npcs[0].Dialogues[0].Graph;
+        }
+
+        private static TNode GetResolvedNode<TNode>(DialogueDatabaseAsset database, string nodeId) where TNode : BaseNodeData
+        {
+            return GetResolvedGraph(database).Nodes.OfType<TNode>().Single(node => node.Id == nodeId);
         }
     }
 }

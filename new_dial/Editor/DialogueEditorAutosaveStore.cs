@@ -43,9 +43,19 @@ namespace NewDial.DialogueEditor
                 return;
             }
 
-            var snapshot = DialogueDatabaseSnapshot.FromDatabase(database);
-            var json = JsonUtility.ToJson(snapshot, true);
+            var json = CaptureSnapshotJson(database, true);
             File.WriteAllText(GetSnapshotPath(storageKey, rootFolderOverride), json);
+        }
+
+        internal static string CaptureSnapshotJson(DialogueDatabaseAsset database, bool prettyPrint = false)
+        {
+            if (database == null)
+            {
+                return string.Empty;
+            }
+
+            var snapshot = DialogueDatabaseSnapshot.FromDatabase(database);
+            return JsonUtility.ToJson(snapshot, prettyPrint);
         }
 
         public static bool TryLoadSnapshot(DialogueDatabaseAsset database, string storageKey, string rootFolderOverride = null)

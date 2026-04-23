@@ -12,6 +12,7 @@ The package is intentionally scoped as an MVP. It already includes a reusable ru
 
 - dialogue database asset model built around NPCs, dialogues, graphs, nodes, and links
 - graph editor for text nodes, comment groups, ordered links, conditions, and choice-style branches
+- native Unity undo/redo for graph-node operations and node-inspector edits
 - preview window with branching playback, transcript history, backtracking, restart, and active-node jump
 - autosave snapshots stored outside tracked assets
 - package sample that creates a small branching adventure database
@@ -54,13 +55,14 @@ The start window can create a new `DialogueDatabaseAsset` or load an existing on
 | Implemented | Traversal helper | `DialoguePlayer` supports start, linear advance, and choice selection |
 | Implemented | Conditions | Lightweight start/node gating through `ConditionData` and evaluator interfaces |
 | Implemented | Graph authoring | Text nodes, comment nodes, ordered links, choice text, and details editing |
+| Implemented | Undo/redo | Native Unity undo/redo for node creation, deletion, movement, resize, links, and node/link inspector edits |
 | Implemented | Preview workflow | Transcript history, `Next`, `Back`, `Restart`, and `Jump To Active Node` |
 | Implemented | Autosave | JSON snapshots stored under the consuming Unity project's `Library` folder |
 | Implemented | Package sample | `Basic Adventure Sample` shows branching, conditions, and comment notes |
 | Experimental | Graph surface | Built on `UnityEditor.Experimental.GraphView` |
 | Out of scope | Production dialogue UI | No shipped in-game conversation presentation |
 | Out of scope | Advanced expressions | Current conditions are intentionally lightweight |
-| Out of scope | Undo/redo guarantees | Not documented as production-ready yet |
+| Out of scope | Project-tree undo/redo | NPC, Dialogue, and dialogue-settings edits outside node scope are not covered yet |
 | Out of scope | Function/Scene/Debug execution | Palette entries are placeholders only |
 
 ## Runtime API at a glance
@@ -93,5 +95,6 @@ These APIs are suitable for the current MVP package workflow, but they should no
 
 - Autosaves are written to the consuming Unity project's `Library/DialogueEditorAutosaves` folder.
 - The editor currently prompts to save or discard unsaved changes before opening another dialogue database.
+- `Cmd+Z` on macOS and `Ctrl+Z` on Windows restore node-scope graph and inspector changes through Unity's undo stack.
 - Empty-graph messaging, nested comment-group movement, and clipboard-based group cutting are part of the current editor behavior.
 - For a fuller implementation snapshot, see [`../docs/current-state.md`](../docs/current-state.md).

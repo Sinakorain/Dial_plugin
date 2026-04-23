@@ -51,6 +51,8 @@ This file describes the current working-tree behavior of `new_dial`, including c
 ### Current editor UX behaviors
 
 - Opening another database while the current one has unsaved changes triggers a save/discard prompt before the switch completes.
+- Native Unity undo/redo now covers node-scope graph operations: create/delete, drag, comment resize, links, cut/paste, and node/link inspector edits.
+- Undo/redo refreshes graph selection, inspector state, preview sessions, and autosave dirty-state against the last saved database snapshot.
 - The graph empty-state warning is visible for an empty graph, hides as soon as the first text or comment node is created, and returns when the last node is deleted.
 - Comment groups can own both text nodes and nested comment groups.
 - Nested ownership prefers the most specific containing comment group when several comment areas overlap.
@@ -98,7 +100,7 @@ These types are intended for the current MVP package workflow. They are not yet 
 
 - production in-game dialogue UI
 - advanced expression authoring
-- undo/redo workflow guarantees
+- undo/redo for NPC, Dialogue, and dialogue-settings edits outside node scope
 - Function node execution
 - Scene node execution
 - Debug node execution
@@ -111,3 +113,4 @@ EditMode coverage currently exists for:
 - graph utility deletion and autosave round-tripping
 - preview session transcript, end-state, and backtracking behavior
 - graph rendering, link order normalization, empty-state behavior, comment-group movement, nested ownership resolution, clipboard cut behavior, and keyboard-pan focus rules
+- undo/redo for node creation, link edits, node movement, comment resize, selection restoration, and autosave dirty-state reset

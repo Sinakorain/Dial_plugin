@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using UnityEditor;
 using UnityEditor.UIElements;
@@ -21,6 +22,9 @@ namespace NewDial.DialogueEditor
         private bool _isEditorQuitting;
         private bool _hasHandledClosePrompt;
         private bool _lifecycleHooksRegistered;
+        private bool _isProcessingUndoRedo;
+        private int _activeUndoGestureGroup = -1;
+        private string _savedStateSnapshot = string.Empty;
 
         private DialogueGraphView _graphView;
         private ScrollView _projectView;
@@ -36,6 +40,26 @@ namespace NewDial.DialogueEditor
             var window = GetWindow<DialogueEditorWindow>("Dialogue Graph");
             window.minSize = new Vector2(1200f, 700f);
             window.TryOpenDatabase(asset);
+        }
+
+        internal DialogueGraphView GraphViewForTests => _graphView;
+        internal bool HasUnsavedChangesForTests => _hasUnsavedChanges;
+        internal string SelectedNodeIdForTests => _selectedNode?.Id;
+
+        internal void InitializeForTests(DialogueDatabaseAsset asset)
+        {
+            RegisterLifecycleHooks();
+            ApplyStyles();
+            BuildLayout();
+            LoadDatabase(asset);
+        }
+
+        internal void SaveBaselineForTests()
+        {
+            _savedStateSnapshot = _database == null
+                ? string.Empty
+                : DialogueEditorAutosaveStore.CaptureSnapshotJson(_database);
+            SyncDirtyState(false);
         }
 
         private void OnEnable()
@@ -110,7 +134,10 @@ namespace NewDial.DialogueEditor
             {
                 GraphChangedAction = OnGraphChanged,
                 SelectionChangedAction = OnNodeSelectionChanged,
-                CanvasFocusChangedAction = focused => _graphHost?.EnableInClassList("is-focused", focused)
+                CanvasFocusChangedAction = focused => _graphHost?.EnableInClassList("is-focused", focused),
+                ApplyUndoableChangeAction = ApplyUndoableNodeChange,
+                BeginUndoGestureAction = BeginUndoGesture,
+                EndUndoGestureAction = EndUndoGesture
             };
             _graphView.AddToClassList("dialogue-editor__graph-surface");
             _graphHost.Add(_graphView);
@@ -308,11 +335,13 @@ namespace NewDial.DialogueEditor
         {
             _database = asset;
             _selectedNode = null;
-            var restoredAutosave = false;
+            _savedStateSnapshot = _database == null
+                ? string.Empty
+                : DialogueEditorAutosaveStore.CaptureSnapshotJson(_database);
 
             if (_database != null)
             {
-                restoredAutosave = DialogueEditorAutosaveStore.TryLoadSnapshot(_database, DialogueEditorAutosaveStore.GetStorageKey(_database));
+                DialogueEditorAutosaveStore.TryLoadSnapshot(_database, DialogueEditorAutosaveStore.GetStorageKey(_database));
                 _selectedNpc = _database.Npcs.FirstOrDefault();
                 _selectedDialogue = _selectedNpc?.Dialogues.FirstOrDefault();
             }
@@ -322,7 +351,7 @@ namespace NewDial.DialogueEditor
                 _selectedDialogue = null;
             }
 
-            _hasUnsavedChanges = restoredAutosave;
+            SyncDirtyState(false);
             RefreshAll();
         }
 
@@ -397,9 +426,8 @@ namespace NewDial.DialogueEditor
 
             EditorUtility.SetDirty(_database);
             AssetDatabase.SaveAssets();
-            DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(_database));
-            _hasUnsavedChanges = false;
-            RefreshStatus();
+            _savedStateSnapshot = DialogueEditorAutosaveStore.CaptureSnapshotJson(_database);
+            SyncDirtyState(false);
             if (showNotification)
             {
                 ShowNotification(new GUIContent("Dialogue database saved."));
@@ -603,57 +631,51 @@ namespace NewDial.DialogueEditor
         {
             _inspectorView.Add(CreateSectionTitle("Text Node"));
 
-            var titleField = new TextField("Title") { value = node.Title };
+            var titleField = new TextField("Title") { value = node.Title, name = "node-title-field" };
             titleField.RegisterValueChangedCallback(evt =>
             {
-                node.Title = evt.newValue;
-                _graphView.RefreshNodeVisuals();
-                MarkChanged();
+                PerformNodeScopedChange("Edit Node Title", () => node.Title = evt.newValue, refreshNodeVisuals: true);
             });
             _inspectorView.Add(titleField);
 
             var bodyField = new TextField("Body Text")
             {
                 value = node.BodyText,
-                multiline = true
+                multiline = true,
+                name = "node-body-field"
             };
             bodyField.AddToClassList("dialogue-editor__multiline-field");
             bodyField.RegisterValueChangedCallback(evt =>
             {
-                node.BodyText = evt.newValue;
-                _graphView.RefreshNodeVisuals();
-                MarkChanged();
+                PerformNodeScopedChange("Edit Node Body", () => node.BodyText = evt.newValue, refreshNodeVisuals: true);
             });
             _inspectorView.Add(bodyField);
 
-            var startToggle = new Toggle("Is Start Node") { value = node.IsStartNode };
+            var startToggle = new Toggle("Is Start Node") { value = node.IsStartNode, name = "node-start-toggle" };
             startToggle.RegisterValueChangedCallback(evt =>
             {
-                if (evt.newValue)
+                PerformNodeScopedChange("Toggle Start Node", () =>
                 {
-                    DialogueGraphUtility.EnsureSingleStartNode(_selectedDialogue.Graph, node.Id);
-                }
-                else if (DialogueGraphUtility.FindStartNode(_selectedDialogue) == node)
-                {
-                    node.IsStartNode = false;
-                }
-
-                _graphView.RefreshNodeVisuals();
-                MarkChanged();
-                RefreshInspector();
+                    if (evt.newValue)
+                    {
+                        DialogueGraphUtility.EnsureSingleStartNode(_selectedDialogue.Graph, node.Id);
+                    }
+                    else if (DialogueGraphUtility.FindStartNode(_selectedDialogue) == node)
+                    {
+                        node.IsStartNode = false;
+                    }
+                }, refreshNodeVisuals: true, refreshInspector: true);
             });
             _inspectorView.Add(startToggle);
 
-            var choiceToggle = new Toggle("Use Outputs As Choices") { value = node.UseOutputsAsChoices };
+            var choiceToggle = new Toggle("Use Outputs As Choices") { value = node.UseOutputsAsChoices, name = "node-choice-toggle" };
             choiceToggle.RegisterValueChangedCallback(evt =>
             {
-                node.UseOutputsAsChoices = evt.newValue;
-                _graphView.RefreshNodeVisuals();
-                MarkChanged();
+                PerformNodeScopedChange("Toggle Node Choice Mode", () => node.UseOutputsAsChoices = evt.newValue, refreshNodeVisuals: true);
             });
             _inspectorView.Add(choiceToggle);
 
-            BuildConditionEditor(node.Condition, "Condition");
+            BuildConditionEditor(node.Condition, "Condition", "Edit Node Condition");
             BuildLinksInspector(node);
 
             var deleteButton = new Button(() => _graphView.DeleteNode(node)) { text = "Delete Node" };
@@ -665,26 +687,23 @@ namespace NewDial.DialogueEditor
         {
             _inspectorView.Add(CreateSectionTitle("Comment"));
 
-            var titleField = new TextField("Title") { value = node.Title };
+            var titleField = new TextField("Title") { value = node.Title, name = "comment-title-field" };
             titleField.RegisterValueChangedCallback(evt =>
             {
-                node.Title = evt.newValue;
-                _graphView.RefreshNodeVisuals();
-                MarkChanged();
+                PerformNodeScopedChange("Edit Comment Title", () => node.Title = evt.newValue, refreshNodeVisuals: true);
             });
             _inspectorView.Add(titleField);
 
             var commentField = new TextField("Comment")
             {
                 value = node.Comment,
-                multiline = true
+                multiline = true,
+                name = "comment-body-field"
             };
             commentField.AddToClassList("dialogue-editor__multiline-field");
             commentField.RegisterValueChangedCallback(evt =>
             {
-                node.Comment = evt.newValue;
-                _graphView.RefreshNodeVisuals();
-                MarkChanged();
+                PerformNodeScopedChange("Edit Comment Body", () => node.Comment = evt.newValue, refreshNodeVisuals: true);
             });
             _inspectorView.Add(commentField);
 
@@ -692,23 +711,23 @@ namespace NewDial.DialogueEditor
             {
                 value = node.Tint,
                 showAlpha = true,
-                hdr = false
+                hdr = false,
+                name = "comment-tint-field"
             };
             tintField.RegisterValueChangedCallback(evt =>
             {
-                node.Tint = evt.newValue;
-                _graphView.RefreshNodeVisuals();
-                MarkChanged();
+                PerformNodeScopedChange("Edit Comment Tint", () => node.Tint = evt.newValue, refreshNodeVisuals: true);
             });
             _inspectorView.Add(tintField);
 
-            var areaField = new RectField("Area") { value = node.Area };
+            var areaField = new RectField("Area") { value = node.Area, name = "comment-area-field" };
             areaField.RegisterValueChangedCallback(evt =>
             {
-                node.Area = evt.newValue;
-                node.Position = evt.newValue.position;
-                _graphView.LoadGraph(_selectedDialogue?.Graph);
-                MarkChanged();
+                PerformNodeScopedChange("Edit Comment Area", () =>
+                {
+                    node.Area = evt.newValue;
+                    node.Position = evt.newValue.position;
+                }, reloadGraph: true);
             });
             _inspectorView.Add(areaField);
 
@@ -740,23 +759,21 @@ namespace NewDial.DialogueEditor
                 var target = DialogueGraphUtility.GetTextNode(_selectedDialogue.Graph, link.ToNodeId);
                 box.Add(new Label($"Target: {target?.Title ?? "Unconnected"}"));
 
-                var orderField = new IntegerField("Order") { value = link.Order };
+                var orderField = new IntegerField("Order") { value = link.Order, name = "link-order-field" };
                 orderField.RegisterValueChangedCallback(evt =>
                 {
-                    link.Order = Mathf.Max(0, evt.newValue);
-                    DialogueGraphUtility.NormalizeLinkOrder(_selectedDialogue.Graph, node.Id);
-                    _graphView.RefreshNodeVisuals();
-                    MarkChanged();
-                    RefreshInspector();
+                    PerformNodeScopedChange("Reorder Link", () =>
+                    {
+                        link.Order = Mathf.Max(0, evt.newValue);
+                        DialogueGraphUtility.NormalizeLinkOrder(_selectedDialogue.Graph, node.Id);
+                    }, refreshNodeVisuals: true, refreshInspector: true);
                 });
                 box.Add(orderField);
 
-                var choiceField = new TextField("Choice Text") { value = link.ChoiceText };
+                var choiceField = new TextField("Choice Text") { value = link.ChoiceText, name = "link-choice-field" };
                 choiceField.RegisterValueChangedCallback(evt =>
                 {
-                    link.ChoiceText = evt.newValue;
-                    _graphView.RefreshNodeVisuals();
-                    MarkChanged();
+                    PerformNodeScopedChange("Edit Link Choice Text", () => link.ChoiceText = evt.newValue, refreshNodeVisuals: true);
                 });
                 box.Add(choiceField);
 
@@ -775,39 +792,35 @@ namespace NewDial.DialogueEditor
             }
         }
 
-        private void BuildConditionEditor(ConditionData condition, string title)
+        private void BuildConditionEditor(ConditionData condition, string title, string undoActionPrefix = null)
         {
             _inspectorView.Add(CreateSectionTitle(title));
 
             var typeField = new EnumField("Type", condition.Type);
             typeField.RegisterValueChangedCallback(evt =>
             {
-                condition.Type = (ConditionType)evt.newValue;
-                MarkChanged();
+                ApplyConditionChange(undoActionPrefix, "Type", () => condition.Type = (ConditionType)evt.newValue);
             });
             _inspectorView.Add(typeField);
 
             var keyField = new TextField("Key") { value = condition.Key };
             keyField.RegisterValueChangedCallback(evt =>
             {
-                condition.Key = evt.newValue;
-                MarkChanged();
+                ApplyConditionChange(undoActionPrefix, "Key", () => condition.Key = evt.newValue);
             });
             _inspectorView.Add(keyField);
 
             var operatorField = new TextField("Operator") { value = condition.Operator };
             operatorField.RegisterValueChangedCallback(evt =>
             {
-                condition.Operator = evt.newValue;
-                MarkChanged();
+                ApplyConditionChange(undoActionPrefix, "Operator", () => condition.Operator = evt.newValue);
             });
             _inspectorView.Add(operatorField);
 
             var valueField = new TextField("Value") { value = condition.Value };
             valueField.RegisterValueChangedCallback(evt =>
             {
-                condition.Value = evt.newValue;
-                MarkChanged();
+                ApplyConditionChange(undoActionPrefix, "Value", () => condition.Value = evt.newValue);
             });
             _inspectorView.Add(valueField);
         }
@@ -1112,9 +1125,12 @@ namespace NewDial.DialogueEditor
 
         private void MarkChanged()
         {
-            _hasUnsavedChanges = true;
-            SaveAutosave();
-            RefreshStatus();
+            if (_database != null && !_isProcessingUndoRedo)
+            {
+                EditorUtility.SetDirty(_database);
+            }
+
+            SyncDirtyState(_activeUndoGestureGroup == -1);
         }
 
         private void ClearAutosaveSnapshot()
@@ -1145,6 +1161,7 @@ namespace NewDial.DialogueEditor
 
             AssemblyReloadEvents.beforeAssemblyReload += OnBeforeAssemblyReload;
             EditorApplication.quitting += OnEditorQuitting;
+            Undo.undoRedoPerformed += OnUndoRedoPerformed;
             _lifecycleHooksRegistered = true;
         }
 
@@ -1157,6 +1174,7 @@ namespace NewDial.DialogueEditor
 
             AssemblyReloadEvents.beforeAssemblyReload -= OnBeforeAssemblyReload;
             EditorApplication.quitting -= OnEditorQuitting;
+            Undo.undoRedoPerformed -= OnUndoRedoPerformed;
             _lifecycleHooksRegistered = false;
         }
 
@@ -1168,6 +1186,38 @@ namespace NewDial.DialogueEditor
         private void OnEditorQuitting()
         {
             _isEditorQuitting = true;
+        }
+
+        private void OnUndoRedoPerformed()
+        {
+            if (_database == null)
+            {
+                return;
+            }
+
+            var selectedNpcId = _selectedNpc?.Id;
+            var selectedDialogueId = _selectedDialogue?.Id;
+            var selectedNodeId = _selectedNode?.Id;
+
+            _activeUndoGestureGroup = -1;
+            _isProcessingUndoRedo = true;
+            try
+            {
+                ResolveSelectionState(selectedNpcId, selectedDialogueId, selectedNodeId);
+                RefreshAll();
+                if (_graphView == null || !_graphView.RestoreSelection(selectedNodeId))
+                {
+                    _selectedNode = null;
+                    RefreshInspector();
+                }
+            }
+            finally
+            {
+                _isProcessingUndoRedo = false;
+            }
+
+            SyncDirtyState(false);
+            DialoguePreviewWindow.RefreshOpenWindows(this);
         }
 
         private void ApplyStyles()
@@ -1216,13 +1266,20 @@ namespace NewDial.DialogueEditor
             }
         }
 
-        private bool TryResolveDialogue(DialogueEntry dialogue, out NpcEntry ownerNpc, out DialogueEntry resolvedDialogue)
+        internal bool TryResolveDialogueById(string dialogueId, out NpcEntry ownerNpc, out DialogueEntry resolvedDialogue)
         {
+            if (_database == null || string.IsNullOrWhiteSpace(dialogueId))
+            {
+                ownerNpc = null;
+                resolvedDialogue = null;
+                return false;
+            }
+
             foreach (var npc in _database.Npcs)
             {
                 foreach (var candidate in npc.Dialogues)
                 {
-                    if (ReferenceEquals(candidate, dialogue) || candidate.Id == dialogue.Id)
+                    if (candidate?.Id == dialogueId)
                     {
                         ownerNpc = npc;
                         resolvedDialogue = candidate;
@@ -1234,6 +1291,178 @@ namespace NewDial.DialogueEditor
             ownerNpc = null;
             resolvedDialogue = null;
             return false;
+        }
+
+        private bool TryResolveDialogue(DialogueEntry dialogue, out NpcEntry ownerNpc, out DialogueEntry resolvedDialogue)
+        {
+            if (dialogue == null)
+            {
+                ownerNpc = null;
+                resolvedDialogue = null;
+                return false;
+            }
+
+            return TryResolveDialogueById(dialogue.Id, out ownerNpc, out resolvedDialogue);
+        }
+
+        private void ApplyUndoableNodeChange(string actionName, Action mutate)
+        {
+            if (_database == null || mutate == null)
+            {
+                return;
+            }
+
+            if (_isProcessingUndoRedo)
+            {
+                mutate();
+                return;
+            }
+
+            Undo.IncrementCurrentGroup();
+            var group = Undo.GetCurrentGroup();
+            Undo.SetCurrentGroupName(actionName);
+            Undo.RegisterCompleteObjectUndo(_database, actionName);
+            mutate();
+            Undo.CollapseUndoOperations(group);
+        }
+
+        private void PerformNodeScopedChange(
+            string actionName,
+            Action mutate,
+            bool refreshNodeVisuals = false,
+            bool reloadGraph = false,
+            bool refreshInspector = false,
+            bool refreshProjectPanel = false)
+        {
+            ApplyUndoableNodeChange(actionName, () =>
+            {
+                mutate();
+
+                if (reloadGraph)
+                {
+                    _graphView?.LoadGraph(_selectedDialogue?.Graph);
+                }
+                else if (refreshNodeVisuals)
+                {
+                    _graphView?.RefreshNodeVisuals();
+                }
+
+                MarkChanged();
+
+                if (refreshProjectPanel)
+                {
+                    RefreshProjectPanel();
+                }
+
+                if (refreshInspector)
+                {
+                    RefreshInspector();
+                }
+            });
+        }
+
+        private void ApplyConditionChange(string undoActionPrefix, string fieldName, Action mutate)
+        {
+            if (mutate == null)
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(undoActionPrefix))
+            {
+                mutate();
+                MarkChanged();
+                return;
+            }
+
+            PerformNodeScopedChange($"{undoActionPrefix} {fieldName}", mutate);
+        }
+
+        private void BeginUndoGesture(string actionName)
+        {
+            if (_database == null || _isProcessingUndoRedo || _activeUndoGestureGroup != -1)
+            {
+                return;
+            }
+
+            Undo.IncrementCurrentGroup();
+            _activeUndoGestureGroup = Undo.GetCurrentGroup();
+            Undo.SetCurrentGroupName(actionName);
+            Undo.RegisterCompleteObjectUndo(_database, actionName);
+        }
+
+        private void EndUndoGesture()
+        {
+            if (_activeUndoGestureGroup == -1)
+            {
+                return;
+            }
+
+            var group = _activeUndoGestureGroup;
+            _activeUndoGestureGroup = -1;
+            Undo.CollapseUndoOperations(group);
+            MarkChanged();
+        }
+
+        private void SyncDirtyState(bool persistAutosave)
+        {
+            if (_database == null)
+            {
+                _hasUnsavedChanges = false;
+                RefreshStatus();
+                return;
+            }
+
+            var currentSnapshot = DialogueEditorAutosaveStore.CaptureSnapshotJson(_database);
+            _hasUnsavedChanges = !string.Equals(currentSnapshot, _savedStateSnapshot, StringComparison.Ordinal);
+
+            if (_hasUnsavedChanges)
+            {
+                if (persistAutosave)
+                {
+                    SaveAutosave();
+                }
+            }
+            else
+            {
+                ClearAutosaveSnapshot();
+            }
+
+            RefreshStatus();
+        }
+
+        private void ResolveSelectionState(string selectedNpcId, string selectedDialogueId, string selectedNodeId)
+        {
+            _selectedNode = null;
+            _selectedDialogue = null;
+            _selectedNpc = null;
+
+            if (_database == null)
+            {
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(selectedDialogueId) &&
+                TryResolveDialogueById(selectedDialogueId, out var ownerNpc, out var resolvedDialogue))
+            {
+                _selectedNpc = ownerNpc;
+                _selectedDialogue = resolvedDialogue;
+            }
+            else if (!string.IsNullOrWhiteSpace(selectedNpcId))
+            {
+                _selectedNpc = _database.Npcs.FirstOrDefault(npc => npc?.Id == selectedNpcId) ?? _database.Npcs.FirstOrDefault();
+                _selectedDialogue = _selectedNpc?.Dialogues.FirstOrDefault();
+            }
+            else
+            {
+                _selectedNpc = _database.Npcs.FirstOrDefault();
+                _selectedDialogue = _selectedNpc?.Dialogues.FirstOrDefault();
+            }
+
+            if (_selectedDialogue != null && !string.IsNullOrWhiteSpace(selectedNodeId))
+            {
+                _selectedNode = DialogueGraphUtility.GetNode(_selectedDialogue.Graph, selectedNodeId);
+            }
         }
 
         private sealed class PaletteItem : VisualElement

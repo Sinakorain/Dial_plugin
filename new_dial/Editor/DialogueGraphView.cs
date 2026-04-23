@@ -110,6 +110,9 @@ namespace NewDial.DialogueEditor
         public Action<BaseNodeData> SelectionChangedAction { get; set; }
         public Action GraphChangedAction { get; set; }
         public Action<bool> CanvasFocusChangedAction { get; set; }
+        public Action<string, Action> ApplyUndoableChangeAction { get; set; }
+        public Action<string> BeginUndoGestureAction { get; set; }
+        public Action EndUndoGestureAction { get; set; }
 
         public DialogueGraphData Graph => _graph;
         public bool HasCanvasFocus => _hasCanvasFocus;
@@ -167,24 +170,27 @@ namespace NewDial.DialogueEditor
                 return;
             }
 
-            var node = new DialogueTextNodeData
+            ApplyUndoableChange("Create Text Node", () =>
             {
-                Title = "Text Node",
-                Position = position
-            };
+                var node = new DialogueTextNodeData
+                {
+                    Title = "Text Node",
+                    Position = position
+                };
 
-            _graph.Nodes.Add(node);
-            var view = CreateTextNodeView(node);
-            if (_graph.Nodes.OfType<DialogueTextNodeData>().Count() == 1)
-            {
-                DialogueGraphUtility.EnsureSingleStartNode(_graph, node.Id);
-            }
+                _graph.Nodes.Add(node);
+                var view = CreateTextNodeView(node);
+                if (_graph.Nodes.OfType<DialogueTextNodeData>().Count() == 1)
+                {
+                    DialogueGraphUtility.EnsureSingleStartNode(_graph, node.Id);
+                }
 
-            RefreshNodeVisuals();
-            SelectNode(view, node);
-            FocusCanvas();
-            UpdateEmptyState();
-            MarkChanged();
+                RefreshNodeVisuals();
+                SelectNode(view, node);
+                FocusCanvas();
+                UpdateEmptyState();
+                MarkChanged();
+            });
         }
 
         public void CreateCommentNode(Vector2 position)
@@ -194,22 +200,25 @@ namespace NewDial.DialogueEditor
                 return;
             }
 
-            var node = new CommentNodeData
+            ApplyUndoableChange("Create Comment Node", () =>
             {
-                Title = "Comment",
-                Position = position,
-                Area = new Rect(position, CommentNodeInitialSize),
-                Comment = "Group related dialogue nodes here.",
-                Tint = new Color(0.23f, 0.34f, 0.56f, 0.26f)
-            };
+                var node = new CommentNodeData
+                {
+                    Title = "Comment",
+                    Position = position,
+                    Area = new Rect(position, CommentNodeInitialSize),
+                    Comment = "Group related dialogue nodes here.",
+                    Tint = new Color(0.23f, 0.34f, 0.56f, 0.26f)
+                };
 
-            _graph.Nodes.Add(node);
-            var view = CreateCommentNodeView(node);
-            RefreshNodeVisuals();
-            SelectNode(view, node);
-            FocusCanvas();
-            UpdateEmptyState();
-            MarkChanged();
+                _graph.Nodes.Add(node);
+                var view = CreateCommentNodeView(node);
+                RefreshNodeVisuals();
+                SelectNode(view, node);
+                FocusCanvas();
+                UpdateEmptyState();
+                MarkChanged();
+            });
         }
 
         internal bool BeginNodePlacement(DialoguePaletteItemType itemType, Vector2 worldPointerPosition)
@@ -303,18 +312,21 @@ namespace NewDial.DialogueEditor
                 return;
             }
 
-            if (node is CommentNodeData commentNode)
+            ApplyUndoableChange(node is CommentNodeData ? "Delete Comment Group" : "Delete Node", () =>
             {
-                DeleteCommentGroup(commentNode);
-            }
-            else
-            {
-                DialogueGraphUtility.DeleteNode(_graph, node.Id);
-            }
+                if (node is CommentNodeData commentNode)
+                {
+                    DeleteCommentGroup(commentNode);
+                }
+                else
+                {
+                    DialogueGraphUtility.DeleteNode(_graph, node.Id);
+                }
 
-            LoadGraph(_graph);
-            SelectionChangedAction?.Invoke(null);
-            MarkChanged();
+                LoadGraph(_graph);
+                SelectionChangedAction?.Invoke(null);
+                MarkChanged();
+            });
         }
 
         public bool CopySelectionToClipboard()
@@ -367,69 +379,75 @@ namespace NewDial.DialogueEditor
                 return false;
             }
 
-            var targetPosition = HasCanvasFocus
-                ? WorldToCanvasPosition(_lastPointerPosition)
-                : GetCanvasCenter();
-            var offset = targetPosition - _clipboard.ReferencePosition;
-            var idMap = new Dictionary<string, string>();
-            var pastedNodes = new List<BaseNodeData>();
-
-            foreach (var sourceNode in _clipboard.Nodes)
+            var pasted = false;
+            ApplyUndoableChange("Paste Nodes", () =>
             {
-                var clone = sourceNode.Clone();
-                var originalId = clone.Id;
-                clone.Id = GuidUtility.NewGuid();
-                clone.Position += offset;
+                var targetPosition = HasCanvasFocus
+                    ? WorldToCanvasPosition(_lastPointerPosition)
+                    : GetCanvasCenter();
+                var offset = targetPosition - _clipboard.ReferencePosition;
+                var idMap = new Dictionary<string, string>();
+                var pastedNodes = new List<BaseNodeData>();
 
-                if (clone is CommentNodeData commentNode)
+                foreach (var sourceNode in _clipboard.Nodes)
                 {
-                    commentNode.Area = new Rect(commentNode.Area.position + offset, commentNode.Area.size);
+                    var clone = sourceNode.Clone();
+                    var originalId = clone.Id;
+                    clone.Id = GuidUtility.NewGuid();
+                    clone.Position += offset;
+
+                    if (clone is CommentNodeData commentNode)
+                    {
+                        commentNode.Area = new Rect(commentNode.Area.position + offset, commentNode.Area.size);
+                    }
+                    else if (clone is DialogueTextNodeData textNode)
+                    {
+                        textNode.IsStartNode = false;
+                    }
+
+                    idMap[originalId] = clone.Id;
+                    pastedNodes.Add(clone);
+                    _graph.Nodes.Add(clone);
                 }
-                else if (clone is DialogueTextNodeData textNode)
+
+                foreach (var sourceLink in _clipboard.Links)
                 {
-                    textNode.IsStartNode = false;
+                    if (!idMap.TryGetValue(sourceLink.FromNodeId, out var fromId) ||
+                        !idMap.TryGetValue(sourceLink.ToNodeId, out var toId))
+                    {
+                        continue;
+                    }
+
+                    var clonedLink = sourceLink.Clone();
+                    clonedLink.Id = GuidUtility.NewGuid();
+                    clonedLink.FromNodeId = fromId;
+                    clonedLink.ToNodeId = toId;
+                    _graph.Links.Add(clonedLink);
                 }
 
-                idMap[originalId] = clone.Id;
-                pastedNodes.Add(clone);
-                _graph.Nodes.Add(clone);
-            }
-
-            foreach (var sourceLink in _clipboard.Links)
-            {
-                if (!idMap.TryGetValue(sourceLink.FromNodeId, out var fromId) ||
-                    !idMap.TryGetValue(sourceLink.ToNodeId, out var toId))
+                LoadGraph(_graph);
+                ClearSelection();
+                foreach (var pastedNode in pastedNodes)
                 {
-                    continue;
+                    if (pastedNode is DialogueTextNodeData textNode &&
+                        _textNodeViews.TryGetValue(textNode.Id, out var textView))
+                    {
+                        AddToSelection(textView);
+                    }
+                    else if (pastedNode is CommentNodeData commentNode &&
+                             _commentNodeViews.TryGetValue(commentNode.Id, out var commentView))
+                    {
+                        AddToSelection(commentView);
+                    }
                 }
 
-                var clonedLink = sourceLink.Clone();
-                clonedLink.Id = GuidUtility.NewGuid();
-                clonedLink.FromNodeId = fromId;
-                clonedLink.ToNodeId = toId;
-                _graph.Links.Add(clonedLink);
-            }
+                SelectionChangedAction?.Invoke(pastedNodes.LastOrDefault());
+                FocusCanvas();
+                MarkChanged();
+                pasted = true;
+            });
 
-            LoadGraph(_graph);
-            ClearSelection();
-            foreach (var pastedNode in pastedNodes)
-            {
-                if (pastedNode is DialogueTextNodeData textNode &&
-                    _textNodeViews.TryGetValue(textNode.Id, out var textView))
-                {
-                    AddToSelection(textView);
-                }
-                else if (pastedNode is CommentNodeData commentNode &&
-                         _commentNodeViews.TryGetValue(commentNode.Id, out var commentView))
-                {
-                    AddToSelection(commentView);
-                }
-            }
-
-            SelectionChangedAction?.Invoke(pastedNodes.LastOrDefault());
-            FocusCanvas();
-            MarkChanged();
-            return true;
+            return pasted;
         }
 
         public void RefreshNodeVisuals()
@@ -605,6 +623,11 @@ namespace NewDial.DialogueEditor
 
         internal NodeLinkData CreateLink(string fromNodeId, string toNodeId, bool markChanged = true)
         {
+            return CreateLink(fromNodeId, toNodeId, markChanged, true);
+        }
+
+        internal NodeLinkData CreateLink(string fromNodeId, string toNodeId, bool markChanged, bool registerUndo)
+        {
             if (_graph == null ||
                 string.IsNullOrWhiteSpace(fromNodeId) ||
                 string.IsNullOrWhiteSpace(toNodeId) ||
@@ -613,55 +636,68 @@ namespace NewDial.DialogueEditor
                 return null;
             }
 
-            var link = new NodeLinkData
+            NodeLinkData createdLink = null;
+            ApplyUndoableChange(registerUndo ? "Create Link" : null, () =>
             {
-                FromNodeId = fromNodeId,
-                ToNodeId = toNodeId,
-                Order = DialogueGraphUtility.GetOutgoingLinks(_graph, fromNodeId).Count
-            };
+                createdLink = new NodeLinkData
+                {
+                    FromNodeId = fromNodeId,
+                    ToNodeId = toNodeId,
+                    Order = DialogueGraphUtility.GetOutgoingLinks(_graph, fromNodeId).Count
+                };
 
-            _graph.Links.Add(link);
-            DialogueGraphUtility.NormalizeLinkOrder(_graph, fromNodeId);
+                _graph.Links.Add(createdLink);
+                DialogueGraphUtility.NormalizeLinkOrder(_graph, fromNodeId);
 
-            if (markChanged)
-            {
-                RefreshNodeVisuals();
-                MarkChanged();
-            }
+                if (markChanged)
+                {
+                    RefreshNodeVisuals();
+                    MarkChanged();
+                }
+            });
 
-            return link;
+            return createdLink;
         }
 
         internal bool DeleteLink(NodeLinkData link, bool markChanged = true, bool reloadGraph = false)
+        {
+            return DeleteLink(link, markChanged, reloadGraph, true);
+        }
+
+        internal bool DeleteLink(NodeLinkData link, bool markChanged, bool reloadGraph, bool registerUndo)
         {
             if (_graph == null || link == null)
             {
                 return false;
             }
 
-            var removed = _graph.Links.RemoveAll(existing => existing != null && existing.Id == link.Id) > 0;
-            if (!removed)
+            var removed = false;
+            ApplyUndoableChange(registerUndo ? "Delete Link" : null, () =>
             {
-                return false;
-            }
+                removed = _graph.Links.RemoveAll(existing => existing != null && existing.Id == link.Id) > 0;
+                if (!removed)
+                {
+                    return;
+                }
 
-            DialogueGraphUtility.NormalizeLinkOrder(_graph, link.FromNodeId);
+                DialogueGraphUtility.NormalizeLinkOrder(_graph, link.FromNodeId);
 
-            if (reloadGraph)
-            {
-                LoadGraph(_graph);
-            }
-            else
-            {
-                RefreshNodeVisuals();
-            }
+                if (reloadGraph)
+                {
+                    LoadGraph(_graph);
+                }
+                else
+                {
+                    RefreshNodeVisuals();
+                }
 
-            if (markChanged)
-            {
-                MarkChanged();
-            }
+                if (markChanged)
+                {
+                    MarkChanged();
+                }
+            });
 
-            return true;
+            return removed;
         }
 
         internal void NotifySelected(BaseNodeData node)
@@ -748,6 +784,21 @@ namespace NewDial.DialogueEditor
             GraphChangedAction?.Invoke();
         }
 
+        internal void BeginUndoGesture(string actionName)
+        {
+            if (string.IsNullOrWhiteSpace(actionName))
+            {
+                return;
+            }
+
+            BeginUndoGestureAction?.Invoke(actionName);
+        }
+
+        internal void EndUndoGesture()
+        {
+            EndUndoGestureAction?.Invoke();
+        }
+
         internal IEnumerable<NodeLinkData> GetOutgoingLinks(string nodeId)
         {
             return DialogueGraphUtility.GetOutgoingLinks(_graph, nodeId);
@@ -821,31 +872,35 @@ namespace NewDial.DialogueEditor
                 return change;
             }
 
-            var changed = false;
-
             if (change.elementsToRemove != null)
             {
-                foreach (var element in change.elementsToRemove)
+                ApplyUndoableChange("Delete Selection", () =>
                 {
-                    switch (element)
+                    var changed = false;
+                    foreach (var element in change.elementsToRemove)
                     {
-                        case DialogueTextNodeView textNodeView:
-                            DialogueGraphUtility.DeleteNode(_graph, textNodeView.Data.Id);
-                            changed = true;
-                            break;
-                        case DialogueCommentNodeView commentNodeView:
-                            DialogueGraphUtility.DeleteNode(_graph, commentNodeView.Data.Id);
-                            changed = true;
-                            break;
+                        switch (element)
+                        {
+                            case DialogueTextNodeView textNodeView:
+                                DialogueGraphUtility.DeleteNode(_graph, textNodeView.Data.Id);
+                                changed = true;
+                                break;
+                            case DialogueCommentNodeView commentNodeView:
+                                DialogueGraphUtility.DeleteNode(_graph, commentNodeView.Data.Id);
+                                changed = true;
+                                break;
+                        }
                     }
-                }
-            }
 
-            if (changed)
-            {
-                RefreshEdgeLayer();
-                RestoreCommentNodeLayering();
-                MarkChanged();
+                    if (changed)
+                    {
+                        RefreshEdgeLayer();
+                        RestoreCommentNodeLayering();
+                        UpdateEmptyState();
+                        SelectionChangedAction?.Invoke(null);
+                        MarkChanged();
+                    }
+                });
             }
 
             return change;
@@ -1369,6 +1424,8 @@ namespace NewDial.DialogueEditor
                     KeyCode.C => CopySelectionToClipboard(),
                     KeyCode.X => CutSelectionToClipboard(),
                     KeyCode.V => PasteClipboard(),
+                    KeyCode.Y => PerformRedo(),
+                    KeyCode.Z => evt.shiftKey ? PerformRedo() : PerformUndo(),
                     _ => false
                 };
 
@@ -1474,19 +1531,22 @@ namespace NewDial.DialogueEditor
                 return;
             }
 
-            foreach (var selectedNode in selectedNodes.OfType<CommentNodeData>())
+            ApplyUndoableChange("Delete Selection", () =>
             {
-                DeleteCommentGroup(selectedNode);
-            }
+                foreach (var selectedNode in selectedNodes.OfType<CommentNodeData>())
+                {
+                    DeleteCommentGroup(selectedNode);
+                }
 
-            foreach (var selectedNode in selectedNodes.Where(node => node is not CommentNodeData))
-            {
-                DialogueGraphUtility.DeleteNode(_graph, selectedNode.Id);
-            }
+                foreach (var selectedNode in selectedNodes.Where(node => node is not CommentNodeData))
+                {
+                    DialogueGraphUtility.DeleteNode(_graph, selectedNode.Id);
+                }
 
-            LoadGraph(_graph);
-            SelectionChangedAction?.Invoke(null);
-            MarkChanged();
+                LoadGraph(_graph);
+                SelectionChangedAction?.Invoke(null);
+                MarkChanged();
+            });
         }
 
         private List<BaseNodeData> GetExpandedSelectedNodeData()
@@ -1563,6 +1623,58 @@ namespace NewDial.DialogueEditor
         internal HashSet<string> GetSelectedNodeIds()
         {
             return new HashSet<string>(GetExpandedSelectedNodeData().Select(node => node.Id));
+        }
+
+        internal bool RestoreSelection(string nodeId)
+        {
+            if (string.IsNullOrWhiteSpace(nodeId))
+            {
+                ClearSelection();
+                return false;
+            }
+
+            if (_commentNodeViews.TryGetValue(nodeId, out var commentView))
+            {
+                SelectCommentGroup(commentView.Data);
+                return true;
+            }
+
+            if (_textNodeViews.TryGetValue(nodeId, out var textView))
+            {
+                SelectNode(textView, textView.Data);
+                return true;
+            }
+
+            ClearSelection();
+            return false;
+        }
+
+        private void ApplyUndoableChange(string actionName, Action mutate)
+        {
+            if (mutate == null)
+            {
+                return;
+            }
+
+            if (ApplyUndoableChangeAction != null && !string.IsNullOrWhiteSpace(actionName))
+            {
+                ApplyUndoableChangeAction(actionName, mutate);
+                return;
+            }
+
+            mutate();
+        }
+
+        private static bool PerformUndo()
+        {
+            Undo.PerformUndo();
+            return true;
+        }
+
+        private static bool PerformRedo()
+        {
+            Undo.PerformRedo();
+            return true;
         }
 
         [Serializable]
@@ -1656,6 +1768,8 @@ namespace NewDial.DialogueEditor
             extensionContainer.Add(_metaLabel);
 
             RegisterCallback<MouseDownEvent>(OnMouseDown, TrickleDown.TrickleDown);
+            RegisterCallback<MouseUpEvent>(OnMouseUp, TrickleDown.TrickleDown);
+            RegisterCallback<MouseCaptureOutEvent>(_ => _graphView.EndUndoGesture());
             RefreshFromData();
         }
 
@@ -1663,6 +1777,11 @@ namespace NewDial.DialogueEditor
 
         public override void SetPosition(Rect newPos)
         {
+            if (Data.Position != newPos.position)
+            {
+                _graphView.BeginUndoGesture("Move Node");
+            }
+
             base.SetPosition(newPos);
             Data.Position = newPos.position;
             _graphView.NotifyNodeMoved();
@@ -1727,6 +1846,16 @@ namespace NewDial.DialogueEditor
                 _graphView.BeginLinkDrag(this, worldPointerPosition);
                 evt.StopImmediatePropagation();
             }
+        }
+
+        private void OnMouseUp(MouseUpEvent evt)
+        {
+            if (evt.button != 0)
+            {
+                return;
+            }
+
+            _graphView.EndUndoGesture();
         }
 
         private Vector2 ToLocalPoint(Vector2 worldPointerPosition)
@@ -1874,6 +2003,7 @@ namespace NewDial.DialogueEditor
                     return;
                 }
 
+                _graphView.EndUndoGesture();
                 ResetPendingCommentSelect();
             }, TrickleDown.TrickleDown);
 
@@ -1888,6 +2018,7 @@ namespace NewDial.DialogueEditor
             RegisterCallback<MouseCaptureOutEvent>(_ =>
             {
                 CancelResize();
+                _graphView.EndUndoGesture();
                 ResetPendingCommentSelect();
             });
             RegisterCallback<GeometryChangedEvent>(_ => SyncVisualSize(GetPosition().size));
@@ -1903,6 +2034,19 @@ namespace NewDial.DialogueEditor
                 ? new Rect(Data.Position, DialogueGraphView.CommentNodeInitialSize)
                 : Data.Area;
             var previousPos = previousArea.position;
+            var previousSize = previousArea.size;
+            var positionChanged = previousPos != newPos.position;
+            var sizeChanged = previousSize != newPos.size;
+
+            if (_isResizing && sizeChanged)
+            {
+                _graphView.BeginUndoGesture("Resize Comment");
+            }
+            else if (!_isResizing && !_graphView.IsApplyingCommentGroupMove && positionChanged)
+            {
+                _graphView.BeginUndoGesture("Move Comment Group");
+            }
+
             base.SetPosition(newPos);
             SyncVisualSize(newPos.size);
             Data.Position = newPos.position;
@@ -1931,6 +2075,20 @@ namespace NewDial.DialogueEditor
             base.SetPosition(area);
             SyncVisualSize(area.size);
             RefreshExpandedState();
+        }
+
+        internal void ResizeTo(Rect resizedArea)
+        {
+            var wasResizing = _isResizing;
+            _isResizing = true;
+            try
+            {
+                SetPosition(resizedArea);
+            }
+            finally
+            {
+                _isResizing = wasResizing;
+            }
         }
 
         private void ApplyTint()
@@ -1984,11 +2142,7 @@ namespace NewDial.DialogueEditor
                     Mathf.Max(MinCommentWidth, _resizeStartArea.width + delta.x),
                     Mathf.Max(MinCommentHeight, _resizeStartArea.height + delta.y)));
 
-            base.SetPosition(resizedArea);
-            SyncVisualSize(resizedArea.size);
-            Data.Position = resizedArea.position;
-            Data.Area = resizedArea;
-            _graphView.NotifyNodeMoved();
+            SetPosition(resizedArea);
         }
 
         private void SyncVisualSize(Vector2 size)
@@ -2020,6 +2174,8 @@ namespace NewDial.DialogueEditor
             {
                 this.ReleaseMouse();
             }
+
+            _graphView.EndUndoGesture();
         }
 
         private void ResetPendingCommentSelect()
