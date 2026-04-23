@@ -1,23 +1,78 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using UnityEditor;
 using UnityEditor.Experimental.GraphView;
 using UnityEngine;
 using UnityEngine.UIElements;
 
 namespace NewDial.DialogueEditor
 {
+    internal enum DialoguePaletteItemType
+    {
+        TextNode,
+        Comment
+    }
+
     public class DialogueGraphView : GraphView
     {
+        private const float AnchorInset = 18f;
+        private const float PlacementGhostWidth = 270f;
+        private const float PlacementGhostHeight = 160f;
+
         private readonly Dictionary<string, DialogueTextNodeView> _textNodeViews = new();
         private readonly Dictionary<string, DialogueCommentNodeView> _commentNodeViews = new();
+        private readonly GridBackground _gridBackground;
+        private readonly DialogueEdgeLayer _edgeLayer;
+        private readonly VisualElement _placementGhost;
+        private readonly Label _placementGhostTitleLabel;
+        private readonly Label _placementGhostHintLabel;
+        private readonly Label _emptyStateLabel;
+
         private DialogueGraphData _graph;
         private bool _isReloading;
+        private Vector2 _lastPointerPosition;
+        private DialoguePaletteItemType? _placementNodeType;
+        private DialogueTextNodeView _activeLinkSource;
+        private DialogueTextNodeView _activeLinkTarget;
+        private Vector2 _activeLinkStartWorld;
+        private Vector2 _activeLinkPointerWorld;
 
         public DialogueGraphView()
         {
+            AddToClassList("dialogue-graph-view");
             style.flexGrow = 1f;
-            Insert(0, new GridBackground());
+
+            _gridBackground = new GridBackground();
+            _gridBackground.AddToClassList("dialogue-graph-grid");
+            Insert(0, _gridBackground);
+
+            _edgeLayer = new DialogueEdgeLayer
+            {
+                pickingMode = PickingMode.Ignore,
+                GeometryProvider = GetEdgeGeometries
+            };
+            _edgeLayer.AddToClassList("dialogue-edge-layer");
+            _edgeLayer.StretchToParentSize();
+            Insert(1, _edgeLayer);
+
+            _placementGhost = new VisualElement();
+            _placementGhost.AddToClassList("dialogue-placement-ghost");
+            _placementGhost.pickingMode = PickingMode.Ignore;
+            _placementGhost.style.display = DisplayStyle.None;
+            _placementGhostTitleLabel = new Label();
+            _placementGhostTitleLabel.AddToClassList("dialogue-placement-ghost__title");
+            _placementGhostHintLabel = new Label("Release on the graph to create this node.");
+            _placementGhostHintLabel.AddToClassList("dialogue-placement-ghost__hint");
+            _placementGhost.Add(_placementGhostTitleLabel);
+            _placementGhost.Add(_placementGhostHintLabel);
+            Add(_placementGhost);
+
+            _emptyStateLabel = new Label("Select a dialogue or create a new one to start building nodes.");
+            _emptyStateLabel.AddToClassList("dialogue-graph-empty-state");
+            _emptyStateLabel.pickingMode = PickingMode.Ignore;
+            Add(_emptyStateLabel);
+
             this.StretchToParentSize();
             SetupZoom(ContentZoomer.DefaultMinScale, ContentZoomer.DefaultMaxScale);
             this.AddManipulator(new ContentZoomer());
@@ -26,7 +81,9 @@ namespace NewDial.DialogueEditor
             this.AddManipulator(new RectangleSelector());
 
             graphViewChanged = OnGraphViewChanged;
-            RegisterCallback<MouseDownEvent>(OnMouseDown);
+            RegisterCallback<MouseMoveEvent>(OnMouseMove, TrickleDown.TrickleDown);
+            RegisterCallback<MouseDownEvent>(OnMouseDown, TrickleDown.TrickleDown);
+            RegisterCallback<MouseUpEvent>(OnMouseUp, TrickleDown.TrickleDown);
         }
 
         public Action<BaseNodeData> SelectionChangedAction { get; set; }
@@ -34,12 +91,9 @@ namespace NewDial.DialogueEditor
 
         public DialogueGraphData Graph => _graph;
 
-        public override List<Port> GetCompatiblePorts(Port startPort, NodeAdapter nodeAdapter)
+        public override void BuildContextualMenu(ContextualMenuPopulateEvent evt)
         {
-            return ports.ToList().Where(port =>
-                port != startPort &&
-                port.direction != startPort.direction &&
-                port.node != startPort.node).ToList();
+            base.BuildContextualMenu(evt);
         }
 
         public void LoadGraph(DialogueGraphData graph)
@@ -51,9 +105,13 @@ namespace NewDial.DialogueEditor
                 DeleteElements(graphElements.ToList());
                 _textNodeViews.Clear();
                 _commentNodeViews.Clear();
+                CancelLinkDrag();
+                CancelNodePlacement();
 
                 if (_graph == null)
                 {
+                    UpdateEmptyState();
+                    RefreshEdgeLayer();
                     return;
                 }
 
@@ -70,35 +128,8 @@ namespace NewDial.DialogueEditor
                     }
                 }
 
-                foreach (var link in _graph.Links.Where(link => !string.IsNullOrWhiteSpace(link.ToNodeId)))
-                {
-                    if (!_textNodeViews.TryGetValue(link.FromNodeId, out var fromNode))
-                    {
-                        continue;
-                    }
-
-                    if (!_textNodeViews.TryGetValue(link.ToNodeId, out var toNode))
-                    {
-                        continue;
-                    }
-
-                    if (!fromNode.TryGetOutputPort(link.Id, out var outputPort))
-                    {
-                        continue;
-                    }
-
-                    var edge = new Edge
-                    {
-                        output = outputPort,
-                        input = toNode.InputPort
-                    };
-
-                    edge.output.Connect(edge);
-                    edge.input.Connect(edge);
-                    AddElement(edge);
-                }
-
                 RefreshNodeVisuals();
+                UpdateEmptyState();
             }
             finally
             {
@@ -120,13 +151,14 @@ namespace NewDial.DialogueEditor
             };
 
             _graph.Nodes.Add(node);
-            CreateTextNodeView(node);
+            var view = CreateTextNodeView(node);
             if (_graph.Nodes.OfType<DialogueTextNodeData>().Count() == 1)
             {
                 DialogueGraphUtility.EnsureSingleStartNode(_graph, node.Id);
             }
 
             RefreshNodeVisuals();
+            SelectNode(view, node);
             MarkChanged();
         }
 
@@ -146,8 +178,77 @@ namespace NewDial.DialogueEditor
             };
 
             _graph.Nodes.Add(node);
-            CreateCommentNodeView(node);
+            var view = CreateCommentNodeView(node);
+            RefreshNodeVisuals();
+            SelectNode(view, node);
             MarkChanged();
+        }
+
+        internal bool BeginNodePlacement(DialoguePaletteItemType itemType, Vector2 worldPointerPosition)
+        {
+            if (_graph == null)
+            {
+                return false;
+            }
+
+            _placementNodeType = itemType;
+            _placementGhostTitleLabel.text = itemType == DialoguePaletteItemType.TextNode ? "Text Node" : "Comment";
+            UpdateNodePlacement(worldPointerPosition);
+            return true;
+        }
+
+        internal void UpdateNodePlacement(Vector2 worldPointerPosition)
+        {
+            if (_placementNodeType == null)
+            {
+                return;
+            }
+
+            _lastPointerPosition = worldPointerPosition;
+            var localPoint = this.WorldToLocal(worldPointerPosition);
+            _placementGhost.style.left = localPoint.x - (PlacementGhostWidth * 0.5f);
+            _placementGhost.style.top = localPoint.y - (PlacementGhostHeight * 0.5f);
+            _placementGhost.style.width = PlacementGhostWidth;
+            _placementGhost.style.height = PlacementGhostHeight;
+            _placementGhost.style.display = worldBound.Contains(worldPointerPosition) ? DisplayStyle.Flex : DisplayStyle.None;
+        }
+
+        internal bool CommitNodePlacement(Vector2 worldPointerPosition)
+        {
+            if (_placementNodeType == null)
+            {
+                return false;
+            }
+
+            var itemType = _placementNodeType.Value;
+            var canPlace = worldBound.Contains(worldPointerPosition);
+            CancelNodePlacement();
+
+            if (!canPlace || _graph == null)
+            {
+                return false;
+            }
+
+            var canvasPosition = GetCanvasPosition(worldPointerPosition);
+            switch (itemType)
+            {
+                case DialoguePaletteItemType.TextNode:
+                    CreateTextNode(canvasPosition);
+                    break;
+                case DialoguePaletteItemType.Comment:
+                    CreateCommentNode(canvasPosition);
+                    break;
+                default:
+                    return false;
+            }
+
+            return true;
+        }
+
+        internal void CancelNodePlacement()
+        {
+            _placementNodeType = null;
+            _placementGhost.style.display = DisplayStyle.None;
         }
 
         public void DeleteNode(BaseNodeData node)
@@ -174,21 +275,18 @@ namespace NewDial.DialogueEditor
             {
                 view.RefreshFromData();
             }
+
+            RefreshEdgeLayer();
         }
 
         public void RefreshLinksForNode(string nodeId)
         {
-            if (_graph == null)
+            if (_graph == null || string.IsNullOrWhiteSpace(nodeId))
             {
                 return;
             }
 
-            if (_textNodeViews.TryGetValue(nodeId, out var view))
-            {
-                view.RebuildOutputPorts();
-            }
-
-            LoadGraph(_graph);
+            RefreshNodeVisuals();
             MarkChanged();
         }
 
@@ -199,100 +297,101 @@ namespace NewDial.DialogueEditor
             return (layout.center - panOffset) / scale;
         }
 
-        private void CreateTextNodeView(DialogueTextNodeData node)
+        public void FrameAndSelectNode(string nodeId)
         {
-            var view = new DialogueTextNodeView(node, this);
-            _textNodeViews[node.Id] = view;
-            AddElement(view);
-        }
-
-        private void CreateCommentNodeView(CommentNodeData node)
-        {
-            var view = new DialogueCommentNodeView(node, this);
-            _commentNodeViews[node.Id] = view;
-            AddElement(view);
-        }
-
-        private GraphViewChange OnGraphViewChanged(GraphViewChange change)
-        {
-            if (_graph == null || _isReloading)
-            {
-                return change;
-            }
-
-            if (change.edgesToCreate != null)
-            {
-                foreach (var edge in change.edgesToCreate)
-                {
-                    var linkData = edge.output?.userData as NodeLinkData;
-                    if (linkData == null)
-                    {
-                        continue;
-                    }
-
-                    if (edge.input?.node is DialogueTextNodeView inputNode)
-                    {
-                        linkData.ToNodeId = inputNode.Data.Id;
-                    }
-                }
-            }
-
-            if (change.elementsToRemove != null)
-            {
-                foreach (var element in change.elementsToRemove)
-                {
-                    switch (element)
-                    {
-                        case Edge edge when edge.output?.userData is NodeLinkData linkData:
-                            linkData.ToNodeId = string.Empty;
-                            break;
-                        case DialogueTextNodeView textNodeView:
-                            DialogueGraphUtility.DeleteNode(_graph, textNodeView.Data.Id);
-                            break;
-                        case DialogueCommentNodeView commentNodeView:
-                            DialogueGraphUtility.DeleteNode(_graph, commentNodeView.Data.Id);
-                            break;
-                    }
-                }
-            }
-
-            RefreshNodeVisuals();
-            MarkChanged();
-            return change;
-        }
-
-        private void OnMouseDown(MouseDownEvent evt)
-        {
-            if (evt.target == this || evt.target is GridBackground)
-            {
-                SelectionChangedAction?.Invoke(null);
-            }
-        }
-
-        internal NodeLinkData CreateOutput(DialogueTextNodeData node)
-        {
-            var link = new NodeLinkData
-            {
-                FromNodeId = node.Id,
-                Order = DialogueGraphUtility.GetOutgoingLinks(_graph, node.Id).Count
-            };
-
-            _graph.Links.Add(link);
-            MarkChanged();
-            return link;
-        }
-
-        internal void RemoveOutput(NodeLinkData link)
-        {
-            if (_graph == null || link == null)
+            if (string.IsNullOrWhiteSpace(nodeId))
             {
                 return;
             }
 
-            _graph.Links.RemoveAll(existing => existing.Id == link.Id);
+            GraphElement element = null;
+            BaseNodeData node = null;
+
+            if (_textNodeViews.TryGetValue(nodeId, out var textNodeView))
+            {
+                element = textNodeView;
+                node = textNodeView.Data;
+            }
+            else if (_commentNodeViews.TryGetValue(nodeId, out var commentNodeView))
+            {
+                element = commentNodeView;
+                node = commentNodeView.Data;
+            }
+
+            if (element == null)
+            {
+                return;
+            }
+
+            SelectNode(element, node);
+
+            var scale = viewTransform.scale.x == 0f ? 1f : viewTransform.scale.x;
+            var targetCenter = element.GetPosition().center;
+            var viewportCenter = layout.center;
+            var desiredPan = viewportCenter - (targetCenter * scale);
+            UpdateViewTransform(desiredPan, viewTransform.scale);
+            RefreshEdgeLayer();
+        }
+
+        internal NodeLinkData CreateLink(string fromNodeId, string toNodeId, bool markChanged = true)
+        {
+            if (_graph == null ||
+                string.IsNullOrWhiteSpace(fromNodeId) ||
+                string.IsNullOrWhiteSpace(toNodeId) ||
+                fromNodeId == toNodeId)
+            {
+                return null;
+            }
+
+            var link = new NodeLinkData
+            {
+                FromNodeId = fromNodeId,
+                ToNodeId = toNodeId,
+                Order = DialogueGraphUtility.GetOutgoingLinks(_graph, fromNodeId).Count
+            };
+
+            _graph.Links.Add(link);
+            DialogueGraphUtility.NormalizeLinkOrder(_graph, fromNodeId);
+
+            if (markChanged)
+            {
+                RefreshNodeVisuals();
+                MarkChanged();
+            }
+
+            return link;
+        }
+
+        internal bool DeleteLink(NodeLinkData link, bool markChanged = true, bool reloadGraph = false)
+        {
+            if (_graph == null || link == null)
+            {
+                return false;
+            }
+
+            var removed = _graph.Links.RemoveAll(existing => existing != null && existing.Id == link.Id) > 0;
+            if (!removed)
+            {
+                return false;
+            }
+
             DialogueGraphUtility.NormalizeLinkOrder(_graph, link.FromNodeId);
-            LoadGraph(_graph);
-            MarkChanged();
+
+            if (reloadGraph)
+            {
+                LoadGraph(_graph);
+            }
+            else
+            {
+                RefreshNodeVisuals();
+            }
+
+            if (markChanged)
+            {
+                MarkChanged();
+            }
+
+            return true;
         }
 
         internal void NotifySelected(BaseNodeData node)
@@ -302,6 +401,7 @@ namespace NewDial.DialogueEditor
 
         internal void NotifyNodeMoved()
         {
+            RefreshNodeVisuals();
             MarkChanged();
         }
 
@@ -314,12 +414,272 @@ namespace NewDial.DialogueEditor
         {
             return DialogueGraphUtility.GetOutgoingLinks(_graph, nodeId);
         }
+
+        internal int GetRenderedLinkCount()
+        {
+            if (_graph == null)
+            {
+                return 0;
+            }
+
+            return _graph.Links.Count(link =>
+                link != null &&
+                !string.IsNullOrWhiteSpace(link.ToNodeId) &&
+                _textNodeViews.ContainsKey(link.FromNodeId) &&
+                _textNodeViews.ContainsKey(link.ToNodeId));
+        }
+
+        internal void BeginLinkDrag(DialogueTextNodeView sourceView, Vector2 worldPointerPosition)
+        {
+            if (sourceView == null || _graph == null)
+            {
+                return;
+            }
+
+            _activeLinkSource = sourceView;
+            _activeLinkTarget = null;
+            _activeLinkStartWorld = sourceView.GetBottomAnchorWorld(worldPointerPosition.x);
+            _activeLinkPointerWorld = worldPointerPosition;
+            RefreshEdgeLayer();
+        }
+
+        private DialogueTextNodeView CreateTextNodeView(DialogueTextNodeData node)
+        {
+            var view = new DialogueTextNodeView(node, this);
+            _textNodeViews[node.Id] = view;
+            AddElement(view);
+            return view;
+        }
+
+        private DialogueCommentNodeView CreateCommentNodeView(CommentNodeData node)
+        {
+            var view = new DialogueCommentNodeView(node, this);
+            _commentNodeViews[node.Id] = view;
+            AddElement(view);
+            return view;
+        }
+
+        private GraphViewChange OnGraphViewChanged(GraphViewChange change)
+        {
+            if (_graph == null || _isReloading)
+            {
+                return change;
+            }
+
+            var changed = false;
+
+            if (change.elementsToRemove != null)
+            {
+                foreach (var element in change.elementsToRemove)
+                {
+                    switch (element)
+                    {
+                        case DialogueTextNodeView textNodeView:
+                            DialogueGraphUtility.DeleteNode(_graph, textNodeView.Data.Id);
+                            changed = true;
+                            break;
+                        case DialogueCommentNodeView commentNodeView:
+                            DialogueGraphUtility.DeleteNode(_graph, commentNodeView.Data.Id);
+                            changed = true;
+                            break;
+                    }
+                }
+            }
+
+            if (changed)
+            {
+                RefreshNodeVisuals();
+                MarkChanged();
+            }
+
+            return change;
+        }
+
+        private void OnMouseMove(MouseMoveEvent evt)
+        {
+            _lastPointerPosition = this.LocalToWorld(evt.localMousePosition);
+            if (_activeLinkSource == null)
+            {
+                return;
+            }
+
+            _activeLinkPointerWorld = this.LocalToWorld(evt.localMousePosition);
+            _activeLinkTarget = ResolveLinkTarget(_activeLinkPointerWorld, _activeLinkSource);
+            RefreshEdgeLayer();
+        }
+
+        private void OnMouseDown(MouseDownEvent evt)
+        {
+            _lastPointerPosition = this.LocalToWorld(evt.localMousePosition);
+            if (_activeLinkSource != null)
+            {
+                return;
+            }
+
+            if (evt.target == this || evt.target is GridBackground)
+            {
+                SelectionChangedAction?.Invoke(null);
+            }
+        }
+
+        private void OnMouseUp(MouseUpEvent evt)
+        {
+            _lastPointerPosition = this.LocalToWorld(evt.localMousePosition);
+            if (_activeLinkSource == null || evt.button != 0)
+            {
+                return;
+            }
+
+            var pointerWorld = this.LocalToWorld(evt.localMousePosition);
+            var targetView = ResolveLinkTarget(pointerWorld, _activeLinkSource);
+            var created = false;
+            if (targetView != null)
+            {
+                created = CreateLink(_activeLinkSource.Data.Id, targetView.Data.Id) != null;
+            }
+
+            CancelLinkDrag();
+            if (created)
+            {
+                evt.StopImmediatePropagation();
+            }
+        }
+
+        private Vector2 GetCanvasPosition(Vector2 worldPosition)
+        {
+            return contentViewContainer.WorldToLocal(worldPosition);
+        }
+
+        private DialogueTextNodeView ResolveLinkTarget(Vector2 worldPointerPosition, DialogueTextNodeView sourceView)
+        {
+            if (panel == null)
+            {
+                return null;
+            }
+
+            var picked = panel.Pick(worldPointerPosition);
+            while (picked != null && picked is not DialogueTextNodeView)
+            {
+                picked = picked.parent;
+            }
+
+            if (picked is not DialogueTextNodeView targetView ||
+                targetView == sourceView ||
+                !targetView.IsPointerInTopHalf(worldPointerPosition))
+            {
+                return null;
+            }
+
+            return targetView;
+        }
+
+        private IEnumerable<DialogueEdgeGeometry> GetEdgeGeometries()
+        {
+            foreach (var link in _graph?.Links ?? Enumerable.Empty<NodeLinkData>())
+            {
+                if (link == null ||
+                    string.IsNullOrWhiteSpace(link.ToNodeId) ||
+                    !_textNodeViews.TryGetValue(link.FromNodeId, out var sourceView) ||
+                    !_textNodeViews.TryGetValue(link.ToNodeId, out var targetView))
+                {
+                    continue;
+                }
+
+                var sourceAnchorWorld = sourceView.GetBottomAnchorWorld(targetView.worldBound.center.x);
+                var targetAnchorWorld = targetView.GetTopAnchorWorld(sourceView.worldBound.center.x);
+                yield return new DialogueEdgeGeometry(
+                    _edgeLayer.WorldToLocal(sourceAnchorWorld),
+                    _edgeLayer.WorldToLocal(targetAnchorWorld),
+                    new Color(0.88f, 0.9f, 0.96f, 0.92f),
+                    2.3f);
+            }
+
+            if (_activeLinkSource != null)
+            {
+                var previewEndWorld = _activeLinkTarget != null
+                    ? _activeLinkTarget.GetTopAnchorWorld(_activeLinkSource.worldBound.center.x)
+                    : _activeLinkPointerWorld;
+
+                yield return new DialogueEdgeGeometry(
+                    _edgeLayer.WorldToLocal(_activeLinkStartWorld),
+                    _edgeLayer.WorldToLocal(previewEndWorld),
+                    new Color(0.55f, 0.76f, 1f, 0.98f),
+                    2.8f);
+            }
+        }
+
+        private void CancelLinkDrag()
+        {
+            _activeLinkSource = null;
+            _activeLinkTarget = null;
+            _activeLinkStartWorld = Vector2.zero;
+            _activeLinkPointerWorld = Vector2.zero;
+            RefreshEdgeLayer();
+        }
+
+        private void SelectNode(GraphElement element, BaseNodeData node)
+        {
+            ClearSelection();
+            AddToSelection(element);
+            SelectionChangedAction?.Invoke(node);
+        }
+
+        private void RefreshEdgeLayer()
+        {
+            _edgeLayer.MarkDirtyRepaint();
+        }
+
+        private void UpdateEmptyState()
+        {
+            _emptyStateLabel.style.display = _graph == null ? DisplayStyle.Flex : DisplayStyle.None;
+        }
+
+        private readonly struct DialogueEdgeGeometry
+        {
+            public DialogueEdgeGeometry(Vector2 start, Vector2 end, Color color, float thickness)
+            {
+                Start = start;
+                End = end;
+                Color = color;
+                Thickness = thickness;
+            }
+
+            public Vector2 Start { get; }
+            public Vector2 End { get; }
+            public Color Color { get; }
+            public float Thickness { get; }
+        }
+
+        private sealed class DialogueEdgeLayer : ImmediateModeElement
+        {
+            public Func<IEnumerable<DialogueEdgeGeometry>> GeometryProvider { get; set; }
+
+            protected override void ImmediateRepaint()
+            {
+                if (GeometryProvider == null)
+                {
+                    return;
+                }
+
+                foreach (var geometry in GeometryProvider())
+                {
+                    var tangent = Mathf.Max(70f, Mathf.Abs(geometry.End.y - geometry.Start.y) * 0.55f);
+                    var startTangent = geometry.Start + Vector2.up * tangent;
+                    var endTangent = geometry.End + Vector2.down * tangent;
+                    Handles.DrawBezier(geometry.Start, geometry.End, startTangent, endTangent, geometry.Color, null, geometry.Thickness);
+                }
+            }
+        }
     }
 
     public class DialogueTextNodeView : Node
     {
+        private const float LinkAnchorInset = 18f;
+
         private readonly DialogueGraphView _graphView;
-        private readonly Dictionary<string, Port> _outputPorts = new();
+        private readonly Label _bodyPreviewLabel;
+        private readonly Label _metaLabel;
+        private readonly Label _startBadge;
 
         public DialogueTextNodeView(DialogueTextNodeData data, DialogueGraphView graphView)
         {
@@ -328,36 +688,39 @@ namespace NewDial.DialogueEditor
             viewDataKey = data.Id;
             capabilities |= Capabilities.Deletable | Capabilities.Movable | Capabilities.Selectable;
 
-            InputPort = InstantiatePort(Orientation.Horizontal, Direction.Input, Port.Capacity.Multi, typeof(bool));
-            InputPort.portName = "Input";
-            inputContainer.Add(InputPort);
+            AddToClassList("dialogue-node");
+            mainContainer.AddToClassList("dialogue-node__surface");
+            topContainer.AddToClassList("dialogue-node__top-container");
+            titleContainer.AddToClassList("dialogue-node__title-row");
+            extensionContainer.AddToClassList("dialogue-node__content");
+            inputContainer.style.display = DisplayStyle.None;
+            outputContainer.style.display = DisplayStyle.None;
 
-            titleButtonContainer.Add(new Button(() =>
-            {
-                _graphView.CreateOutput(Data);
-                RebuildOutputPorts();
-                _graphView.LoadGraph(_graphView.Graph);
-            })
-            {
-                text = "+"
-            });
+            _startBadge = new Label("START");
+            _startBadge.AddToClassList("dialogue-node__start-badge");
+            titleButtonContainer.Insert(0, _startBadge);
 
-            titleButtonContainer.Add(new Button(() =>
-            {
-                _graphView.DeleteNode(Data);
-            })
+            var deleteButton = new Button(() => _graphView.DeleteNode(Data))
             {
                 text = "X"
-            });
+            };
+            deleteButton.AddToClassList("dialogue-node__delete-button");
+            titleButtonContainer.Add(deleteButton);
 
-            RegisterCallback<MouseDownEvent>(_ => _graphView.NotifySelected(Data));
+            _bodyPreviewLabel = new Label();
+            _bodyPreviewLabel.AddToClassList("dialogue-node__body-preview");
+            _bodyPreviewLabel.style.whiteSpace = WhiteSpace.Normal;
+            extensionContainer.Add(_bodyPreviewLabel);
+
+            _metaLabel = new Label();
+            _metaLabel.AddToClassList("dialogue-node__meta");
+            extensionContainer.Add(_metaLabel);
+
+            RegisterCallback<MouseDownEvent>(OnMouseDown, TrickleDown.TrickleDown);
             RefreshFromData();
-            RebuildOutputPorts();
         }
 
         public DialogueTextNodeData Data { get; }
-
-        public Port InputPort { get; }
 
         public override void SetPosition(Rect newPos)
         {
@@ -368,32 +731,79 @@ namespace NewDial.DialogueEditor
 
         public void RefreshFromData()
         {
-            title = Data.IsStartNode ? $"{Data.Title} [Start]" : Data.Title;
-            base.SetPosition(new Rect(Data.Position, GetPosition().size == Vector2.zero ? new Vector2(260f, 180f) : GetPosition().size));
-        }
+            var outgoingCount = _graphView
+                .GetOutgoingLinks(Data.Id)
+                .Count(link => !string.IsNullOrWhiteSpace(link.ToNodeId));
 
-        public void RebuildOutputPorts()
-        {
-            outputContainer.Clear();
-            _outputPorts.Clear();
+            title = string.IsNullOrWhiteSpace(Data.Title) ? "Untitled" : Data.Title;
+            _startBadge.style.display = Data.IsStartNode ? DisplayStyle.Flex : DisplayStyle.None;
+            _bodyPreviewLabel.text = BuildPreviewText(Data.BodyText);
+            _metaLabel.text = outgoingCount == 0
+                ? "Drag from the lower half to create a connection."
+                : Data.UseOutputsAsChoices
+                    ? $"{outgoingCount} choice link{(outgoingCount == 1 ? string.Empty : "s")}"
+                    : $"{outgoingCount} outgoing link{(outgoingCount == 1 ? string.Empty : "s")}";
 
-            foreach (var link in _graphView.GetOutgoingLinks(Data.Id))
-            {
-                var outputPort = InstantiatePort(Orientation.Horizontal, Direction.Output, Port.Capacity.Single, typeof(bool));
-                outputPort.portName = $"Output {link.Order + 1}";
-                outputPort.tooltip = string.IsNullOrWhiteSpace(link.ChoiceText) ? "Choice text is empty." : link.ChoiceText;
-                outputPort.userData = link;
-                outputContainer.Add(outputPort);
-                _outputPorts[link.Id] = outputPort;
-            }
-
-            RefreshPorts();
+            EnableInClassList("dialogue-node--start", Data.IsStartNode);
+            base.SetPosition(new Rect(
+                Data.Position,
+                GetPosition().size == Vector2.zero ? new Vector2(280f, 170f) : GetPosition().size));
             RefreshExpandedState();
         }
 
-        public bool TryGetOutputPort(string linkId, out Port port)
+        public bool IsPointerInTopHalf(Vector2 worldPointerPosition)
         {
-            return _outputPorts.TryGetValue(linkId, out port);
+            return ToLocalPoint(worldPointerPosition).y <= (layout.height * 0.5f);
+        }
+
+        public bool IsPointerInBottomHalf(Vector2 worldPointerPosition)
+        {
+            return ToLocalPoint(worldPointerPosition).y >= (layout.height * 0.5f);
+        }
+
+        public Vector2 GetBottomAnchorWorld(float worldX)
+        {
+            var x = Mathf.Clamp(worldX, worldBound.xMin + LinkAnchorInset, worldBound.xMax - LinkAnchorInset);
+            return new Vector2(x, worldBound.yMax - 2f);
+        }
+
+        public Vector2 GetTopAnchorWorld(float worldX)
+        {
+            var x = Mathf.Clamp(worldX, worldBound.xMin + LinkAnchorInset, worldBound.xMax - LinkAnchorInset);
+            return new Vector2(x, worldBound.yMin + 2f);
+        }
+
+        private void OnMouseDown(MouseDownEvent evt)
+        {
+            if (evt.button != 0 || evt.target is Button)
+            {
+                return;
+            }
+
+            var worldPointerPosition = this.LocalToWorld(evt.localMousePosition);
+            _graphView.NotifySelected(Data);
+
+            if (IsPointerInBottomHalf(worldPointerPosition))
+            {
+                _graphView.BeginLinkDrag(this, worldPointerPosition);
+                evt.StopImmediatePropagation();
+            }
+        }
+
+        private Vector2 ToLocalPoint(Vector2 worldPointerPosition)
+        {
+            return this.WorldToLocal(worldPointerPosition);
+        }
+
+        private static string BuildPreviewText(string bodyText)
+        {
+            if (string.IsNullOrWhiteSpace(bodyText))
+            {
+                return "Empty node text";
+            }
+
+            var normalized = bodyText.Replace("\r", " ").Replace("\n", " ").Trim();
+            return normalized.Length <= 120 ? normalized : $"{normalized.Substring(0, 117)}...";
         }
     }
 
@@ -409,19 +819,32 @@ namespace NewDial.DialogueEditor
             viewDataKey = data.Id;
             capabilities |= Capabilities.Deletable | Capabilities.Movable | Capabilities.Selectable | Capabilities.Resizable;
 
-            titleButtonContainer.Add(new Button(() =>
-            {
-                _graphView.DeleteNode(Data);
-            })
+            AddToClassList("dialogue-comment-node");
+            mainContainer.AddToClassList("dialogue-comment-node__surface");
+            extensionContainer.AddToClassList("dialogue-comment-node__content");
+            inputContainer.style.display = DisplayStyle.None;
+            outputContainer.style.display = DisplayStyle.None;
+
+            var deleteButton = new Button(() => _graphView.DeleteNode(Data))
             {
                 text = "X"
-            });
+            };
+            deleteButton.AddToClassList("dialogue-node__delete-button");
+            titleButtonContainer.Add(deleteButton);
 
             _commentLabel = new Label();
+            _commentLabel.AddToClassList("dialogue-comment-node__label");
             _commentLabel.style.whiteSpace = WhiteSpace.Normal;
-            mainContainer.Add(_commentLabel);
+            extensionContainer.Add(_commentLabel);
 
-            RegisterCallback<MouseDownEvent>(_ => _graphView.NotifySelected(Data));
+            RegisterCallback<MouseDownEvent>(evt =>
+            {
+                if (evt.button == 0 && evt.target is not Button)
+                {
+                    _graphView.NotifySelected(Data);
+                }
+            }, TrickleDown.TrickleDown);
+
             RefreshFromData();
         }
 
@@ -437,11 +860,12 @@ namespace NewDial.DialogueEditor
 
         public void RefreshFromData()
         {
-            title = Data.Title;
-            _commentLabel.text = Data.Comment;
+            title = string.IsNullOrWhiteSpace(Data.Title) ? "Comment" : Data.Title;
+            _commentLabel.text = string.IsNullOrWhiteSpace(Data.Comment) ? "Empty note" : Data.Comment;
             base.SetPosition(Data.Area.width <= 0f || Data.Area.height <= 0f
                 ? new Rect(Data.Position.x, Data.Position.y, 320f, 180f)
                 : Data.Area);
+            RefreshExpandedState();
         }
     }
 }

@@ -8,16 +8,22 @@ namespace NewDial.DialogueEditor
 {
     public class DialogueEditorWindow : EditorWindow
     {
+        private const string EditorStyleSheetSearchQuery = "DialogueEditorStyles t:StyleSheet";
+
         private DialogueDatabaseAsset _database;
         private NpcEntry _selectedNpc;
         private DialogueEntry _selectedDialogue;
         private BaseNodeData _selectedNode;
         private bool _hasUnsavedChanges;
+        private bool _stylesApplied;
+        private bool _detailsCollapsed;
 
         private DialogueGraphView _graphView;
-        private ScrollView _hierarchyView;
+        private ScrollView _projectView;
         private ScrollView _inspectorView;
         private Label _statusLabel;
+        private Label _detailsTitleLabel;
+        private Button _detailsToggleButton;
 
         public static void Open(DialogueDatabaseAsset asset)
         {
@@ -33,6 +39,7 @@ namespace NewDial.DialogueEditor
 
         private void CreateGUI()
         {
+            ApplyStyles();
             BuildLayout();
             RefreshAll();
         }
@@ -40,106 +47,163 @@ namespace NewDial.DialogueEditor
         private void BuildLayout()
         {
             rootVisualElement.Clear();
+            rootVisualElement.AddToClassList("dialogue-editor");
 
-            var toolbar = new Toolbar();
-            toolbar.Add(CreateToolbarButton("New", DialogueStartWindow.ShowWindow));
-            toolbar.Add(CreateToolbarButton("Save", SaveDatabase));
-            toolbar.Add(CreateToolbarButton("Load", LoadDatabaseFromDialog));
-            toolbar.Add(CreateToolbarButton("Preview", OpenPreview));
+            rootVisualElement.Add(BuildToolbar());
 
-            _statusLabel = new Label("No database loaded");
-            _statusLabel.style.marginLeft = 12f;
-            toolbar.Add(_statusLabel);
-            rootVisualElement.Add(toolbar);
+            var shell = new TwoPaneSplitView(0, 270f, TwoPaneSplitViewOrientation.Horizontal);
+            shell.AddToClassList("dialogue-editor__shell");
+            shell.Add(BuildLeftDock());
 
-            var mainSplit = new TwoPaneSplitView(0, 200f, TwoPaneSplitViewOrientation.Horizontal);
-            var palette = BuildPalette();
-            mainSplit.Add(palette);
+            var contentSplit = new TwoPaneSplitView(1, 360f, TwoPaneSplitViewOrientation.Horizontal);
+            contentSplit.AddToClassList("dialogue-editor__content-split");
 
-            var contentSplit = new TwoPaneSplitView(1, 340f, TwoPaneSplitViewOrientation.Horizontal);
+            var graphHost = new VisualElement();
+            graphHost.AddToClassList("dialogue-editor__graph-host");
+
+            var graphHeader = new VisualElement();
+            graphHeader.AddToClassList("dialogue-editor__panel-header");
+            graphHeader.Add(new Label("Graph Canvas") { name = "graph-title" });
+            graphHost.Add(graphHeader);
+
             _graphView = new DialogueGraphView
             {
                 GraphChangedAction = OnGraphChanged,
                 SelectionChangedAction = OnNodeSelectionChanged
             };
-            contentSplit.Add(_graphView);
+            _graphView.AddToClassList("dialogue-editor__graph-surface");
+            graphHost.Add(_graphView);
+            contentSplit.Add(graphHost);
 
-            var rightSplit = new TwoPaneSplitView(0, 280f, TwoPaneSplitViewOrientation.Vertical);
-            _hierarchyView = new ScrollView();
-            _hierarchyView.style.flexGrow = 1f;
-            rightSplit.Add(_hierarchyView);
+            contentSplit.Add(BuildDetailsPanel());
+            shell.Add(contentSplit);
 
-            _inspectorView = new ScrollView();
-            _inspectorView.style.flexGrow = 1f;
-            rightSplit.Add(_inspectorView);
-
-            contentSplit.Add(rightSplit);
-            mainSplit.Add(contentSplit);
-            rootVisualElement.Add(mainSplit);
+            rootVisualElement.Add(shell);
+            SetDetailsCollapsed(_detailsCollapsed);
         }
 
-        private ToolbarButton CreateToolbarButton(string text, System.Action onClick)
+        private VisualElement BuildToolbar()
         {
-            return new ToolbarButton(onClick) { text = text };
+            var toolbar = new Toolbar();
+            toolbar.AddToClassList("dialogue-editor__toolbar");
+
+            toolbar.Add(CreateToolbarButton("New", DialogueStartWindow.ShowWindow));
+            toolbar.Add(CreateToolbarButton("Load", LoadDatabaseFromDialog));
+            toolbar.Add(CreateToolbarButton("Save", SaveDatabase));
+            toolbar.Add(CreateToolbarButton("Preview", OpenPreview));
+            toolbar.Add(CreateToolbarButton("Create NPC", CreateNpc));
+            toolbar.Add(CreateToolbarButton("Create Dialogue", CreateDialogue));
+            toolbar.Add(CreateToolbarButton("Delete", DeleteSelection));
+            toolbar.Add(CreateToolbarButton("Dialogue Settings", ShowDialogueSettings));
+
+            var spacer = new VisualElement();
+            spacer.style.flexGrow = 1f;
+            toolbar.Add(spacer);
+
+            _statusLabel = new Label("No database loaded");
+            _statusLabel.AddToClassList("dialogue-editor__status");
+            toolbar.Add(_statusLabel);
+            return toolbar;
+        }
+
+        private VisualElement BuildLeftDock()
+        {
+            var dock = new VisualElement();
+            dock.AddToClassList("dialogue-editor__left-dock");
+
+            var projectSection = new VisualElement();
+            projectSection.AddToClassList("dialogue-editor__panel");
+            projectSection.Add(BuildPanelHeader("Project"));
+
+            _projectView = new ScrollView();
+            _projectView.AddToClassList("dialogue-editor__project-scroll");
+            projectSection.Add(_projectView);
+            dock.Add(projectSection);
+
+            var paletteSection = BuildPalette();
+            dock.Add(paletteSection);
+
+            return dock;
         }
 
         private VisualElement BuildPalette()
         {
-            var palette = new VisualElement();
-            palette.style.paddingLeft = 10f;
-            palette.style.paddingRight = 10f;
-            palette.style.paddingTop = 10f;
-            palette.style.paddingBottom = 10f;
+            var panel = new VisualElement();
+            panel.AddToClassList("dialogue-editor__panel");
+            panel.Add(BuildPanelHeader("Palette"));
 
-            var title = new Label("Palette");
-            title.style.unityFontStyleAndWeight = FontStyle.Bold;
-            title.style.marginBottom = 8f;
-            palette.Add(title);
+            var content = new VisualElement();
+            content.AddToClassList("dialogue-editor__palette");
 
-            palette.Add(CreatePaletteButton("NODE", () =>
+            content.Add(new PaletteItem(this, DialoguePaletteItemType.TextNode, "Text Node", "Click to add at center or drag onto the graph."));
+            content.Add(new PaletteItem(this, DialoguePaletteItemType.Comment, "Comment", "Click to add at center or drag onto the graph."));
+            content.Add(CreatePaletteButton("Function (Not in MVP)", null, false));
+            content.Add(CreatePaletteButton("Scene (Not in MVP)", null, false));
+            content.Add(CreatePaletteButton("Debug (Not in MVP)", null, false));
+
+            panel.Add(content);
+            return panel;
+        }
+
+        private VisualElement BuildDetailsPanel()
+        {
+            var panel = new VisualElement();
+            panel.AddToClassList("dialogue-editor__panel");
+            panel.AddToClassList("dialogue-editor__details-panel");
+
+            var header = new VisualElement();
+            header.AddToClassList("dialogue-editor__panel-header");
+
+            _detailsTitleLabel = new Label("Details");
+            _detailsTitleLabel.AddToClassList("dialogue-editor__details-title");
+            header.Add(_detailsTitleLabel);
+
+            _detailsToggleButton = new Button(() => SetDetailsCollapsed(!_detailsCollapsed))
             {
-                EnsureDialogueSelected();
-                if (_selectedDialogue == null)
-                {
-                    return;
-                }
+                text = "Hide"
+            };
+            _detailsToggleButton.AddToClassList("dialogue-editor__panel-toggle");
+            header.Add(_detailsToggleButton);
+            panel.Add(header);
 
-                _graphView?.CreateTextNode(_graphView.GetCanvasCenter());
-            }));
+            _inspectorView = new ScrollView();
+            _inspectorView.AddToClassList("dialogue-editor__details-scroll");
+            panel.Add(_inspectorView);
 
-            palette.Add(CreatePaletteButton("COMMENT", () =>
-            {
-                EnsureDialogueSelected();
-                if (_selectedDialogue == null)
-                {
-                    return;
-                }
+            return panel;
+        }
 
-                _graphView?.CreateCommentNode(_graphView.GetCanvasCenter());
-            }));
-
-            palette.Add(CreatePaletteButton("FUNCTION (Not in MVP)", null, false));
-            palette.Add(CreatePaletteButton("SCENE (Not in MVP)", null, false));
-            palette.Add(CreatePaletteButton("DEBUG (Not in MVP)", null, false));
-
-            return palette;
+        private ToolbarButton CreateToolbarButton(string text, System.Action onClick)
+        {
+            var button = new ToolbarButton(onClick) { text = text };
+            button.AddToClassList("dialogue-editor__toolbar-button");
+            return button;
         }
 
         private Button CreatePaletteButton(string text, System.Action onClick, bool enabled = true)
         {
             var button = new Button(onClick) { text = text };
+            button.AddToClassList("dialogue-editor__palette-button");
             button.SetEnabled(enabled);
-            button.style.marginBottom = 8f;
-            button.style.height = 32f;
             return button;
         }
 
         private Button CreateActionButton(string text, System.Action onClick)
         {
             var button = new Button(onClick) { text = text };
-            button.style.marginRight = 6f;
-            button.style.marginBottom = 6f;
+            button.AddToClassList("dialogue-editor__action-button");
             return button;
+        }
+
+        private VisualElement BuildPanelHeader(string title)
+        {
+            var header = new VisualElement();
+            header.AddToClassList("dialogue-editor__panel-header");
+
+            var label = new Label(title);
+            label.AddToClassList("dialogue-editor__panel-title");
+            header.Add(label);
+            return header;
         }
 
         private void LoadDatabase(DialogueDatabaseAsset asset)
@@ -215,7 +279,7 @@ namespace NewDial.DialogueEditor
             }
 
             RefreshStatus();
-            RefreshHierarchy();
+            RefreshProjectPanel();
             _graphView.LoadGraph(_selectedDialogue?.Graph);
             RefreshInspector();
         }
@@ -227,99 +291,91 @@ namespace NewDial.DialogueEditor
                 : $"{_database.name}{(_hasUnsavedChanges ? " (unsaved changes)" : string.Empty)}";
         }
 
-        private void RefreshHierarchy()
+        private void RefreshProjectPanel()
         {
-            if (_hierarchyView == null)
+            if (_projectView == null)
             {
                 return;
             }
 
-            _hierarchyView.Clear();
-
-            var actions = new VisualElement();
-            actions.style.flexDirection = FlexDirection.Row;
-            actions.style.flexWrap = Wrap.Wrap;
-            actions.style.marginBottom = 10f;
-
-            actions.Add(CreateActionButton("Create NPC", CreateNpc));
-            actions.Add(CreateActionButton("Create Dialogue", CreateDialogue));
-            actions.Add(CreateActionButton("Delete", DeleteSelection));
-            actions.Add(CreateActionButton("Cond", ShowDialogueConditions));
-            _hierarchyView.Add(actions);
+            _projectView.Clear();
 
             if (_database == null)
             {
-                _hierarchyView.Add(new Label("Load or create a dialogue database to begin."));
+                _projectView.Add(CreateEmptyPanelMessage("Load or create a dialogue database to begin."));
                 return;
             }
 
             foreach (var npc in _database.Npcs)
             {
-                var npcBox = new Box();
-                npcBox.style.marginBottom = 8f;
+                var npcCard = new Box();
+                npcCard.AddToClassList("dialogue-editor__project-card");
+                npcCard.EnableInClassList("is-selected", _selectedNpc == npc);
 
                 var npcHeader = new VisualElement();
-                npcHeader.style.flexDirection = FlexDirection.Row;
-                npcHeader.style.alignItems = Align.Center;
+                npcHeader.AddToClassList("dialogue-editor__row");
 
-                var npcSelect = new Button(() =>
+                var npcSelect = CreateActionButton(_selectedNpc == npc ? "Selected NPC" : "Select NPC", () =>
                 {
                     _selectedNpc = npc;
-                    if (_selectedDialogue == null)
+                    if (_selectedDialogue == null || !_selectedNpc.Dialogues.Contains(_selectedDialogue))
                     {
                         _selectedDialogue = npc.Dialogues.FirstOrDefault();
                     }
+
                     _selectedNode = null;
                     RefreshAll();
-                })
-                {
-                    text = _selectedNpc == npc ? "Selected NPC" : "Select NPC"
-                };
-                npcSelect.style.marginRight = 6f;
+                });
+                npcSelect.EnableInClassList("is-selected", _selectedNpc == npc);
                 npcHeader.Add(npcSelect);
 
-                var npcName = new TextField { value = npc.Name };
-                npcName.style.flexGrow = 1f;
+                var npcName = new TextField("Name") { value = npc.Name };
+                npcName.AddToClassList("dialogue-editor__grow");
                 npcName.RegisterValueChangedCallback(evt =>
                 {
                     npc.Name = evt.newValue;
                     MarkChanged();
+                    RefreshProjectPanel();
                 });
                 npcHeader.Add(npcName);
-                npcBox.Add(npcHeader);
+                npcCard.Add(npcHeader);
+
+                if (npc.Dialogues.Count == 0)
+                {
+                    npcCard.Add(CreateInlineHelp("No dialogues yet. Use Create Dialogue from the toolbar."));
+                }
 
                 foreach (var dialogue in npc.Dialogues)
                 {
-                    var row = new VisualElement();
-                    row.style.flexDirection = FlexDirection.Row;
-                    row.style.alignItems = Align.Center;
-                    row.style.marginTop = 6f;
+                    var dialogueRow = new VisualElement();
+                    dialogueRow.AddToClassList("dialogue-editor__row");
+                    dialogueRow.AddToClassList("dialogue-editor__dialogue-row");
+                    dialogueRow.EnableInClassList("is-selected", _selectedDialogue == dialogue);
 
-                    var selectButton = new Button(() =>
+                    var openButton = CreateActionButton(_selectedDialogue == dialogue ? "Editing" : "Open", () =>
                     {
                         _selectedNpc = npc;
                         _selectedDialogue = dialogue;
                         _selectedNode = null;
                         RefreshAll();
-                    })
-                    {
-                        text = _selectedDialogue == dialogue ? "Selected" : "Open"
-                    };
-                    selectButton.style.marginRight = 6f;
-                    row.Add(selectButton);
+                    });
+                    openButton.EnableInClassList("is-selected", _selectedDialogue == dialogue);
+                    dialogueRow.Add(openButton);
 
-                    var nameField = new TextField { value = dialogue.Name };
-                    nameField.style.flexGrow = 1f;
+                    var nameField = new TextField("Dialogue") { value = dialogue.Name };
+                    nameField.AddToClassList("dialogue-editor__grow");
                     nameField.RegisterValueChangedCallback(evt =>
                     {
                         dialogue.Name = evt.newValue;
                         MarkChanged();
+                        RefreshProjectPanel();
                     });
-                    row.Add(nameField);
-                    npcBox.Add(row);
+                    dialogueRow.Add(nameField);
+
+                    npcCard.Add(dialogueRow);
                 }
 
-                _hierarchyView.Add(npcBox);
+                _projectView.Add(npcCard);
             }
         }
 
@@ -334,46 +390,58 @@ namespace NewDial.DialogueEditor
 
             if (_database == null)
             {
-                _inspectorView.Add(new Label("No database loaded."));
+                _detailsTitleLabel.text = "Details";
+                _inspectorView.Add(CreateEmptyPanelMessage("No database loaded."));
                 return;
             }
 
             if (_selectedNode is DialogueTextNodeData textNode)
             {
+                _detailsTitleLabel.text = "Node Details";
                 BuildTextNodeInspector(textNode);
                 return;
             }
 
             if (_selectedNode is CommentNodeData commentNode)
             {
+                _detailsTitleLabel.text = "Comment Details";
                 BuildCommentNodeInspector(commentNode);
                 return;
             }
 
             if (_selectedDialogue != null)
             {
+                _detailsTitleLabel.text = "Dialogue Settings";
                 BuildDialogueInspector(_selectedDialogue);
                 return;
             }
 
-            _inspectorView.Add(new Label("Select an NPC, dialogue, or node to inspect it."));
+            _detailsTitleLabel.text = "Details";
+            _inspectorView.Add(CreateEmptyPanelMessage("Select an NPC, a dialogue, or a node to inspect it."));
         }
 
         private void BuildDialogueInspector(DialogueEntry dialogue)
         {
-            _inspectorView.Add(CreateSectionTitle("Dialogue"));
+            _inspectorView.Add(CreateSectionTitle("Dialogue Settings"));
 
             var nameField = new TextField("Name") { value = dialogue.Name };
             nameField.RegisterValueChangedCallback(evt =>
             {
                 dialogue.Name = evt.newValue;
                 MarkChanged();
+                RefreshProjectPanel();
             });
             _inspectorView.Add(nameField);
 
-            _inspectorView.Add(new Label($"Id: {dialogue.Id}"));
-            _inspectorView.Add(new Label($"Start node: {DialogueGraphUtility.FindStartNode(dialogue)?.Title ?? "None"}"));
+            var summaryCard = new Box();
+            summaryCard.AddToClassList("dialogue-editor__inspector-card");
+            summaryCard.Add(new Label($"Id: {dialogue.Id}"));
+            summaryCard.Add(new Label($"Nodes: {dialogue.Graph.Nodes.Count}"));
+            summaryCard.Add(new Label($"Start node: {DialogueGraphUtility.FindStartNode(dialogue)?.Title ?? "None"}"));
+            _inspectorView.Add(summaryCard);
+
             BuildConditionEditor(dialogue.StartCondition, "Start Condition");
+            _inspectorView.Add(CreateInlineHelp("Click empty graph space to return here after editing a node."));
         }
 
         private void BuildTextNodeInspector(DialogueTextNodeData node)
@@ -389,20 +457,21 @@ namespace NewDial.DialogueEditor
             });
             _inspectorView.Add(titleField);
 
-            var bodyField = new TextField("BodyText")
+            var bodyField = new TextField("Body Text")
             {
                 value = node.BodyText,
                 multiline = true
             };
-            bodyField.style.minHeight = 120f;
+            bodyField.AddToClassList("dialogue-editor__multiline-field");
             bodyField.RegisterValueChangedCallback(evt =>
             {
                 node.BodyText = evt.newValue;
+                _graphView.RefreshNodeVisuals();
                 MarkChanged();
             });
             _inspectorView.Add(bodyField);
 
-            var startToggle = new Toggle("IsStartNode") { value = node.IsStartNode };
+            var startToggle = new Toggle("Is Start Node") { value = node.IsStartNode };
             startToggle.RegisterValueChangedCallback(evt =>
             {
                 if (evt.newValue)
@@ -420,10 +489,11 @@ namespace NewDial.DialogueEditor
             });
             _inspectorView.Add(startToggle);
 
-            var choiceToggle = new Toggle("UseOutputsAsChoices") { value = node.UseOutputsAsChoices };
+            var choiceToggle = new Toggle("Use Outputs As Choices") { value = node.UseOutputsAsChoices };
             choiceToggle.RegisterValueChangedCallback(evt =>
             {
                 node.UseOutputsAsChoices = evt.newValue;
+                _graphView.RefreshNodeVisuals();
                 MarkChanged();
             });
             _inspectorView.Add(choiceToggle);
@@ -432,13 +502,13 @@ namespace NewDial.DialogueEditor
             BuildLinksInspector(node);
 
             var deleteButton = new Button(() => _graphView.DeleteNode(node)) { text = "Delete Node" };
-            deleteButton.style.marginTop = 10f;
+            deleteButton.AddToClassList("dialogue-editor__danger-button");
             _inspectorView.Add(deleteButton);
         }
 
         private void BuildCommentNodeInspector(CommentNodeData node)
         {
-            _inspectorView.Add(CreateSectionTitle("Comment Node"));
+            _inspectorView.Add(CreateSectionTitle("Comment"));
 
             var titleField = new TextField("Title") { value = node.Title };
             titleField.RegisterValueChangedCallback(evt =>
@@ -454,7 +524,7 @@ namespace NewDial.DialogueEditor
                 value = node.Comment,
                 multiline = true
             };
-            commentField.style.minHeight = 120f;
+            commentField.AddToClassList("dialogue-editor__multiline-field");
             commentField.RegisterValueChangedCallback(evt =>
             {
                 node.Comment = evt.newValue;
@@ -474,25 +544,29 @@ namespace NewDial.DialogueEditor
             _inspectorView.Add(areaField);
 
             var deleteButton = new Button(() => _graphView.DeleteNode(node)) { text = "Delete Comment" };
-            deleteButton.style.marginTop = 10f;
+            deleteButton.AddToClassList("dialogue-editor__danger-button");
             _inspectorView.Add(deleteButton);
         }
 
         private void BuildLinksInspector(DialogueTextNodeData node)
         {
-            _inspectorView.Add(CreateSectionTitle("Links"));
+            _inspectorView.Add(CreateSectionTitle("Connected Links"));
 
-            var links = DialogueGraphUtility.GetOutgoingLinks(_selectedDialogue.Graph, node.Id);
+            var links = DialogueGraphUtility
+                .GetOutgoingLinks(_selectedDialogue.Graph, node.Id)
+                .Where(link => !string.IsNullOrWhiteSpace(link.ToNodeId))
+                .ToList();
+
             if (links.Count == 0)
             {
-                _inspectorView.Add(new Label("No outputs yet. Use the + button on the node or connect a port on the graph."));
+                _inspectorView.Add(CreateInlineHelp("No linked outputs yet. Drag from the bottom of this node to the top of another node."));
                 return;
             }
 
             foreach (var link in links)
             {
                 var box = new Box();
-                box.style.marginBottom = 8f;
+                box.AddToClassList("dialogue-editor__inspector-card");
 
                 var target = DialogueGraphUtility.GetTextNode(_selectedDialogue.Graph, link.ToNodeId);
                 box.Add(new Label($"Target: {target?.Title ?? "Unconnected"}"));
@@ -502,13 +576,13 @@ namespace NewDial.DialogueEditor
                 {
                     link.Order = Mathf.Max(0, evt.newValue);
                     DialogueGraphUtility.NormalizeLinkOrder(_selectedDialogue.Graph, node.Id);
-                    _graphView.LoadGraph(_selectedDialogue.Graph);
+                    _graphView.RefreshNodeVisuals();
                     MarkChanged();
                     RefreshInspector();
                 });
                 box.Add(orderField);
 
-                var choiceField = new TextField("ChoiceText") { value = link.ChoiceText };
+                var choiceField = new TextField("Choice Text") { value = link.ChoiceText };
                 choiceField.RegisterValueChangedCallback(evt =>
                 {
                     link.ChoiceText = evt.newValue;
@@ -519,12 +593,13 @@ namespace NewDial.DialogueEditor
 
                 var removeButton = new Button(() =>
                 {
-                    _graphView.RemoveOutput(link);
+                    _graphView.DeleteLink(link, true, true);
                     RefreshInspector();
                 })
                 {
-                    text = "Remove Output"
+                    text = "Remove Link"
                 };
+                removeButton.AddToClassList("dialogue-editor__danger-button");
                 box.Add(removeButton);
 
                 _inspectorView.Add(box);
@@ -571,9 +646,21 @@ namespace NewDial.DialogueEditor
         private Label CreateSectionTitle(string text)
         {
             var label = new Label(text);
-            label.style.unityFontStyleAndWeight = FontStyle.Bold;
-            label.style.marginTop = 10f;
-            label.style.marginBottom = 6f;
+            label.AddToClassList("dialogue-editor__section-title");
+            return label;
+        }
+
+        private VisualElement CreateEmptyPanelMessage(string text)
+        {
+            var label = new Label(text);
+            label.AddToClassList("dialogue-editor__empty-message");
+            return label;
+        }
+
+        private VisualElement CreateInlineHelp(string text)
+        {
+            var label = new Label(text);
+            label.AddToClassList("dialogue-editor__inline-help");
             return label;
         }
 
@@ -629,6 +716,16 @@ namespace NewDial.DialogueEditor
             RefreshAll();
         }
 
+        private void AddNodeFromToolbar()
+        {
+            CreateNodeFromPalette(DialoguePaletteItemType.TextNode);
+        }
+
+        private void AddCommentFromToolbar()
+        {
+            CreateNodeFromPalette(DialoguePaletteItemType.Comment);
+        }
+
         private void DeleteSelection()
         {
             if (_selectedNode != null)
@@ -658,7 +755,7 @@ namespace NewDial.DialogueEditor
             }
         }
 
-        private void ShowDialogueConditions()
+        private void ShowDialogueSettings()
         {
             _selectedNode = null;
             RefreshInspector();
@@ -672,7 +769,34 @@ namespace NewDial.DialogueEditor
                 return;
             }
 
-            DialoguePreviewWindow.ShowWindow(_selectedDialogue);
+            DialoguePreviewWindow.ShowWindow(_selectedDialogue, this);
+        }
+
+        public bool FocusDialogueNode(DialogueEntry dialogue, string nodeId)
+        {
+            if (_database == null || dialogue == null || string.IsNullOrWhiteSpace(nodeId))
+            {
+                return false;
+            }
+
+            if (!TryResolveDialogue(dialogue, out var npc, out var resolvedDialogue))
+            {
+                return false;
+            }
+
+            var resolvedNode = DialogueGraphUtility.GetNode(resolvedDialogue.Graph, nodeId);
+            if (resolvedNode == null)
+            {
+                return false;
+            }
+
+            _selectedNpc = npc;
+            _selectedDialogue = resolvedDialogue;
+            _selectedNode = resolvedNode;
+            RefreshAll();
+            _graphView?.FrameAndSelectNode(nodeId);
+            Focus();
+            return true;
         }
 
         private void OnGraphChanged()
@@ -727,11 +851,237 @@ namespace NewDial.DialogueEditor
             }
         }
 
+        private void CreateNodeFromPalette(DialoguePaletteItemType itemType)
+        {
+            EnsureDialogueSelected();
+            if (_selectedDialogue == null)
+            {
+                return;
+            }
+
+            switch (itemType)
+            {
+                case DialoguePaletteItemType.TextNode:
+                    _graphView?.CreateTextNode(_graphView.GetCanvasCenter());
+                    break;
+                case DialoguePaletteItemType.Comment:
+                    _graphView?.CreateCommentNode(_graphView.GetCanvasCenter());
+                    break;
+            }
+        }
+
+        private bool BeginPalettePlacement(DialoguePaletteItemType itemType, Vector2 worldPointerPosition)
+        {
+            EnsureDialogueSelected();
+            if (_selectedDialogue == null || _graphView == null)
+            {
+                return false;
+            }
+
+            return _graphView.BeginNodePlacement(itemType, worldPointerPosition);
+        }
+
+        private void UpdatePalettePlacement(Vector2 worldPointerPosition)
+        {
+            _graphView?.UpdateNodePlacement(worldPointerPosition);
+        }
+
+        private void CommitPalettePlacement(Vector2 worldPointerPosition)
+        {
+            if (_graphView == null)
+            {
+                return;
+            }
+
+            if (!_graphView.CommitNodePlacement(worldPointerPosition))
+            {
+                _graphView.CancelNodePlacement();
+            }
+        }
+
+        private void CancelPalettePlacement()
+        {
+            _graphView?.CancelNodePlacement();
+        }
+
         private void MarkChanged()
         {
             _hasUnsavedChanges = true;
             SaveAutosave();
             RefreshStatus();
+        }
+
+        private void ApplyStyles()
+        {
+            if (_stylesApplied)
+            {
+                return;
+            }
+
+            var styleSheet = FindStyleSheet();
+            if (styleSheet != null)
+            {
+                rootVisualElement.styleSheets.Add(styleSheet);
+                _stylesApplied = true;
+            }
+        }
+
+        private static StyleSheet FindStyleSheet()
+        {
+            var guids = AssetDatabase.FindAssets(EditorStyleSheetSearchQuery);
+            foreach (var guid in guids)
+            {
+                var path = AssetDatabase.GUIDToAssetPath(guid);
+                var styleSheet = AssetDatabase.LoadAssetAtPath<StyleSheet>(path);
+                if (styleSheet != null)
+                {
+                    return styleSheet;
+                }
+            }
+
+            return null;
+        }
+
+        private void SetDetailsCollapsed(bool collapsed)
+        {
+            _detailsCollapsed = collapsed;
+
+            if (_inspectorView != null)
+            {
+                _inspectorView.style.display = collapsed ? DisplayStyle.None : DisplayStyle.Flex;
+            }
+
+            if (_detailsToggleButton != null)
+            {
+                _detailsToggleButton.text = collapsed ? "Show" : "Hide";
+            }
+        }
+
+        private bool TryResolveDialogue(DialogueEntry dialogue, out NpcEntry ownerNpc, out DialogueEntry resolvedDialogue)
+        {
+            foreach (var npc in _database.Npcs)
+            {
+                foreach (var candidate in npc.Dialogues)
+                {
+                    if (ReferenceEquals(candidate, dialogue) || candidate.Id == dialogue.Id)
+                    {
+                        ownerNpc = npc;
+                        resolvedDialogue = candidate;
+                        return true;
+                    }
+                }
+            }
+
+            ownerNpc = null;
+            resolvedDialogue = null;
+            return false;
+        }
+
+        private sealed class PaletteItem : VisualElement
+        {
+            private const float DragThreshold = 6f;
+
+            private readonly DialogueEditorWindow _owner;
+            private readonly DialoguePaletteItemType _itemType;
+            private bool _pressed;
+            private bool _placementStarted;
+            private Vector2 _pressWorldPosition;
+
+            public PaletteItem(DialogueEditorWindow owner, DialoguePaletteItemType itemType, string title, string hint)
+            {
+                _owner = owner;
+                _itemType = itemType;
+
+                AddToClassList("dialogue-editor__palette-item");
+
+                var titleLabel = new Label(title);
+                titleLabel.AddToClassList("dialogue-editor__palette-item-title");
+                Add(titleLabel);
+
+                var hintLabel = new Label(hint);
+                hintLabel.AddToClassList("dialogue-editor__palette-item-hint");
+                Add(hintLabel);
+
+                RegisterCallback<MouseDownEvent>(OnMouseDown, TrickleDown.TrickleDown);
+                RegisterCallback<MouseMoveEvent>(OnMouseMove, TrickleDown.TrickleDown);
+                RegisterCallback<MouseUpEvent>(OnMouseUp, TrickleDown.TrickleDown);
+                RegisterCallback<MouseCaptureOutEvent>(_ => ResetDragState());
+            }
+
+            private void OnMouseDown(MouseDownEvent evt)
+            {
+                if (evt.button != 0)
+                {
+                    return;
+                }
+
+                _pressed = true;
+                _placementStarted = false;
+                _pressWorldPosition = this.LocalToWorld(evt.localMousePosition);
+                this.CaptureMouse();
+                evt.StopImmediatePropagation();
+            }
+
+            private void OnMouseMove(MouseMoveEvent evt)
+            {
+                if (!_pressed)
+                {
+                    return;
+                }
+
+                var worldPointerPosition = this.LocalToWorld(evt.localMousePosition);
+                if (!_placementStarted &&
+                    Vector2.Distance(_pressWorldPosition, worldPointerPosition) >= DragThreshold &&
+                    _owner.BeginPalettePlacement(_itemType, worldPointerPosition))
+                {
+                    _placementStarted = true;
+                    AddToClassList("is-dragging");
+                }
+
+                if (_placementStarted)
+                {
+                    _owner.UpdatePalettePlacement(worldPointerPosition);
+                }
+
+                evt.StopImmediatePropagation();
+            }
+
+            private void OnMouseUp(MouseUpEvent evt)
+            {
+                if (!_pressed || evt.button != 0)
+                {
+                    return;
+                }
+
+                var worldPointerPosition = this.LocalToWorld(evt.localMousePosition);
+                if (_placementStarted)
+                {
+                    _owner.CommitPalettePlacement(worldPointerPosition);
+                }
+                else
+                {
+                    _owner.CreateNodeFromPalette(_itemType);
+                }
+
+                ResetDragState();
+                evt.StopImmediatePropagation();
+            }
+
+            private void ResetDragState()
+            {
+                if (_placementStarted)
+                {
+                    _owner.CancelPalettePlacement();
+                }
+
+                _pressed = false;
+                _placementStarted = false;
+                RemoveFromClassList("is-dragging");
+                if (this.HasMouseCapture())
+                {
+                    this.ReleaseMouse();
+                }
+            }
         }
     }
 }
