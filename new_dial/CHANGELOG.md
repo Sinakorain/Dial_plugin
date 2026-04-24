@@ -13,6 +13,7 @@
 
 ### Changed
 
+- Dialogue editor can now be opened from `Tools/New Dial/Dialogue Editor` while retaining the existing `Window/New Dial/Dialogue Editor` entry point.
 - NPC, dialogue, and node identifiers can now be edited explicitly in the editor, with guarded generation actions and immediate empty/duplicate warnings.
 - Node identifier changes now update internal graph links that reference the old node id.
 - Choice-mode nodes now surface authoring diagnostics for missing outputs, broken targets, fallback labels, order conflicts, and unreachable choice targets.

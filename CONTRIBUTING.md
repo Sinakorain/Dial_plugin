@@ -28,7 +28,7 @@ Run the `NewDial.DialogueEditor.Tests.Editor` assembly in Unity Test Runner when
 
 Use a Unity 6.x consumer project and verify these flows after meaningful editor or runtime changes:
 
-- Create a new dialogue database from `Window/New Dial/Dialogue Editor`
+- Create a new dialogue database from `Tools/New Dial/Dialogue Editor`
 - Load an existing `DialogueDatabaseAsset` from the same window
 - Switch to another database with unsaved changes and confirm the save prompt behavior
 - Create text and comment nodes, then verify the graph empty state disappears and returns correctly

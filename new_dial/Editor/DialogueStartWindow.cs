@@ -6,6 +6,7 @@ namespace NewDial.DialogueEditor
 {
     public class DialogueStartWindow : EditorWindow
     {
+        [MenuItem("Tools/New Dial/Dialogue Editor")]
         [MenuItem("Window/New Dial/Dialogue Editor")]
         public static void ShowWindow()
         {

@@ -8,7 +8,8 @@ This file describes the current working-tree behavior of `new_dial`, including c
 - Display name: `New Dial Dialogue Editor`
 - Version: `0.1.0`
 - Unity target: `6000.0`
-- Main editor entry point: `Window/New Dial/Dialogue Editor`
+- Main editor entry point: `Tools/New Dial/Dialogue Editor`
+- Alternate editor entry point: `Window/New Dial/Dialogue Editor`
 - Sample creation entry point: `Tools/New Dial/Create Basic Adventure Sample`
 - Test assembly: `NewDial.DialogueEditor.Tests.Editor`
 
@@ -47,7 +48,7 @@ This file describes the current working-tree behavior of `new_dial`, including c
 
 ### Editor surfaces
 
-- `DialogueStartWindow` opens from `Window/New Dial/Dialogue Editor`.
+- `DialogueStartWindow` opens from `Tools/New Dial/Dialogue Editor` and remains available from `Window/New Dial/Dialogue Editor`.
 - The start window can create a new `DialogueDatabaseAsset` or load an existing asset inside the current Unity project.
 - `DialogueEditorWindow` is the main authoring surface. Its toolbar exposes `New`, `Load`, `Save`, `Preview`, `Delete`, `Dialogue Settings`, and a per-user `EN/RU` language switcher backed by `EditorPrefs`.
 - The palette supports `Text Node`, `Comment`, `Function`, `Scene`, and `Debug`.

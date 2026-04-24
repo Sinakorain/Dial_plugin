@@ -17,7 +17,7 @@ This sample adds a menu item that creates a playable `DialogueDatabaseAsset` for
 1. Import the sample from Package Manager.
 2. Run `Tools/New Dial/Create Basic Adventure Sample`.
 3. Save the generated asset into the current Unity project.
-4. Open the asset with `Window/New Dial/Dialogue Editor`.
+4. Open the asset with `Tools/New Dial/Dialogue Editor`.
 5. Use the editor's `Preview` button to inspect the branching flow.
 
 ## What it demonstrates

@@ -39,7 +39,8 @@ If you publish this repository to a Git remote, configure the dependency so Unit
 
 ## Opening the editor
 
-- Main entry point: `Window/New Dial/Dialogue Editor`
+- Main entry point: `Tools/New Dial/Dialogue Editor`
+- Alternate entry point: `Window/New Dial/Dialogue Editor`
 - Sample creation: `Tools/New Dial/Create Basic Adventure Sample`
 - Asset menu support: `New Dial/Dialogue Database`
 
@@ -105,7 +106,7 @@ These APIs are suitable for the current MVP package workflow, but they should no
 1. Import `Basic Adventure Sample` from Package Manager.
 2. Run `Tools/New Dial/Create Basic Adventure Sample`.
 3. Save the generated `DialogueDatabaseAsset` into the current Unity project.
-4. Open it with `Window/New Dial/Dialogue Editor`.
+4. Open it with `Tools/New Dial/Dialogue Editor`.
 5. Use `Preview` from the editor toolbar to inspect the branching flow.
 
 ## Notes
