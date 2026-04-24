@@ -379,6 +379,72 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
+        public void DeleteCommentOnly_KeepsContainedNodes()
+        {
+            var graph = new DialogueGraphData();
+            var comment = new CommentNodeData
+            {
+                Title = "Group",
+                Position = new Vector2(100f, 100f),
+                Area = new Rect(100f, 100f, 420f, 260f)
+            };
+            var textNode = new DialogueTextNodeData
+            {
+                Title = "Inside",
+                Position = new Vector2(130f, 130f)
+            };
+
+            graph.Nodes.Add(comment);
+            graph.Nodes.Add(textNode);
+
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+
+            view.DeleteCommentOnly(comment);
+
+            Assert.That(graph.Nodes.Select(node => node.Id), Is.EquivalentTo(new[]
+            {
+                textNode.Id
+            }));
+        }
+
+        [Test]
+        public void DeleteCommentGroup_RemovesContainedNodes()
+        {
+            var graph = new DialogueGraphData();
+            var comment = new CommentNodeData
+            {
+                Title = "Group",
+                Position = new Vector2(100f, 100f),
+                Area = new Rect(100f, 100f, 420f, 260f)
+            };
+            var textNode = new DialogueTextNodeData
+            {
+                Title = "Inside",
+                Position = new Vector2(130f, 130f)
+            };
+            var outsideNode = new DialogueTextNodeData
+            {
+                Title = "Outside",
+                Position = new Vector2(620f, 130f)
+            };
+
+            graph.Nodes.Add(comment);
+            graph.Nodes.Add(textNode);
+            graph.Nodes.Add(outsideNode);
+
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+
+            view.DeleteCommentGroup(comment);
+
+            Assert.That(graph.Nodes.Select(node => node.Id), Is.EquivalentTo(new[]
+            {
+                outsideNode.Id
+            }));
+        }
+
+        [Test]
         public void MovingCommentNode_UsesPreviousAreaToMoveNestedCommentGroups()
         {
             var graph = new DialogueGraphData();

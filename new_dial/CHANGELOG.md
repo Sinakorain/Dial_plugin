@@ -32,6 +32,7 @@
 - Scene, function, start, and debug graph-node badges now use distinct semantic colors.
 - Nested comment-group ownership and movement behavior now follow the most specific containing comment group.
 - Dragging a comment group now keeps its drag-start membership instead of attaching newly overlapped nodes mid-drag.
+- Comment inspectors now separate deleting only the comment node from deleting the whole comment group with contained nodes.
 - Cutting a selected root comment group removes the full nested hierarchy after copying it to the clipboard payload.
 - Native Unity undo/redo now covers node-scope graph edits, comment resize, link edits, and node inspector changes on both macOS (`Cmd+Z`) and Windows (`Ctrl+Z`).
 - Undo/redo now refreshes graph selection, preview sessions, and autosave dirty-state against the last saved database snapshot.

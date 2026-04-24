@@ -516,13 +516,45 @@ namespace NewDial.DialogueEditor
             {
                 if (node is CommentNodeData commentNode)
                 {
-                    DeleteCommentGroup(commentNode);
+                    DeleteCommentGroupInternal(commentNode);
                 }
                 else
                 {
                     DialogueGraphUtility.DeleteNode(_graph, node.Id);
                 }
 
+                LoadGraph(_graph);
+                SelectionChangedAction?.Invoke(null);
+                MarkChanged();
+            });
+        }
+
+        public void DeleteCommentOnly(CommentNodeData commentNode)
+        {
+            if (_graph == null || commentNode == null)
+            {
+                return;
+            }
+
+            ApplyUndoableChange("Delete Comment", () =>
+            {
+                DialogueGraphUtility.DeleteNode(_graph, commentNode.Id);
+                LoadGraph(_graph);
+                SelectionChangedAction?.Invoke(null);
+                MarkChanged();
+            });
+        }
+
+        public void DeleteCommentGroup(CommentNodeData commentNode)
+        {
+            if (_graph == null || commentNode == null)
+            {
+                return;
+            }
+
+            ApplyUndoableChange("Delete Comment Group", () =>
+            {
+                DeleteCommentGroupInternal(commentNode);
                 LoadGraph(_graph);
                 SelectionChangedAction?.Invoke(null);
                 MarkChanged();
@@ -1323,7 +1355,7 @@ namespace NewDial.DialogueEditor
             return change;
         }
 
-        private void DeleteCommentGroup(CommentNodeData rootComment)
+        private void DeleteCommentGroupInternal(CommentNodeData rootComment)
         {
             var nodeIdsToDelete = GetCommentGroupElements(rootComment)
                 .OfType<Node>()
@@ -2174,7 +2206,7 @@ namespace NewDial.DialogueEditor
             {
                 foreach (var selectedNode in selectedNodes.OfType<CommentNodeData>())
                 {
-                    DeleteCommentGroup(selectedNode);
+                    DeleteCommentGroupInternal(selectedNode);
                 }
 
                 foreach (var selectedNode in selectedNodes.Where(node => node is not CommentNodeData))

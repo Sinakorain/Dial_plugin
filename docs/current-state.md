@@ -91,6 +91,7 @@ This file describes the current working-tree behavior of `new_dial`, including c
 - The preview window includes a bool/number/string test-variable sandbox and explains blocked dialogue starts, unavailable choices, missing targets, branch ends, and generic fallback labels.
 - Collapsible Where Used blocks show internal NPC/dialogue/node references and can include project-provided external references through an editor resolver registry.
 - Comment groups can own both text nodes and nested comment groups.
+- Comment inspectors expose separate delete actions for removing only the comment node or removing the whole comment group with its contained nodes.
 - Nested ownership prefers the most specific containing comment group when several comment areas overlap.
 - Moving a parent comment group moves text nodes and nested comment groups that were directly contained when the drag started; nodes newly overlapped during the drag are not attached mid-drag.
 - Cutting a selected root comment group removes the full nested hierarchy from the graph after copying it to the clipboard payload.

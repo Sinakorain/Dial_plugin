@@ -938,6 +938,35 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
+        public void CommentInspector_ShowsSeparateDeleteActions()
+        {
+            var database = CreateDatabase("CommentDeleteActions");
+            var dialogue = database.Npcs[0].Dialogues[0];
+            var commentNode = new CommentNodeData
+            {
+                Title = "Comment",
+                Position = new Vector2(80f, 80f),
+                Area = new Rect(80f, 80f, 360f, 240f)
+            };
+            dialogue.Graph.Nodes.Add(commentNode);
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                Assert.That(window.FocusDialogueNode(dialogue, commentNode.Id), Is.True);
+
+                Assert.That(window.rootVisualElement.Q<Button>("comment-delete-node-button")?.text, Is.EqualTo("Delete Node"));
+                Assert.That(window.rootVisualElement.Q<Button>("comment-delete-group-button")?.text, Is.EqualTo("Delete Comment With Contents"));
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
         public void FunctionInspector_ShowsFallbackFreeFormFields()
         {
             var database = CreateDatabase("FunctionFallback");

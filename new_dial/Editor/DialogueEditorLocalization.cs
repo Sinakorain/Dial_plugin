@@ -171,6 +171,7 @@ namespace NewDial.DialogueEditor
             ["Use Outputs As Choices"] = "Использовать выходы как варианты",
             ["Delete Node"] = "Удалить узел",
             ["Delete Comment"] = "Удалить комментарий",
+            ["Delete Comment With Contents"] = "Удалить комментарий вместе с содержимым",
             ["Delete Function"] = "Удалить функцию",
             ["Delete Scene"] = "Удалить сцену",
             ["Delete Debug"] = "Удалить отладку",

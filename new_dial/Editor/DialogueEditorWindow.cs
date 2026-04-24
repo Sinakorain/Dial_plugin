@@ -1448,9 +1448,21 @@ namespace NewDial.DialogueEditor
             });
             _inspectorView.Add(areaField);
 
-            var deleteButton = new Button(() => _graphView.DeleteNode(node)) { text = DialogueEditorLocalization.Text("Delete Comment") };
+            var deleteButton = new Button(() => _graphView.DeleteCommentOnly(node))
+            {
+                text = DialogueEditorLocalization.Text("Delete Node"),
+                name = "comment-delete-node-button"
+            };
             deleteButton.AddToClassList("dialogue-editor__danger-button");
             _inspectorView.Add(deleteButton);
+
+            var deleteGroupButton = new Button(() => _graphView.DeleteCommentGroup(node))
+            {
+                text = DialogueEditorLocalization.Text("Delete Comment With Contents"),
+                name = "comment-delete-group-button"
+            };
+            deleteGroupButton.AddToClassList("dialogue-editor__danger-button");
+            _inspectorView.Add(deleteGroupButton);
         }
 
         private void BuildFunctionNodeInspector(FunctionNodeData node)
