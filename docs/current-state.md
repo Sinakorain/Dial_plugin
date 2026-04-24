@@ -20,7 +20,7 @@ This file describes the current working-tree behavior of `new_dial`, including c
 - `NpcEntry` stores an `Id`, a display `Name`, and a list of `DialogueEntry`.
 - `DialogueEntry` stores an `Id`, `Name`, `StartCondition`, and a `DialogueGraphData`.
 - `DialogueGraphData` stores `Nodes` through `SerializeReference` plus ordered `Links`.
-- `DialogueTextNodeData` is the main playable text node type. It carries `BodyText`, `IsStartNode`, and `UseOutputsAsChoices`.
+- `DialogueTextNodeData` is the main playable text node type. It carries `BodyText`, optional `VoiceKey` metadata, `IsStartNode`, and `UseOutputsAsChoices`.
 - `FunctionNodeData`, `SceneNodeData`, and `DebugNodeData` are executable runtime node types.
 - `DialogueArgumentEntry` and `DialogueArgumentValue` store primitive executable parameters: string, int, float, and bool.
 - `CommentNodeData` stores editor-only grouping information: `Area`, `Comment`, and `Tint`.
@@ -66,6 +66,7 @@ This file describes the current working-tree behavior of `new_dial`, including c
 - Text and executable nodes select from any non-button body area; lower-half drags still begin link creation and top-half targeting still accepts link drops.
 - NPC, dialogue, and node `Id` values are explicitly editable in the editor, with generate and safe-regenerate actions plus immediate empty/duplicate warnings.
 - Changing a node `Id` updates internal graph links that referenced the old node `Id`; NPC and dialogue `Id` changes warn about possible external references but do not resolve them yet.
+- Text node inspectors expose optional `VoiceKey` metadata for future project-side voiceover, audio, or localization lookup; the package does not resolve or play audio assets itself.
 - Choice-mode text nodes show editor diagnostics for missing outgoing links, broken targets, empty/fallback choice labels, conflicting link order, negative link order, and unreachable choice targets.
 - Condition editing is guided by `ConditionType`: irrelevant fields are hidden, operators come from built-in metadata, hints explain expected values, and projects can register key suggestions.
 - The preview window includes a bool/number/string test-variable sandbox and explains blocked dialogue starts, unavailable choices, missing targets, branch ends, and generic fallback labels.
@@ -96,7 +97,7 @@ The sample also includes:
 - `NpcEntry`: serializable NPC container that groups dialogues.
 - `DialogueEntry`: serializable dialogue record with start condition and graph payload.
 - `DialogueGraphData`: serializable graph container for node and link data.
-- `DialogueTextNodeData`: playable dialogue node model.
+- `DialogueTextNodeData`: playable dialogue node model with optional voice-key metadata.
 - `FunctionNodeData`: executable project function node model.
 - `SceneNodeData`: executable scene request node model.
 - `DebugNodeData`: executable diagnostic log node model.

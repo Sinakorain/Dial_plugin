@@ -4,6 +4,8 @@
 
 Нужно доработать игровой проект, не меняя пакет `new_dial`, чтобы редактор диалогов увидел проектные функции в `FunctionNode`, проектные сцены в `SceneNode`, а runtime смог выполнять эти ноды через игровые сервисы.
 
+Дополнительно текстовые ноды `new_dial` могут хранить `VoiceKey`. Игровой проект должен использовать его как стабильный id реплики для project-side озвучки, не добавляя аудио-зависимости в пакет.
+
 Пакет уже предоставляет универсальные API:
 
 - `IDialogueExecutionRegistry`
@@ -17,6 +19,8 @@
 - `DialogueExecutionResult`
 
 Вся игровая логика должна жить в проекте игры, например в `Assets/Scripts/Dialogue`.
+
+Озвучка тоже является игровой логикой: lookup `VoiceKey -> AudioClip/FMOD event/Wwise event` должен жить в проекте, а не в `new_dial`.
 
 ## Implementation Changes
 
@@ -96,6 +100,31 @@ new DialoguePlayer(
 ```
 
 Старые text-only диалоги должны продолжить работать без изменений.
+
+### Voiceover Integration
+
+Добавить project-side voiceover bridge поверх runtime events/text-node state:
+
+- при входе в `DialogueTextNodeData` прочитать `node.VoiceKey`;
+- пустой `VoiceKey` игнорировать без warning;
+- непустой `VoiceKey` передать в сервис озвучки вместе с текущей локалью и speaker context;
+- не хранить `AudioClip`, FMOD event или Wwise event внутри `DialogueTextNodeData`;
+- не добавлять audio playback в `DialoguePlayer`;
+- для Unity Audio допустим mapping `VoiceKey + Locale + SpeakerId -> AudioClip`;
+- для FMOD/Wwise допустим mapping `VoiceKey + Locale + SpeakerId -> event id/path`;
+- missing asset по непустому `VoiceKey` должен логироваться диагностически и не останавливать диалог.
+
+Минимальная форма сервиса:
+
+```csharp
+public interface IDialogueVoiceoverService
+{
+    void PlayVoiceLine(string voiceKey, string locale, string speakerId);
+    void StopSpeakerVoice(string speakerId);
+}
+```
+
+Если runtime уже публикует событие входа в ноду, подключить voiceover bridge как подписчика. Если события пока нет, добавить его в project-side runtime service, а не в пакет `new_dial`.
 
 ## Function Behavior
 
@@ -240,6 +269,15 @@ Helper должен:
   - `session.set_int`
   - `session.add_int`
 
+### Runtime Voiceover
+
+- создать текстовую ноду с `VoiceKey = innkeeper.greeting.hello`
+- запустить диалог
+- убедиться, что voiceover bridge получил `innkeeper.greeting.hello`
+- проверить, что resolver учитывает текущую локаль
+- проверить, что пустой `VoiceKey` не вызывает lookup
+- проверить, что missing asset по непустому ключу логируется без остановки диалога
+
 ### Runtime Scene Bindings
 
 - `scene.activate_binding` активирует правильный объект
@@ -260,13 +298,16 @@ Helper должен:
 - старые text-only диалоги запускаются без regressions
 - отсутствие registry не ломает runtime
 - отсутствие registry только убирает dropdown metadata в редакторе
+- отсутствие voiceover resolver не ломает text-only диалоги
 - ошибки executor не валят Unity null reference исключениями
 
 ## Assumptions
 
 - Код адаптера пишется только в игровом проекте, не в `new_dial`.
 - `FunctionId` и `SceneKey` являются стабильными строковыми контрактами.
+- `VoiceKey` является стабильным строковым контрактом реплики для project-side audio/localization lookup.
 - После использования в ассетах `FunctionId` и `SceneKey` нельзя переименовывать без миграции.
+- После использования в ассетах `VoiceKey` нельзя переименовывать без миграции voice/localization таблиц.
 - Все сложные игровые payload остаются в игровых runtime-сервисах.
 - Параметры executable-ноды используют только:
   - `String`

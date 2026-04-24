@@ -11,7 +11,7 @@ The package is intentionally scoped as an MVP. It already includes a reusable ru
 ## What ships today
 
 - dialogue database asset model built around NPCs, dialogues, graphs, nodes, and links
-- graph editor for text, function, scene, debug, and comment nodes with ordered links, conditions, choice-style branches, and an EN/RU editor language switcher
+- graph editor for text, function, scene, debug, and comment nodes with ordered links, conditions, voice-key metadata, choice-style branches, and an EN/RU editor language switcher
 - explicit identifier editing for NPCs, dialogues, and nodes, including empty/duplicate warnings
 - choice-flow diagnostics for choice nodes, broken targets, fallback labels, and ordering issues
 - guided condition editing with type-specific operators, hints, and project-provided key suggestions
@@ -59,7 +59,7 @@ The start window can create a new `DialogueDatabaseAsset` or load an existing on
 | Implemented | Runtime dialogue database model | `DialogueDatabaseAsset`, NPC/dialogue records, graph nodes and links |
 | Implemented | Traversal helper | `DialoguePlayer` supports start, linear advance, choice selection, executable node execution, and pending execution resume |
 | Implemented | Conditions | Lightweight start/node gating through `ConditionData` and evaluator interfaces |
-| Implemented | Graph authoring | Text nodes, comment nodes, ordered links, choice text, and details editing |
+| Implemented | Graph authoring | Text nodes, comment nodes, ordered links, voice-key metadata, choice text, and details editing |
 | Implemented | Executable nodes | Generic `Function`, `Scene`, and `Debug` nodes with primitive argument bags |
 | Implemented | Execution extension points | Project-provided registries and executors drive concrete function and scene behavior |
 | Implemented | Identifier management | NPC, dialogue, and node ids can be edited explicitly; node id changes update internal graph links |
@@ -83,7 +83,7 @@ The start window can create a new `DialogueDatabaseAsset` or load an existing on
 - `NpcEntry`: NPC container with a list of dialogues
 - `DialogueEntry`: dialogue record with a start condition and graph payload
 - `DialogueGraphData`: graph container for nodes and links
-- `DialogueTextNodeData`: playable text node with start-node and choice-mode flags
+- `DialogueTextNodeData`: playable text node with body text, optional voice key metadata, start-node, and choice-mode flags
 - `FunctionNodeData`: generic project-function node with primitive arguments and failure policy
 - `SceneNodeData`: generic scene request node with scene key, load mode, optional entry/transition ids, and parameters
 - `DebugNodeData`: lightweight logging node for diagnostics
@@ -116,6 +116,7 @@ These APIs are suitable for the current MVP package workflow, but they should no
 - Empty-graph messaging, nested comment-group movement, and clipboard-based group cutting are part of the current editor behavior.
 - The editor language is a per-user preference saved in `EditorPrefs`; English is the default and Russian can be selected from the graph toolbar without reopening Unity.
 - Text and executable nodes can be selected by clicking any non-button part of the node. Dragging from the lower half still starts link creation.
+- Text node `VoiceKey` values are stable string metadata for project-side voiceover or localization lookup; the package does not play audio clips, call FMOD events, or resolve voice assets itself.
 - NPC, dialogue, and node identifiers are editable in the editor. Node identifier regeneration updates internal graph links; NPC and dialogue id changes warn about possible external references, but external reference lookup is not implemented yet.
 - Choice-mode node inspectors show authoring diagnostics for broken or unclear choice flows before entering play mode.
 - Projects can register `IDialogueConditionMetadataProvider` implementations for condition key suggestions, `IDialogueExternalReferenceResolver` implementations for external Where Used results, and `IDialogueExecutionRegistry` implementations for executable function/scene metadata.

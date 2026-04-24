@@ -344,6 +344,26 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
+        public void TextNodeClone_PreservesVoiceKey()
+        {
+            var node = new DialogueTextNodeData
+            {
+                Title = "Greeting",
+                BodyText = "Hello there.",
+                VoiceKey = "innkeeper.greeting.hello",
+                IsStartNode = true,
+                UseOutputsAsChoices = true
+            };
+
+            var clone = (DialogueTextNodeData)node.Clone();
+
+            Assert.That(clone.VoiceKey, Is.EqualTo("innkeeper.greeting.hello"));
+            Assert.That(clone.BodyText, Is.EqualTo("Hello there."));
+            Assert.That(clone.IsStartNode, Is.True);
+            Assert.That(clone.UseOutputsAsChoices, Is.True);
+        }
+
+        [Test]
         public void Validator_FindsMissingRequiredArgumentAndTypeMismatch()
         {
             var node = new FunctionNodeData

@@ -9,6 +9,7 @@
 - Added runtime traversal support for immediate executable-node execution, pending resume, failure policy handling, and automatic next-link traversal.
 - Added editor palette, graph rendering, inspectors, validation, and autosave support for executable nodes.
 - Added an editor EN/RU language switcher with localized toolbar, palette, inspector, preview, diagnostics, prompts, and node summaries.
+- Added optional `VoiceKey` metadata on text nodes for future project-side voiceover/audio lookup.
 
 ### Changed
 
@@ -33,6 +34,7 @@
 - Expanded `DialogueGraphViewTests` to cover empty-state visibility, nested comment ownership, direct parent resolution, nested group cutting, and focus-based keyboard pan behavior.
 - Added undo/redo coverage for node creation, link changes, node movement, comment-group movement, comment resize, and grouped cut behavior.
 - Added `DialogueEditorWindowTests` for selection restoration, inspector refresh, and dirty/autosave reset after undo.
+- Added text-node voice-key clone and inspector editing coverage.
 - Added choice-flow diagnostic coverage for choice nodes, fallback labels, broken targets, order conflicts, and inspector warnings.
 - Added coverage for guided condition fields, preview test-variable gating, blocked-state reasons, and Where Used external resolver results.
 - Added coverage for editor language switching, localized node summaries, and full-node runtime selection.

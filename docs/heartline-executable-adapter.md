@@ -6,6 +6,7 @@ This repository branch implements the reusable `new_dial` package side only. Hea
 
 `new_dial` provides:
 
+- `DialogueTextNodeData.VoiceKey` as optional text-line metadata for project-side voiceover lookup
 - `FunctionNodeData`, `SceneNodeData`, and `DebugNodeData`
 - primitive argument data: string, int, float, bool
 - `IDialogueExecutionRegistry` metadata
@@ -13,6 +14,8 @@ This repository branch implements the reusable `new_dial` package side only. Hea
 - traversal semantics in `DialoguePlayer`
 
 `new_dial` must not contain Heartline battle, deck, quest, reward, enemy, save, or scene-binding logic.
+
+It also must not contain Heartline audio playback, `AudioClip` references, FMOD/Wwise event references, Addressables lookup, or voice asset catalogs.
 
 ## Heartline Registry
 
@@ -52,6 +55,27 @@ Expected function behavior:
 
 Do not pass deck contents through dialogue node parameters.
 
+## Heartline Voiceover Bridge
+
+Heartline should treat `DialogueTextNodeData.VoiceKey` as a stable line id for voiceover lookup.
+
+Expected behavior:
+
+- when the active text node changes, read `VoiceKey`
+- ignore empty `VoiceKey` without warning
+- resolve non-empty `VoiceKey` through Heartline audio/localization data
+- include current locale and speaker context in lookup
+- play the resolved Unity Audio clip, FMOD event, or Wwise event through Heartline audio services
+- log a diagnostic warning for a missing asset, but keep dialogue traversal running
+
+Recommended lookup shape:
+
+```text
+VoiceKey + Locale + SpeakerId -> Voice Asset / Audio Event
+```
+
+`VoiceKey` should remain stable across locales. Text, subtitles, clips, and audio events may vary by locale; the key itself should not be translated.
+
 ## Manual Validation In Heartline
 
 After integrating the adapter in the Heartline branch:
@@ -59,5 +83,7 @@ After integrating the adapter in the Heartline branch:
 - run `Tools/Heartline/Validate Dialogue Assets`
 - smoke test `Assets/Scenes/Playground.unity`
 - verify a dialogue graph can trigger `battle.start`
+- verify a text node with `VoiceKey` triggers the Heartline voiceover bridge
+- verify an empty `VoiceKey` does not trigger audio lookup
 - verify existing non-executable dialogues still work
 - verify scene object/action bindings still resolve correctly

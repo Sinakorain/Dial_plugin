@@ -723,6 +723,17 @@ namespace NewDial.DialogueEditor
             });
             _inspectorView.Add(bodyField);
 
+            var voiceKeyField = new TextField(DialogueEditorLocalization.Text("Voice Key"))
+            {
+                value = node.VoiceKey,
+                name = "node-voice-key-field"
+            };
+            voiceKeyField.RegisterValueChangedCallback(evt =>
+            {
+                PerformNodeScopedChange("Edit Node Voice Key", () => node.VoiceKey = evt.newValue);
+            });
+            _inspectorView.Add(voiceKeyField);
+
             var startToggle = new Toggle(DialogueEditorLocalization.Text("Is Start Node")) { value = node.IsStartNode, name = "node-start-toggle" };
             startToggle.RegisterValueChangedCallback(evt =>
             {

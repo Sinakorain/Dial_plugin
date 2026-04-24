@@ -47,6 +47,7 @@ namespace NewDial.DialogueEditor.Tests
                 Assert.That(DialogueEditorLanguageSettings.CurrentLanguage, Is.EqualTo(DialogueEditorLanguage.Russian));
                 Assert.That(HasLabel(window, "Палитра"), Is.True);
                 Assert.That(HasLabel(window, "Текстовый узел"), Is.True);
+                Assert.That(HasLabel(window, "Ключ озвучки"), Is.True);
 
                 languageField = window.rootVisualElement.Q<PopupField<string>>("editor-language-field");
                 languageField.value = "EN";
@@ -275,6 +276,37 @@ namespace NewDial.DialogueEditor.Tests
                 var idField = window.rootVisualElement.Q<TextField>("node-id-field");
                 Assert.That(idField, Is.Not.Null);
                 Assert.That(idField.value, Is.EqualTo(node.Id));
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void NodeInspector_EditsVoiceKeyAndMarksDatabaseDirty()
+        {
+            var database = CreateDatabase("VoiceKeyInspector");
+            var dialogue = database.Npcs[0].Dialogues[0];
+            var node = (DialogueTextNodeData)dialogue.Graph.Nodes[0];
+            node.VoiceKey = "npc.original.line";
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                window.SaveBaselineForTests();
+                Assert.That(window.FocusDialogueNode(dialogue, node.Id), Is.True);
+
+                var voiceKeyField = window.rootVisualElement.Q<TextField>("node-voice-key-field");
+                Assert.That(voiceKeyField, Is.Not.Null);
+                Assert.That(voiceKeyField.value, Is.EqualTo("npc.original.line"));
+
+                voiceKeyField.value = "innkeeper.greeting.hello";
+
+                Assert.That(node.VoiceKey, Is.EqualTo("innkeeper.greeting.hello"));
+                Assert.That(window.HasUnsavedChangesForTests, Is.True);
             }
             finally
             {

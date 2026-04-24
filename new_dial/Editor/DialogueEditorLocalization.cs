@@ -121,6 +121,7 @@ namespace NewDial.DialogueEditor
             ["Click empty graph space to return here after editing a node."] = "Нажмите на пустую область графа, чтобы вернуться сюда после редактирования узла.",
             ["Title"] = "Название",
             ["Body Text"] = "Текст реплики",
+            ["Voice Key"] = "Ключ озвучки",
             ["Is Start Node"] = "Стартовый узел",
             ["Use Outputs As Choices"] = "Использовать выходы как варианты",
             ["Delete Node"] = "Удалить узел",
