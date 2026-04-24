@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -14,8 +15,7 @@ namespace NewDial.DialogueEditor
         private NpcEntry _selectedNpc;
         private DialogueEntry _selectedDialogue;
         private DialogueLocalizationTable _table;
-        private PopupField<string> _conversationField;
-        private Toggle _createDialogueToggle;
+        private readonly Dictionary<string, bool> _conversationSelections = new(StringComparer.OrdinalIgnoreCase);
         private Label _summaryLabel;
         private TextField _exportPrefixField;
 
@@ -92,6 +92,7 @@ namespace NewDial.DialogueEditor
                 _database = nextDatabase;
                 _selectedNpc = _database?.Npcs?.FirstOrDefault();
                 _selectedDialogue = _selectedNpc?.Dialogues?.FirstOrDefault();
+                SyncConversationSelections();
                 BuildLayout();
             });
             databaseField.name = "localization-database-field";
@@ -108,34 +109,7 @@ namespace NewDial.DialogueEditor
                 name = "localization-load-table-button"
             });
 
-            var conversations = _table?.GetConversations().Select(conversation => conversation.Id).ToList() ?? new List<string>();
-            if (conversations.Count == 0)
-            {
-                conversations.Add(DialogueEditorLocalization.Text("No conversations loaded"));
-            }
-
-            _conversationField = new PopupField<string>(
-                DialogueEditorLocalization.Text("Conversation"),
-                conversations,
-                0)
-            {
-                name = "localization-conversation-field"
-            };
-            _conversationField.SetEnabled(_table?.Rows.Count > 0);
-            rootVisualElement.Add(_conversationField);
-
-            _createDialogueToggle = new Toggle(DialogueEditorLocalization.Text("Create New Dialogue"))
-            {
-                value = _selectedDialogue == null,
-                name = "localization-create-dialogue-toggle"
-            };
-            rootVisualElement.Add(_createDialogueToggle);
-
-            rootVisualElement.Add(new Button(ApplyImport)
-            {
-                text = DialogueEditorLocalization.Text("Apply Import"),
-                name = "localization-apply-import-button"
-            });
+            AddConversationSelectionUi();
 
             rootVisualElement.Add(CreateSectionTitle(DialogueEditorLocalization.Text("Export")));
             _exportPrefixField = new TextField(DialogueEditorLocalization.Text("Conversation Prefix"))
@@ -160,41 +134,64 @@ namespace NewDial.DialogueEditor
             }
 
             _table = DialogueLocalizationTableParser.Parse(File.ReadAllText(path));
+            _conversationSelections.Clear();
+            SyncConversationSelections(selectAllNewConversations: true);
             BuildLayout();
             ShowNotification(new GUIContent(DialogueEditorLocalization.Format("Loaded {0} dialogue row(s).", _table.Rows.Count)));
         }
 
-        private void ApplyImport()
+        private void ApplySelectedImport()
         {
-            if (_database == null || _table == null || _table.Rows.Count == 0)
+            ApplyConversations(GetSelectedConversations());
+        }
+
+        private void ApplyAllImport()
+        {
+            ApplyConversations(_table?.GetConversations() ?? new List<DialogueLocalizationConversation>());
+        }
+
+        private void ApplyConversations(IReadOnlyList<DialogueLocalizationConversation> conversations)
+        {
+            if (!CanImport())
+            {
+                return;
+            }
+
+            if (conversations == null || conversations.Count == 0)
             {
                 EditorUtility.DisplayDialog(
                     DialogueEditorLocalization.Text("Import failed"),
-                    DialogueEditorLocalization.Text("Load a dialogue database and TSV/CSV table first."),
+                    DialogueEditorLocalization.Text("Select at least one conversation to import."),
                     DialogueEditorLocalization.Text("OK"));
                 return;
             }
 
-            var conversation = _table.GetConversation(_conversationField.value);
-            if (conversation == null)
+            Undo.RegisterCompleteObjectUndo(_database, "Import Dialogue Localization");
+            var report = DialogueLocalizationImportUtility.ApplyConversationsToDatabase(
+                _database,
+                _selectedNpc,
+                conversations,
+                out var targetNpc,
+                out var targetDialogue);
+            EditorUtility.SetDirty(_database);
+            if (targetNpc != null)
             {
-                return;
+                _selectedNpc = targetNpc;
             }
 
-            Undo.RegisterCompleteObjectUndo(_database, "Import Dialogue Localization");
-            var targetNpc = EnsureTargetNpc();
-            var targetDialogue = _createDialogueToggle.value || _selectedDialogue == null
-                ? CreateDialogue(targetNpc, conversation.Id)
-                : _selectedDialogue;
+            if (targetDialogue != null)
+            {
+                _selectedDialogue = targetDialogue;
+            }
 
-            var report = DialogueLocalizationImportUtility.ApplyConversationToDialogue(targetDialogue, conversation);
-            EditorUtility.SetDirty(_database);
-            _selectedNpc = targetNpc;
-            _selectedDialogue = targetDialogue;
             _owner?.RefreshAfterLocalizationImport(targetNpc, targetDialogue);
+            SyncConversationSelections();
             BuildLayout();
             ShowNotification(new GUIContent(DialogueEditorLocalization.Format(
-                "Import: {0} created, {1} updated, {2} missing.",
+                "Import: {0} conversation(s), {1} dialogue(s) created, {2} dialogue(s) updated, {3} node(s) created, {4} updated, {5} missing.",
+                report.ConversationsImported,
+                report.DialoguesCreated,
+                report.DialoguesUpdated,
                 report.Created,
                 report.Updated,
                 report.Missing)));
@@ -232,35 +229,138 @@ namespace NewDial.DialogueEditor
                 report.SkippedMissingKey)));
         }
 
-        private NpcEntry EnsureTargetNpc()
+        private void AddConversationSelectionUi()
         {
-            _database.Npcs ??= new List<NpcEntry>();
-            if (_selectedNpc != null && _database.Npcs.Contains(_selectedNpc))
+            var conversations = _table?.GetConversations() ?? new List<DialogueLocalizationConversation>();
+            if (conversations.Count == 0)
             {
-                return _selectedNpc;
+                rootVisualElement.Add(new Label(DialogueEditorLocalization.Text("No conversations loaded"))
+                {
+                    name = "localization-empty-conversation-label"
+                });
+                return;
             }
 
-            var npc = _database.Npcs.FirstOrDefault();
-            if (npc != null)
+            var toolsRow = new VisualElement
             {
-                return npc;
+                name = "localization-selection-tools"
+            };
+            toolsRow.style.flexDirection = FlexDirection.Row;
+            toolsRow.style.marginTop = 6f;
+            toolsRow.style.marginBottom = 4f;
+            toolsRow.Add(new Button(() => SetAllConversationSelections(true))
+            {
+                text = DialogueEditorLocalization.Text("Select All"),
+                name = "localization-select-all-button"
+            });
+            toolsRow.Add(new Button(() => SetAllConversationSelections(false))
+            {
+                text = DialogueEditorLocalization.Text("Clear"),
+                name = "localization-clear-selection-button"
+            });
+            rootVisualElement.Add(toolsRow);
+
+            var scroll = new ScrollView
+            {
+                name = "localization-conversation-list"
+            };
+            scroll.style.maxHeight = 180f;
+            scroll.style.marginBottom = 6f;
+            foreach (var conversation in conversations)
+            {
+                var toggle = new Toggle($"{conversation.Id} ({conversation.Rows.Count})")
+                {
+                    value = IsConversationSelected(conversation.Id),
+                    name = "localization-conversation-toggle"
+                };
+                toggle.RegisterValueChangedCallback(evt =>
+                {
+                    _conversationSelections[conversation.Id] = evt.newValue;
+                });
+                scroll.Add(toggle);
             }
 
-            npc = new NpcEntry { Name = "Imported NPC" };
-            _database.Npcs.Add(npc);
-            return npc;
+            rootVisualElement.Add(scroll);
+
+            var importRow = new VisualElement
+            {
+                name = "localization-import-actions"
+            };
+            importRow.style.flexDirection = FlexDirection.Row;
+            importRow.style.marginTop = 4f;
+            importRow.Add(new Button(ApplySelectedImport)
+            {
+                text = DialogueEditorLocalization.Text("Import Selected"),
+                name = "localization-import-selected-button"
+            });
+            importRow.Add(new Button(ApplyAllImport)
+            {
+                text = DialogueEditorLocalization.Text("Import All"),
+                name = "localization-import-all-button"
+            });
+            rootVisualElement.Add(importRow);
         }
 
-        private static DialogueEntry CreateDialogue(NpcEntry npc, string conversationId)
+        private bool CanImport()
         {
-            npc.Dialogues ??= new List<DialogueEntry>();
-            var dialogue = new DialogueEntry
+            if (_database != null && _table != null && _table.Rows.Count > 0)
             {
-                Id = conversationId,
-                Name = conversationId
-            };
-            npc.Dialogues.Add(dialogue);
-            return dialogue;
+                return true;
+            }
+
+            EditorUtility.DisplayDialog(
+                DialogueEditorLocalization.Text("Import failed"),
+                DialogueEditorLocalization.Text("Load a dialogue database and TSV/CSV table first."),
+                DialogueEditorLocalization.Text("OK"));
+            return false;
+        }
+
+        private IReadOnlyList<DialogueLocalizationConversation> GetSelectedConversations()
+        {
+            return (_table?.GetConversations() ?? new List<DialogueLocalizationConversation>())
+                .Where(conversation => IsConversationSelected(conversation.Id))
+                .ToList();
+        }
+
+        private bool IsConversationSelected(string conversationId)
+        {
+            return !string.IsNullOrWhiteSpace(conversationId) &&
+                   _conversationSelections.TryGetValue(conversationId, out var selected) &&
+                   selected;
+        }
+
+        private void SetAllConversationSelections(bool selected)
+        {
+            foreach (var conversation in _table?.GetConversations() ?? new List<DialogueLocalizationConversation>())
+            {
+                _conversationSelections[conversation.Id] = selected;
+            }
+
+            BuildLayout();
+        }
+
+        private void SyncConversationSelections(bool selectAllNewConversations = false)
+        {
+            var conversationIds = new HashSet<string>(
+                (_table?.GetConversations() ?? new List<DialogueLocalizationConversation>())
+                .Select(conversation => conversation.Id),
+                StringComparer.OrdinalIgnoreCase);
+
+            foreach (var id in _conversationSelections.Keys.ToList())
+            {
+                if (!conversationIds.Contains(id))
+                {
+                    _conversationSelections.Remove(id);
+                }
+            }
+
+            foreach (var id in conversationIds)
+            {
+                if (!_conversationSelections.ContainsKey(id))
+                {
+                    _conversationSelections[id] = selectAllNewConversations;
+                }
+            }
         }
 
         private string BuildContextSummary()
@@ -268,7 +368,8 @@ namespace NewDial.DialogueEditor
             var databaseName = _database == null ? DialogueEditorLocalization.Text("None") : _database.name;
             var dialogueName = _selectedDialogue == null ? DialogueEditorLocalization.Text("None") : _selectedDialogue.Name;
             var rowCount = _table?.Rows.Count ?? 0;
-            return DialogueEditorLocalization.Format("Database: {0}. Dialogue: {1}. Loaded rows: {2}.", databaseName, dialogueName, rowCount);
+            var conversationCount = _table?.GetConversations().Count ?? 0;
+            return DialogueEditorLocalization.Format("Database: {0}. Dialogue: {1}. Loaded rows: {2}. Conversations: {3}.", databaseName, dialogueName, rowCount, conversationCount);
         }
 
         private static Label CreateSectionTitle(string text)

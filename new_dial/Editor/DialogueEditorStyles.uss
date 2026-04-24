@@ -511,7 +511,12 @@
     border-bottom-right-radius: 8px;
 }
 
-.dialogue-editor__where-used-title {
+.dialogue-editor__where-used-foldout {
+    -unity-font-style: bold;
+    color: #f7fbff;
+}
+
+.dialogue-editor__where-used-foldout .unity-foldout__text {
     -unity-font-style: bold;
     color: #f7fbff;
     margin-bottom: 6px;

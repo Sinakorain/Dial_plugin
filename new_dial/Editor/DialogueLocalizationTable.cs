@@ -345,6 +345,18 @@ namespace NewDial.DialogueEditor
         public List<string> Messages { get; } = new();
     }
 
+    internal sealed class DialogueLocalizationBatchImportReport
+    {
+        public int ConversationsImported { get; set; }
+        public int DialoguesCreated { get; set; }
+        public int DialoguesUpdated { get; set; }
+        public int Created { get; set; }
+        public int Updated { get; set; }
+        public int Missing { get; set; }
+        public int Skipped { get; set; }
+        public List<string> Messages { get; } = new();
+    }
+
     internal sealed class DialogueLocalizationExportReport
     {
         public int Exported { get; set; }
@@ -354,7 +366,61 @@ namespace NewDial.DialogueEditor
 
     internal static class DialogueLocalizationImportUtility
     {
-        private const float NodeSpacingX = 280f;
+        private const float NodeSpacingY = 220f;
+
+        public static DialogueLocalizationBatchImportReport ApplyConversationsToDatabase(
+            DialogueDatabaseAsset database,
+            NpcEntry preferredNpc,
+            IEnumerable<DialogueLocalizationConversation> conversations,
+            out NpcEntry selectedNpc,
+            out DialogueEntry selectedDialogue)
+        {
+            selectedNpc = null;
+            selectedDialogue = null;
+
+            var report = new DialogueLocalizationBatchImportReport();
+            var materializedConversations = (conversations ?? Enumerable.Empty<DialogueLocalizationConversation>())
+                .Where(conversation => conversation != null)
+                .ToList();
+
+            if (database == null || materializedConversations.Count == 0)
+            {
+                report.Skipped++;
+                report.Messages.Add("Missing database or conversations.");
+                return report;
+            }
+
+            database.Npcs ??= new List<NpcEntry>();
+            var targetNpcForNewDialogues = EnsureTargetNpc(database, preferredNpc);
+
+            foreach (var conversation in materializedConversations)
+            {
+                var targetDialogue = FindDialogueById(database, conversation.Id, out var ownerNpc);
+                if (targetDialogue == null)
+                {
+                    ownerNpc = targetNpcForNewDialogues;
+                    targetDialogue = CreateDialogue(ownerNpc, conversation.Id);
+                    report.DialoguesCreated++;
+                }
+                else
+                {
+                    report.DialoguesUpdated++;
+                }
+
+                var importReport = ApplyConversationToDialogue(targetDialogue, conversation);
+                report.ConversationsImported++;
+                report.Created += importReport.Created;
+                report.Updated += importReport.Updated;
+                report.Missing += importReport.Missing;
+                report.Skipped += importReport.Skipped;
+                report.Messages.AddRange(importReport.Messages);
+
+                selectedNpc = ownerNpc;
+                selectedDialogue = targetDialogue;
+            }
+
+            return report;
+        }
 
         public static DialogueLocalizationImportReport ApplyConversationToDialogue(
             DialogueEntry dialogue,
@@ -448,7 +514,7 @@ namespace NewDial.DialogueEditor
                     Title = $"Entry {row.EntryIndex}",
                     LocalizationKey = row.Key,
                     IsStartNode = index == 0,
-                    Position = new Vector2(index * NodeSpacingX, 0f)
+                    Position = new Vector2(0f, index * NodeSpacingY)
                 };
                 ApplyRowToNode(node, row);
                 graph.Nodes.Add(node);
@@ -527,6 +593,64 @@ namespace NewDial.DialogueEditor
             }
 
             return $"{prefix}/Entry/{entryIndex}/Dialogue Text";
+        }
+
+        private static NpcEntry EnsureTargetNpc(DialogueDatabaseAsset database, NpcEntry preferredNpc)
+        {
+            database.Npcs ??= new List<NpcEntry>();
+            if (preferredNpc != null && database.Npcs.Contains(preferredNpc))
+            {
+                preferredNpc.Dialogues ??= new List<DialogueEntry>();
+                return preferredNpc;
+            }
+
+            var npc = database.Npcs.FirstOrDefault(npc => npc != null);
+            if (npc != null)
+            {
+                npc.Dialogues ??= new List<DialogueEntry>();
+                return npc;
+            }
+
+            npc = new NpcEntry { Name = "Imported NPC" };
+            database.Npcs.Add(npc);
+            return npc;
+        }
+
+        private static DialogueEntry CreateDialogue(NpcEntry npc, string conversationId)
+        {
+            npc.Dialogues ??= new List<DialogueEntry>();
+            var dialogue = new DialogueEntry
+            {
+                Id = conversationId,
+                Name = conversationId
+            };
+            npc.Dialogues.Add(dialogue);
+            return dialogue;
+        }
+
+        private static DialogueEntry FindDialogueById(DialogueDatabaseAsset database, string dialogueId, out NpcEntry ownerNpc)
+        {
+            ownerNpc = null;
+            if (database?.Npcs == null || string.IsNullOrWhiteSpace(dialogueId))
+            {
+                return null;
+            }
+
+            foreach (var npc in database.Npcs.Where(npc => npc != null))
+            {
+                var dialogue = npc.Dialogues?.FirstOrDefault(candidate =>
+                    candidate != null &&
+                    string.Equals(candidate.Id, dialogueId, StringComparison.OrdinalIgnoreCase));
+                if (dialogue == null)
+                {
+                    continue;
+                }
+
+                ownerNpc = npc;
+                return dialogue;
+            }
+
+            return null;
         }
 
         private static bool TryParseConversationId(string key, out string conversationId)

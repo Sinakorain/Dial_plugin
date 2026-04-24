@@ -13,6 +13,7 @@
 - Added per-dialogue speaker rosters, text-node speaker binding, current-speaker runtime resolution, and speaker labels in graph and preview UI.
 - Added a text-node rich-text toolbar, user-editable color/highlight lists saved in `EditorPrefs`, sanitized graph/preview rendering, and runtime helpers for supported dialogue body markup.
 - Added text-node localization keys, per-language body text storage, content-language switching, and TSV/CSV dialogue localization import/export tooling.
+- Added batch TSV/CSV localization import for selected conversations or all conversations in a loaded table.
 
 ### Changed
 
@@ -38,6 +39,11 @@
 - Rich-text toolbar formatting now preserves selected text ranges when applying bold, italic, color, or highlight.
 - Saved rich-text color slots now display as color icons; one click selects the color, `Apply` formats the current selection, and double click returns that slot to hex edit mode.
 - Localization imports update existing text-node data by `LocalizationKey` without rebuilding graph links, positions, executable nodes, conditions, speakers, or choice flags.
+- Localization imports now update existing dialogues by matching `Dialogue.Id` to the imported conversation id, creating only missing dialogues.
+- First-time localization imports now create a vertical top-to-bottom text-node chain instead of a horizontal row.
+- WASD graph panning now uses zoom-independent screen-space speed and clamps delayed editor ticks to avoid jumps on large graphs.
+- Content-language choices now refresh after localization import, including when the editor UI language is Russian.
+- Where Used reference details are now collapsed by default in editor inspectors.
 
 ### Tests
 
@@ -50,7 +56,9 @@
 - Added coverage for editor language switching, localized node summaries, and full-node runtime selection.
 - Added coverage for speaker cloning, runtime speaker fallback, speaker inspector editing, roster removal, and autosave restore.
 - Added coverage for rich-text wrapping, sanitizing, stripping, parsing, user color-list persistence, strict color validation, inspector preview refresh, toolbar selection formatting, and graph preview rendering.
-- Added coverage for localization table parsing, first-import linear node creation, repeat-import data-only updates, TSV export, and content-language editing.
+- Added coverage for localization table parsing, first-import linear node creation/layout, repeat-import data-only updates, TSV export, and content-language editing.
+- Added coverage for batch localization import and Russian UI content-language refresh after import.
+- Added coverage for vertical localization import layout and smoothed WASD graph panning.
 
 ### Docs
 

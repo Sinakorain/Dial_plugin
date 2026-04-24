@@ -53,6 +53,9 @@ namespace NewDial.DialogueEditor.Tests
             var second = (DialogueTextNodeData)dialogue.Graph.Nodes[1];
             Assert.That(first.IsStartNode, Is.True);
             Assert.That(first.Title, Is.EqualTo("Entry 1"));
+            Assert.That(first.Position, Is.EqualTo(Vector2.zero));
+            Assert.That(second.Position.x, Is.EqualTo(first.Position.x));
+            Assert.That(second.Position.y, Is.GreaterThan(first.Position.y));
             Assert.That(first.BodyText, Is.EqualTo("Один"));
             Assert.That(DialogueTextLocalizationUtility.GetBodyText(first, "en"), Is.EqualTo("One"));
             Assert.That(dialogue.Graph.Links[0].FromNodeId, Is.EqualTo(first.Id));
@@ -112,6 +115,75 @@ namespace NewDial.DialogueEditor.Tests
             Assert.That(((FunctionNodeData)dialogue.Graph.Nodes[1]).FunctionId, Is.EqualTo("Quest.Complete"));
             Assert.That(dialogue.Graph.Links[0].ChoiceText, Is.EqualTo("Continue"));
             Assert.That(dialogue.Graph.Links[0].Order, Is.EqualTo(7));
+        }
+
+        [Test]
+        public void Import_BatchSelectedConversationsCreatesOnlyRequestedDialogues()
+        {
+            var table = DialogueLocalizationTableParser.Parse(
+                "Keys\tRussian\tEnglish\n" +
+                "Conversation/First/Entry/1/Dialogue Text\tПервый\tFirst\n" +
+                "Conversation/Second/Entry/1/Dialogue Text\tВторой\tSecond\n");
+            var database = ScriptableObject.CreateInstance<DialogueDatabaseAsset>();
+            var npc = new NpcEntry();
+            database.Npcs.Add(npc);
+
+            var report = DialogueLocalizationImportUtility.ApplyConversationsToDatabase(
+                database,
+                npc,
+                new[] { table.GetConversation("Second") },
+                out var selectedNpc,
+                out var selectedDialogue);
+
+            Assert.That(report.ConversationsImported, Is.EqualTo(1));
+            Assert.That(report.DialoguesCreated, Is.EqualTo(1));
+            Assert.That(npc.Dialogues, Has.Count.EqualTo(1));
+            Assert.That(npc.Dialogues[0].Id, Is.EqualTo("Second"));
+            Assert.That(selectedNpc, Is.SameAs(npc));
+            Assert.That(selectedDialogue, Is.SameAs(npc.Dialogues[0]));
+            Assert.That(DialogueTextLocalizationUtility.GetBodyText((DialogueTextNodeData)selectedDialogue.Graph.Nodes[0], "en"), Is.EqualTo("Second"));
+        }
+
+        [Test]
+        public void Import_BatchAllUpdatesMatchingDialogueIdAndCreatesMissingDialogues()
+        {
+            var database = ScriptableObject.CreateInstance<DialogueDatabaseAsset>();
+            var npc = new NpcEntry();
+            var existingDialogue = new DialogueEntry
+            {
+                Id = "Existing",
+                Name = "Existing"
+            };
+            existingDialogue.Graph.Nodes.Add(new DialogueTextNodeData
+            {
+                LocalizationKey = "Conversation/Existing/Entry/1/Dialogue Text",
+                BodyText = "Старый"
+            });
+            npc.Dialogues.Add(existingDialogue);
+            database.Npcs.Add(npc);
+
+            var table = DialogueLocalizationTableParser.Parse(
+                "Keys\tRussian\tEnglish\n" +
+                "Conversation/Existing/Entry/1/Dialogue Text\tНовый\tUpdated\n" +
+                "Conversation/NewOne/Entry/1/Dialogue Text\tНовый диалог\tNew dialogue\n");
+
+            var report = DialogueLocalizationImportUtility.ApplyConversationsToDatabase(
+                database,
+                npc,
+                table.GetConversations(),
+                out _,
+                out _);
+
+            Assert.That(report.ConversationsImported, Is.EqualTo(2));
+            Assert.That(report.DialoguesCreated, Is.EqualTo(1));
+            Assert.That(report.DialoguesUpdated, Is.EqualTo(1));
+            Assert.That(report.Created, Is.EqualTo(1));
+            Assert.That(report.Updated, Is.EqualTo(1));
+            Assert.That(npc.Dialogues.Count(dialogue => dialogue.Id == "Existing"), Is.EqualTo(1));
+            Assert.That(npc.Dialogues, Has.Count.EqualTo(2));
+            Assert.That(((DialogueTextNodeData)existingDialogue.Graph.Nodes[0]).BodyText, Is.EqualTo("Новый"));
+            Assert.That(DialogueTextLocalizationUtility.GetBodyText((DialogueTextNodeData)existingDialogue.Graph.Nodes[0], "en"), Is.EqualTo("Updated"));
+            Assert.That(npc.Dialogues.Any(dialogue => dialogue.Id == "NewOne"), Is.True);
         }
 
         [Test]
@@ -209,6 +281,55 @@ namespace NewDial.DialogueEditor.Tests
             }
             finally
             {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void EditorContentLanguage_RefreshAfterLocalizationImportShowsImportedLanguagesInRussianUi()
+        {
+            DialogueEditorLanguageSettings.CurrentLanguage = DialogueEditorLanguage.Russian;
+            var database = ScriptableObject.CreateInstance<DialogueDatabaseAsset>();
+            database.name = "LocalizationLanguageRussianUi";
+            var npc = new NpcEntry();
+            var dialogue = new DialogueEntry();
+            dialogue.Graph.Nodes.Add(new DialogueTextNodeData
+            {
+                BodyText = "Привет",
+                IsStartNode = true
+            });
+            npc.Dialogues.Add(dialogue);
+            database.Npcs.Add(npc);
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+
+                var contentLanguageField = window.rootVisualElement.Q<PopupField<string>>("content-language-field");
+                Assert.That(contentLanguageField, Is.Not.Null);
+                Assert.That(contentLanguageField.choices, Is.EqualTo(new[] { "ru" }));
+
+                var table = DialogueLocalizationTableParser.Parse(
+                    "Keys\tRussian\tEnglish\n" +
+                    "Conversation/Imported/Entry/1/Dialogue Text\tИмпорт\tImported\n");
+                DialogueLocalizationImportUtility.ApplyConversationsToDatabase(
+                    database,
+                    npc,
+                    table.GetConversations(),
+                    out var importedNpc,
+                    out var importedDialogue);
+
+                window.RefreshAfterLocalizationImport(importedNpc, importedDialogue);
+
+                contentLanguageField = window.rootVisualElement.Q<PopupField<string>>("content-language-field");
+                Assert.That(contentLanguageField, Is.Not.Null);
+                Assert.That(contentLanguageField.choices, Is.EqualTo(new[] { "ru", "en" }));
+            }
+            finally
+            {
+                DialogueEditorLanguageSettings.CurrentLanguage = DialogueEditorLanguage.English;
                 DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
                 window.Close();
             }

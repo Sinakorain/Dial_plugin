@@ -40,6 +40,7 @@ namespace NewDial.DialogueEditor
     {
         private const float AnchorInset = 18f;
         private const float KeyboardPanSpeed = 900f;
+        private const float MaxKeyboardPanDeltaTime = 0.05f;
         private const float FrameCenterTolerancePixels = 42f;
         internal static readonly Vector2 TextNodeInitialSize = new(280f, 170f);
         internal static readonly Vector2 CommentNodeInitialSize = new(420f, 260f);
@@ -1644,8 +1645,8 @@ namespace NewDial.DialogueEditor
                 return;
             }
 
-            var scale = GetCurrentGraphScale();
-            var panDelta = input.normalized * (KeyboardPanSpeed * scale * deltaTimeSeconds);
+            var clampedDeltaTime = Mathf.Min(deltaTimeSeconds, MaxKeyboardPanDeltaTime);
+            var panDelta = input.normalized * (KeyboardPanSpeed * clampedDeltaTime);
             var currentPan = GetCurrentGraphPan();
             UpdateViewTransform(
                 new Vector3(currentPan.x + panDelta.x, currentPan.y + panDelta.y, 0f),

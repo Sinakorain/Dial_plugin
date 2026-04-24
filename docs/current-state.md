@@ -57,7 +57,7 @@ This file describes the current working-tree behavior of `new_dial`, including c
 - The palette supports `Text Node`, `Comment`, `Function`, `Scene`, and `Debug`.
 - Dialogue settings expose a speaker roster editor. Text node inspectors can bind a line to a speaker from that dialogue.
 - Text node inspectors expose `LocalizationKey`, a rich-text toolbar for bold, italic, user-editable text color/highlight lists, clear formatting, a wrapping body text field for the active content language, and a sanitized formatted live preview.
-- `DialogueLocalizationWindow` imports and exports Google Sheets `.tsv`/`.csv` exports for dialogue rows shaped like `Conversation/<conversationId>/Entry/<n>/Dialogue Text`.
+- `DialogueLocalizationWindow` imports and exports Google Sheets `.tsv`/`.csv` exports for dialogue rows shaped like `Conversation/<conversationId>/Entry/<n>/Dialogue Text`, with selected or all-conversation batch import.
 - Rich-text color and highlight lists are editor-only user preferences saved in `EditorPrefs`; `+` adds an empty hex slot, valid values collapse into color icons, one click selects a color, `Apply` formats the current selection, and double click reopens hex editing.
 - `DialoguePreviewWindow` opens from the main editor toolbar for the currently selected dialogue and supports speaker labels, transcript history, advancing, choosing branches, going back, restarting, and jumping to the active node.
 - The main editor, graph hints/summaries, preview window, start window, prompts, diagnostics, and inspector labels are localized for English and Russian. Authored dialogue content, serialized field names, ids, and public APIs remain unchanged.
@@ -76,20 +76,22 @@ This file describes the current working-tree behavior of `new_dial`, including c
 - Changing a node `Id` updates internal graph links that referenced the old node `Id`; NPC and dialogue `Id` changes warn about possible external references but do not resolve them yet.
 - Text node inspectors expose optional `VoiceKey` metadata for future project-side voiceover, audio, or localization lookup; the package does not resolve or play audio assets itself.
 - Text node inspectors expose speaker selection. Empty or missing text-node speaker references fall back to the first speaker in the dialogue roster.
-- The content-language toolbar dropdown changes which localized text graph nodes, inspectors, and preview surfaces display and edit; it is independent from the EN/RU editor UI language. A database starts with only `ru`; additional language codes appear only after imported or authored localized node data exists.
-- Localization table import creates a linear row of text nodes only when the target dialogue graph is empty. Repeat imports match text nodes by `LocalizationKey` and update only `BodyText`/`LocalizedBodyText`; missing table rows are reported instead of being auto-created.
+- The content-language toolbar dropdown changes which localized text graph nodes, inspectors, and preview surfaces display and edit; it is independent from the EN/RU editor UI language. A database starts with only `ru`; additional language codes appear after imported or authored localized node data exists, including when the editor UI is set to Russian.
+- Localization table import groups rows by `Conversation`, can import checked conversations or all conversations in one pass, updates existing dialogues by matching `Dialogue.Id` to the conversation id, and creates missing dialogues under the selected/current NPC.
+- Localization table import creates a vertical top-to-bottom chain of text nodes only when the target dialogue graph is empty. Repeat imports match text nodes by `LocalizationKey` and update only `BodyText`/`LocalizedBodyText`; missing table rows are reported instead of being auto-created.
 - Localization table export writes `Keys` plus only the language columns that exist in the selected dialogue data. Empty cells and `Loading...` are treated as missing translations on import.
 - Text node `BodyText` supports `<b>`, `<i>`, `<color=#RRGGBB>`, and `<mark=#RRGGBBAA>` markup. Unknown or malformed tags remain in raw `BodyText` and render as plain text in editor previews.
 - Inspector, graph, current-line preview, and transcript surfaces render supported rich text through a shared segmented UI Toolkit renderer for bold, italic, color, and highlight.
 - Choice-mode text nodes show editor diagnostics for missing outgoing links, broken targets, empty/fallback choice labels, conflicting link order, negative link order, and unreachable choice targets.
 - Condition editing is guided by `ConditionType`: irrelevant fields are hidden, operators come from built-in metadata, hints explain expected values, and projects can register key suggestions.
 - The preview window includes a bool/number/string test-variable sandbox and explains blocked dialogue starts, unavailable choices, missing targets, branch ends, and generic fallback labels.
-- Where Used blocks show internal NPC/dialogue/node references and can include project-provided external references through an editor resolver registry.
+- Collapsible Where Used blocks show internal NPC/dialogue/node references and can include project-provided external references through an editor resolver registry.
 - Comment groups can own both text nodes and nested comment groups.
 - Nested ownership prefers the most specific containing comment group when several comment areas overlap.
 - Moving a parent comment group moves directly contained text nodes and nested comment groups with it.
 - Cutting a selected root comment group removes the full nested hierarchy from the graph after copying it to the clipboard payload.
 - Clipboard shortcuts for copy, cut, and paste are implemented in the graph view.
+- WASD pans only while the graph canvas is focused, uses screen-space speed independent of zoom, and clamps delayed editor ticks to avoid large jumps on big graphs.
 
 ### Sample content
 
@@ -162,3 +164,4 @@ EditMode coverage currently exists for:
 - choice-flow diagnostics for choice-mode nodes
 - executable graph rendering and inspector behavior
 - guided condition editor behavior, preview blocked-state explanations, and Where Used resolver results
+- localization table parsing, batch import, repeated text-data updates, TSV export, content-language editing, and Russian UI language-list refresh after import

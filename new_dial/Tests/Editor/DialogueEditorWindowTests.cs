@@ -281,6 +281,10 @@ namespace NewDial.DialogueEditor.Tests
                 var idField = window.rootVisualElement.Q<TextField>("node-id-field");
                 Assert.That(idField, Is.Not.Null);
                 Assert.That(idField.value, Is.EqualTo(node.Id));
+
+                var whereUsedFoldout = window.rootVisualElement.Q<Foldout>("where-used-foldout");
+                Assert.That(whereUsedFoldout, Is.Not.Null);
+                Assert.That(whereUsedFoldout.value, Is.False);
             }
             finally
             {

@@ -743,6 +743,39 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
+        public void StepKeyboardPan_UsesConstantScreenSpeedAcrossZoomLevels()
+        {
+            var firstView = new DialogueGraphView();
+            firstView.LoadGraph(new DialogueGraphData());
+            firstView.FocusCanvas();
+            firstView.SetMovementKeyState(KeyCode.W, true);
+
+            var secondView = new DialogueGraphView();
+            secondView.LoadGraph(new DialogueGraphData());
+            secondView.FocusCanvas();
+            secondView.UpdateViewTransform(Vector3.zero, Vector3.one * 0.5f);
+            secondView.SetMovementKeyState(KeyCode.W, true);
+
+            firstView.StepKeyboardPan(0.01f);
+            secondView.StepKeyboardPan(0.01f);
+
+            Assert.That(secondView.viewTransform.position.y, Is.EqualTo(firstView.viewTransform.position.y).Within(0.01f));
+        }
+
+        [Test]
+        public void StepKeyboardPan_ClampsLargeFrameDelta()
+        {
+            var view = new DialogueGraphView();
+            view.LoadGraph(new DialogueGraphData());
+            view.FocusCanvas();
+            view.SetMovementKeyState(KeyCode.W, true);
+
+            view.StepKeyboardPan(1f);
+
+            Assert.That(view.viewTransform.position.y, Is.EqualTo(45f).Within(0.01f));
+        }
+
+        [Test]
         public void ReleaseCanvasFocus_StopsFurtherKeyboardPan()
         {
             var view = new DialogueGraphView();

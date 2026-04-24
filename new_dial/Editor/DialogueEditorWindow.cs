@@ -2118,9 +2118,14 @@ namespace NewDial.DialogueEditor
             var box = new Box();
             box.AddToClassList("dialogue-editor__where-used-card");
 
-            var title = new Label(DialogueEditorLocalization.Text("Where Used"));
-            title.AddToClassList("dialogue-editor__where-used-title");
-            box.Add(title);
+            var foldout = new Foldout
+            {
+                text = DialogueEditorLocalization.Text("Where Used"),
+                value = false,
+                name = "where-used-foldout"
+            };
+            foldout.AddToClassList("dialogue-editor__where-used-foldout");
+            box.Add(foldout);
 
             var internalResults = results?
                 .Where(result => result.Kind == DialogueReferenceKind.Internal)
@@ -2129,8 +2134,8 @@ namespace NewDial.DialogueEditor
                 .Where(result => result.Kind == DialogueReferenceKind.External)
                 .ToList() ?? new List<DialogueWhereUsedResult>();
 
-            AddWhereUsedGroup(box, DialogueEditorLocalization.Text("Internal References"), internalResults);
-            AddWhereUsedGroup(box, DialogueEditorLocalization.Text("External References"), externalResults, DialogueEditorLocalization.Text("No external references reported."));
+            AddWhereUsedGroup(foldout, DialogueEditorLocalization.Text("Internal References"), internalResults);
+            AddWhereUsedGroup(foldout, DialogueEditorLocalization.Text("External References"), externalResults, DialogueEditorLocalization.Text("No external references reported."));
             return box;
         }
 
@@ -2585,6 +2590,7 @@ namespace NewDial.DialogueEditor
             _selectedDialogue = dialogue;
             _selectedNode = null;
             MarkChanged();
+            BuildLayout();
             RefreshAll();
         }
 
