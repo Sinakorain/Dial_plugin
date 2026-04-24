@@ -67,28 +67,28 @@ namespace NewDial.DialogueEditor
                     showKey: false,
                     showOperator: false,
                     showValue: false,
-                    "No condition is required."),
+                    DialogueEditorLocalization.Text("No condition is required.")),
                 ConditionType.Custom => new DialogueConditionMetadata(
                     type,
                     new[] { "==", "!=", "Contains", "Truthy", ">", "<", ">=", "<=" },
                     showKey: true,
                     showOperator: true,
                     showValue: true,
-                    "Custom conditions require a project evaluator. The built-in editor preview treats them as unavailable by default."),
+                    DialogueEditorLocalization.Text("Custom conditions require a project evaluator. The built-in editor preview treats them as unavailable by default.")),
                 ConditionType.TrustLevel => new DialogueConditionMetadata(
                     type,
                     new[] { "==", "!=", ">", "<", ">=", "<=" },
                     showKey: true,
                     showOperator: true,
                     showValue: true,
-                    "Expected value: number, using invariant format such as 10 or 2.5."),
+                    DialogueEditorLocalization.Text("Expected value: number, using invariant format such as 10 or 2.5.")),
                 _ => new DialogueConditionMetadata(
                     type,
                     new[] { "==", "!=", "Contains", "Truthy" },
                     showKey: true,
                     showOperator: true,
                     showValue: true,
-                    "Expected value: text, true/false, yes/no, or 1/0 depending on the selected operator.")
+                    DialogueEditorLocalization.Text("Expected value: text, true/false, yes/no, or 1/0 depending on the selected operator."))
             };
         }
     }

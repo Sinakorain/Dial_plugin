@@ -8,10 +8,32 @@ using UnityEngine.UIElements;
 
 namespace NewDial.DialogueEditor
 {
+    public interface IDialogueRuntimeNodeView
+    {
+        BaseNodeData NodeData { get; }
+
+        GraphElement Element { get; }
+
+        Rect WorldBound { get; }
+
+        bool IsPointerInTopHalf(Vector2 worldPointerPosition);
+
+        bool IsPointerInBottomHalf(Vector2 worldPointerPosition);
+
+        Vector2 GetBottomAnchorWorld(float worldX);
+
+        Vector2 GetTopAnchorWorld(float worldX);
+
+        void RefreshFromData();
+    }
+
     internal enum DialoguePaletteItemType
     {
         TextNode,
-        Comment
+        Comment,
+        Function,
+        Scene,
+        Debug
     }
 
     public class DialogueGraphView : GraphView
@@ -23,6 +45,7 @@ namespace NewDial.DialogueEditor
         internal static readonly Vector2 CommentNodeInitialSize = new(420f, 260f);
 
         private readonly Dictionary<string, DialogueTextNodeView> _textNodeViews = new();
+        private readonly Dictionary<string, DialogueExecutableNodeView> _executableNodeViews = new();
         private readonly Dictionary<string, DialogueCommentNodeView> _commentNodeViews = new();
         private readonly GridBackground _gridBackground;
         private readonly DialogueEdgeLayer _edgeLayer;
@@ -35,8 +58,8 @@ namespace NewDial.DialogueEditor
         private bool _isReloading;
         private Vector2 _lastPointerPosition;
         private DialoguePaletteItemType? _placementNodeType;
-        private DialogueTextNodeView _activeLinkSource;
-        private DialogueTextNodeView _activeLinkTarget;
+        private IDialogueRuntimeNodeView _activeLinkSource;
+        private IDialogueRuntimeNodeView _activeLinkTarget;
         private Vector2 _activeLinkStartWorld;
         private Vector2 _activeLinkPointerWorld;
         private bool _hasCanvasFocus;
@@ -76,13 +99,13 @@ namespace NewDial.DialogueEditor
             _placementGhost.style.display = DisplayStyle.None;
             _placementGhostTitleLabel = new Label();
             _placementGhostTitleLabel.AddToClassList("dialogue-placement-ghost__title");
-            _placementGhostHintLabel = new Label("Release on the graph to create this node.");
+            _placementGhostHintLabel = new Label(DialogueEditorLocalization.Text("Release on the graph to create this node."));
             _placementGhostHintLabel.AddToClassList("dialogue-placement-ghost__hint");
             _placementGhost.Add(_placementGhostTitleLabel);
             _placementGhost.Add(_placementGhostHintLabel);
             Add(_placementGhost);
 
-            _emptyStateLabel = new Label("Select a dialogue or create a new one to start building nodes.");
+            _emptyStateLabel = new Label(DialogueEditorLocalization.Text("Select a dialogue or create a new one to start building nodes."));
             _emptyStateLabel.AddToClassList("dialogue-graph-empty-state");
             _emptyStateLabel.pickingMode = PickingMode.Ignore;
             Add(_emptyStateLabel);
@@ -116,6 +139,7 @@ namespace NewDial.DialogueEditor
 
         public DialogueGraphData Graph => _graph;
         public bool HasCanvasFocus => _hasCanvasFocus;
+        internal bool IsLinkDragActiveForTests => _activeLinkSource != null;
 
         public override void BuildContextualMenu(ContextualMenuPopulateEvent evt)
         {
@@ -130,6 +154,7 @@ namespace NewDial.DialogueEditor
                 _graph = graph;
                 DeleteElements(graphElements.ToList());
                 _textNodeViews.Clear();
+                _executableNodeViews.Clear();
                 _commentNodeViews.Clear();
                 CancelLinkDrag();
                 CancelNodePlacement();
@@ -147,6 +172,11 @@ namespace NewDial.DialogueEditor
                     {
                         case DialogueTextNodeData textNode:
                             CreateTextNodeView(textNode);
+                            break;
+                        case FunctionNodeData:
+                        case SceneNodeData:
+                        case DebugNodeData:
+                            CreateExecutableNodeView((BaseNodeData)node);
                             break;
                         case CommentNodeData commentNode:
                             CreateCommentNodeView(commentNode);
@@ -174,7 +204,7 @@ namespace NewDial.DialogueEditor
             {
                 var node = new DialogueTextNodeData
                 {
-                    Title = "Text Node",
+                    Title = DialogueEditorLocalization.Text("Text Node"),
                     Position = position
                 };
 
@@ -204,15 +234,91 @@ namespace NewDial.DialogueEditor
             {
                 var node = new CommentNodeData
                 {
-                    Title = "Comment",
+                    Title = DialogueEditorLocalization.Text("Comment"),
                     Position = position,
                     Area = new Rect(position, CommentNodeInitialSize),
-                    Comment = "Group related dialogue nodes here.",
+                    Comment = DialogueEditorLocalization.Text("Group related dialogue nodes here."),
                     Tint = new Color(0.23f, 0.34f, 0.56f, 0.26f)
                 };
 
                 _graph.Nodes.Add(node);
                 var view = CreateCommentNodeView(node);
+                RefreshNodeVisuals();
+                SelectNode(view, node);
+                FocusCanvas();
+                UpdateEmptyState();
+                MarkChanged();
+            });
+        }
+
+        public void CreateFunctionNode(Vector2 position)
+        {
+            if (_graph == null)
+            {
+                return;
+            }
+
+            ApplyUndoableChange("Create Function Node", () =>
+            {
+                var node = new FunctionNodeData
+                {
+                    Title = DialogueEditorLocalization.Text("Function"),
+                    Position = position
+                };
+
+                _graph.Nodes.Add(node);
+                var view = CreateExecutableNodeView(node);
+                RefreshNodeVisuals();
+                SelectNode(view, node);
+                FocusCanvas();
+                UpdateEmptyState();
+                MarkChanged();
+            });
+        }
+
+        public void CreateSceneNode(Vector2 position)
+        {
+            if (_graph == null)
+            {
+                return;
+            }
+
+            ApplyUndoableChange("Create Scene Node", () =>
+            {
+                var node = new SceneNodeData
+                {
+                    Title = DialogueEditorLocalization.Text("Scene"),
+                    Position = position
+                };
+
+                _graph.Nodes.Add(node);
+                var view = CreateExecutableNodeView(node);
+                RefreshNodeVisuals();
+                SelectNode(view, node);
+                FocusCanvas();
+                UpdateEmptyState();
+                MarkChanged();
+            });
+        }
+
+        public void CreateDebugNode(Vector2 position)
+        {
+            if (_graph == null)
+            {
+                return;
+            }
+
+            ApplyUndoableChange("Create Debug Node", () =>
+            {
+                var node = new DebugNodeData
+                {
+                    Title = DialogueEditorLocalization.Text("Debug"),
+                    Position = position,
+                    MessageTemplate = DialogueEditorLocalization.Text("Debug dialogue node executed.")
+                };
+
+                _graph.Nodes.Add(node);
+                var view = CreateExecutableNodeView(node);
                 RefreshNodeVisuals();
                 SelectNode(view, node);
                 FocusCanvas();
@@ -229,7 +335,7 @@ namespace NewDial.DialogueEditor
             }
 
             _placementNodeType = itemType;
-            _placementGhostTitleLabel.text = itemType == DialoguePaletteItemType.TextNode ? "Text Node" : "Comment";
+            _placementGhostTitleLabel.text = GetPaletteTitle(itemType);
             UpdateNodePlacement(worldPointerPosition);
             return true;
         }
@@ -278,6 +384,15 @@ namespace NewDial.DialogueEditor
                 case DialoguePaletteItemType.Comment:
                     CreateCommentNode(placementPosition);
                     break;
+                case DialoguePaletteItemType.Function:
+                    CreateFunctionNode(placementPosition);
+                    break;
+                case DialoguePaletteItemType.Scene:
+                    CreateSceneNode(placementPosition);
+                    break;
+                case DialoguePaletteItemType.Debug:
+                    CreateDebugNode(placementPosition);
+                    break;
                 default:
                     return false;
             }
@@ -291,6 +406,18 @@ namespace NewDial.DialogueEditor
             return itemType == DialoguePaletteItemType.Comment
                 ? CommentNodeInitialSize
                 : TextNodeInitialSize;
+        }
+
+        private static string GetPaletteTitle(DialoguePaletteItemType itemType)
+        {
+            return itemType switch
+            {
+                DialoguePaletteItemType.Comment => DialogueEditorLocalization.Text("Comment"),
+                DialoguePaletteItemType.Function => DialogueEditorLocalization.Text("Function"),
+                DialoguePaletteItemType.Scene => DialogueEditorLocalization.Text("Scene"),
+                DialoguePaletteItemType.Debug => DialogueEditorLocalization.Text("Debug"),
+                _ => DialogueEditorLocalization.Text("Text Node")
+            };
         }
 
         private static Vector2 GetPlacementTopLeft(DialoguePaletteItemType itemType, Vector2 pointerPosition)
@@ -434,6 +561,13 @@ namespace NewDial.DialogueEditor
                     {
                         AddToSelection(textView);
                     }
+                    else if (pastedNode is FunctionNodeData or SceneNodeData or DebugNodeData)
+                    {
+                        if (_executableNodeViews.TryGetValue(pastedNode.Id, out var executableView))
+                        {
+                            AddToSelection(executableView);
+                        }
+                    }
                     else if (pastedNode is CommentNodeData commentNode &&
                              _commentNodeViews.TryGetValue(commentNode.Id, out var commentView))
                     {
@@ -458,6 +592,11 @@ namespace NewDial.DialogueEditor
             }
 
             foreach (var view in _commentNodeViews.Values)
+            {
+                view.RefreshFromData();
+            }
+
+            foreach (var view in _executableNodeViews.Values)
             {
                 view.RefreshFromData();
             }
@@ -571,6 +710,11 @@ namespace NewDial.DialogueEditor
             {
                 element = textNodeView;
                 node = textNodeView.Data;
+            }
+            else if (_executableNodeViews.TryGetValue(nodeId, out var executableNodeView))
+            {
+                element = executableNodeView;
+                node = executableNodeView.Data;
             }
             else if (_commentNodeViews.TryGetValue(nodeId, out var commentNodeView))
             {
@@ -705,6 +849,16 @@ namespace NewDial.DialogueEditor
             SelectionChangedAction?.Invoke(node);
         }
 
+        internal void SelectRuntimeNode(IDialogueRuntimeNodeView view)
+        {
+            if (view?.Element == null || view.NodeData == null)
+            {
+                return;
+            }
+
+            SelectNode(view.Element, view.NodeData);
+        }
+
         internal void SelectCommentGroup(CommentNodeData commentNode)
         {
             if (commentNode == null || !_commentNodeViews.TryGetValue(commentNode.Id, out var commentView))
@@ -761,6 +915,12 @@ namespace NewDial.DialogueEditor
                             textNodeView.Data.Position += delta;
                             textNodeView.RefreshFromData();
                             break;
+                        case DialogueExecutableNodeView executableNodeView
+                            when movedIds.Add(executableNodeView.Data.Id) &&
+                                 (ignoredNodeIds == null || !ignoredNodeIds.Contains(executableNodeView.Data.Id)):
+                            executableNodeView.Data.Position += delta;
+                            executableNodeView.RefreshFromData();
+                            break;
                         case DialogueCommentNodeView commentNodeView
                             when movedIds.Add(commentNodeView.Data.Id) &&
                                  (ignoredNodeIds == null || !ignoredNodeIds.Contains(commentNodeView.Data.Id)):
@@ -814,11 +974,11 @@ namespace NewDial.DialogueEditor
             return _graph.Links.Count(link =>
                 link != null &&
                 !string.IsNullOrWhiteSpace(link.ToNodeId) &&
-                _textNodeViews.ContainsKey(link.FromNodeId) &&
-                _textNodeViews.ContainsKey(link.ToNodeId));
+                TryGetRuntimeNodeView(link.FromNodeId, out _) &&
+                TryGetRuntimeNodeView(link.ToNodeId, out _));
         }
 
-        internal void BeginLinkDrag(DialogueTextNodeView sourceView, Vector2 worldPointerPosition)
+        internal void BeginLinkDrag(IDialogueRuntimeNodeView sourceView, Vector2 worldPointerPosition)
         {
             if (sourceView == null || _graph == null)
             {
@@ -837,6 +997,14 @@ namespace NewDial.DialogueEditor
         {
             var view = new DialogueTextNodeView(node, this);
             _textNodeViews[node.Id] = view;
+            AddElement(view);
+            return view;
+        }
+
+        private DialogueExecutableNodeView CreateExecutableNodeView(BaseNodeData node)
+        {
+            var view = new DialogueExecutableNodeView(node, this);
+            _executableNodeViews[node.Id] = view;
             AddElement(view);
             return view;
         }
@@ -863,6 +1031,11 @@ namespace NewDial.DialogueEditor
             {
                 textNodeView.BringToFront();
             }
+
+            foreach (var executableNodeView in _executableNodeViews.Values)
+            {
+                executableNodeView.BringToFront();
+            }
         }
 
         private GraphViewChange OnGraphViewChanged(GraphViewChange change)
@@ -883,6 +1056,10 @@ namespace NewDial.DialogueEditor
                         {
                             case DialogueTextNodeView textNodeView:
                                 DialogueGraphUtility.DeleteNode(_graph, textNodeView.Data.Id);
+                                changed = true;
+                                break;
+                            case DialogueExecutableNodeView executableNodeView:
+                                DialogueGraphUtility.DeleteNode(_graph, executableNodeView.Data.Id);
                                 changed = true;
                                 break;
                             case DialogueCommentNodeView commentNodeView:
@@ -913,6 +1090,7 @@ namespace NewDial.DialogueEditor
                 .Select(element => element switch
                 {
                     DialogueTextNodeView textNodeView => textNodeView.Data.Id,
+                    DialogueExecutableNodeView executableNodeView => executableNodeView.Data.Id,
                     DialogueCommentNodeView commentNodeView => commentNodeView.Data.Id,
                     _ => null
                 })
@@ -972,7 +1150,7 @@ namespace NewDial.DialogueEditor
             var created = false;
             if (targetView != null)
             {
-                created = CreateLink(_activeLinkSource.Data.Id, targetView.Data.Id) != null;
+                created = CreateLink(_activeLinkSource.NodeData.Id, targetView.NodeData.Id) != null;
             }
 
             CancelLinkDrag();
@@ -987,7 +1165,7 @@ namespace NewDial.DialogueEditor
             return contentViewContainer.WorldToLocal(worldPosition);
         }
 
-        private DialogueTextNodeView ResolveLinkTarget(Vector2 worldPointerPosition, DialogueTextNodeView sourceView)
+        private IDialogueRuntimeNodeView ResolveLinkTarget(Vector2 worldPointerPosition, IDialogueRuntimeNodeView sourceView)
         {
             if (panel == null)
             {
@@ -995,12 +1173,12 @@ namespace NewDial.DialogueEditor
             }
 
             var picked = panel.Pick(worldPointerPosition);
-            while (picked != null && picked is not DialogueTextNodeView)
+            while (picked != null && picked is not IDialogueRuntimeNodeView)
             {
                 picked = picked.parent;
             }
 
-            if (picked is not DialogueTextNodeView targetView ||
+            if (picked is not IDialogueRuntimeNodeView targetView ||
                 targetView == sourceView ||
                 !targetView.IsPointerInTopHalf(worldPointerPosition))
             {
@@ -1016,14 +1194,14 @@ namespace NewDial.DialogueEditor
             {
                 if (link == null ||
                     string.IsNullOrWhiteSpace(link.ToNodeId) ||
-                    !_textNodeViews.TryGetValue(link.FromNodeId, out var sourceView) ||
-                    !_textNodeViews.TryGetValue(link.ToNodeId, out var targetView))
+                    !TryGetRuntimeNodeView(link.FromNodeId, out var sourceView) ||
+                    !TryGetRuntimeNodeView(link.ToNodeId, out var targetView))
                 {
                     continue;
                 }
 
-                var sourceAnchorWorld = sourceView.GetBottomAnchorWorld(targetView.worldBound.center.x);
-                var targetAnchorWorld = targetView.GetTopAnchorWorld(sourceView.worldBound.center.x);
+                var sourceAnchorWorld = sourceView.GetBottomAnchorWorld(targetView.WorldBound.center.x);
+                var targetAnchorWorld = targetView.GetTopAnchorWorld(sourceView.WorldBound.center.x);
                 yield return new DialogueEdgeGeometry(
                     _edgeLayer.WorldToLocal(sourceAnchorWorld),
                     _edgeLayer.WorldToLocal(targetAnchorWorld),
@@ -1034,7 +1212,7 @@ namespace NewDial.DialogueEditor
             if (_activeLinkSource != null)
             {
                 var previewEndWorld = _activeLinkTarget != null
-                    ? _activeLinkTarget.GetTopAnchorWorld(_activeLinkSource.worldBound.center.x)
+                    ? _activeLinkTarget.GetTopAnchorWorld(_activeLinkSource.WorldBound.center.x)
                     : _activeLinkPointerWorld;
 
                 yield return new DialogueEdgeGeometry(
@@ -1043,6 +1221,24 @@ namespace NewDial.DialogueEditor
                     new Color(0.55f, 0.76f, 1f, 0.98f),
                     2.8f);
             }
+        }
+
+        private bool TryGetRuntimeNodeView(string nodeId, out IDialogueRuntimeNodeView view)
+        {
+            if (_textNodeViews.TryGetValue(nodeId, out var textView))
+            {
+                view = textView;
+                return true;
+            }
+
+            if (_executableNodeViews.TryGetValue(nodeId, out var executableView))
+            {
+                view = executableView;
+                return true;
+            }
+
+            view = null;
+            return false;
         }
 
         private void CancelLinkDrag()
@@ -1109,6 +1305,17 @@ namespace NewDial.DialogueEditor
 
                 yield return textNodeView;
             }
+
+            foreach (var executableNode in GetDirectChildExecutableNodes(commentNode, rootCommentOverride, rootCommentAreaOverride))
+            {
+                if (!groupedIds.Add(executableNode.Id) ||
+                    !_executableNodeViews.TryGetValue(executableNode.Id, out var executableNodeView))
+                {
+                    continue;
+                }
+
+                yield return executableNodeView;
+            }
         }
 
         internal CommentNodeData GetOwningCommentNode(
@@ -1123,6 +1330,22 @@ namespace NewDial.DialogueEditor
 
             var textRect = GetTextNodeRect(textNode);
             return GetContainingCommentCandidates(textRect.center, null, rootCommentOverride, rootCommentAreaOverride)
+                .Select(candidate => candidate.Comment)
+                .FirstOrDefault();
+        }
+
+        internal CommentNodeData GetOwningCommentNode(
+            BaseNodeData node,
+            CommentNodeData rootCommentOverride = null,
+            Rect? rootCommentAreaOverride = null)
+        {
+            if (_graph == null || node == null)
+            {
+                return null;
+            }
+
+            var nodeRect = GetRuntimeNodeRect(node);
+            return GetContainingCommentCandidates(nodeRect.center, null, rootCommentOverride, rootCommentAreaOverride)
                 .Select(candidate => candidate.Comment)
                 .FirstOrDefault();
         }
@@ -1188,6 +1411,26 @@ namespace NewDial.DialogueEditor
             }
 
             foreach (var node in _graph.Nodes.OfType<DialogueTextNodeData>())
+            {
+                var directOwner = GetOwningCommentNode(node, rootCommentOverride, rootCommentAreaOverride);
+                if (directOwner?.Id == ownerComment.Id)
+                {
+                    yield return node;
+                }
+            }
+        }
+
+        private IEnumerable<BaseNodeData> GetDirectChildExecutableNodes(
+            CommentNodeData ownerComment,
+            CommentNodeData rootCommentOverride = null,
+            Rect? rootCommentAreaOverride = null)
+        {
+            if (_graph == null || ownerComment == null)
+            {
+                yield break;
+            }
+
+            foreach (var node in _graph.Nodes.Where(DialogueGraphUtility.IsExecutableNode))
             {
                 var directOwner = GetOwningCommentNode(node, rootCommentOverride, rootCommentAreaOverride);
                 if (directOwner?.Id == ownerComment.Id)
@@ -1270,6 +1513,21 @@ namespace NewDial.DialogueEditor
             }
 
             return new Rect(textNode.Position, TextNodeInitialSize);
+        }
+
+        private Rect GetRuntimeNodeRect(BaseNodeData node)
+        {
+            if (node == null)
+            {
+                return default;
+            }
+
+            if (TryGetRuntimeNodeView(node.Id, out var view))
+            {
+                return GetGraphElementRect(view.Element);
+            }
+
+            return new Rect(node.Position, TextNodeInitialSize);
         }
 
         private int GetGraphNodeOrder(string nodeId)
@@ -1507,14 +1765,14 @@ namespace NewDial.DialogueEditor
         {
             if (_graph == null)
             {
-                _emptyStateLabel.text = "Select a dialogue or create a new one to start building nodes.";
+                _emptyStateLabel.text = DialogueEditorLocalization.Text("Select a dialogue or create a new one to start building nodes.");
                 _emptyStateLabel.style.display = DisplayStyle.Flex;
                 return;
             }
 
             if (_graph.Nodes.Count == 0)
             {
-                _emptyStateLabel.text = "This dialogue is empty. Add your first node from the palette to begin.";
+                _emptyStateLabel.text = DialogueEditorLocalization.Text("This dialogue is empty. Add your first node from the palette to begin.");
                 _emptyStateLabel.style.display = DisplayStyle.Flex;
                 return;
             }
@@ -1562,6 +1820,13 @@ namespace NewDial.DialogueEditor
                         result.Add(textNodeView.Data);
                     }
                 }
+                else if (element is DialogueExecutableNodeView executableNodeView)
+                {
+                    if (seenIds.Add(executableNodeView.Data.Id))
+                    {
+                        result.Add(executableNodeView.Data);
+                    }
+                }
                 else if (element is DialogueCommentNodeView commentNodeView)
                 {
                     foreach (var groupedElement in GetCommentGroupElements(commentNodeView.Data))
@@ -1570,6 +1835,9 @@ namespace NewDial.DialogueEditor
                         {
                             case DialogueTextNodeView groupedTextNodeView when seenIds.Add(groupedTextNodeView.Data.Id):
                                 result.Add(groupedTextNodeView.Data);
+                                break;
+                            case DialogueExecutableNodeView groupedExecutableNodeView when seenIds.Add(groupedExecutableNodeView.Data.Id):
+                                result.Add(groupedExecutableNodeView.Data);
                                 break;
                             case DialogueCommentNodeView groupedCommentNodeView when seenIds.Add(groupedCommentNodeView.Data.Id):
                                 result.Add(groupedCommentNodeView.Data);
@@ -1592,6 +1860,9 @@ namespace NewDial.DialogueEditor
                     case DialogueTextNodeView textNodeView:
                         result.Add(textNodeView.Data.Id);
                         break;
+                    case DialogueExecutableNodeView executableNodeView:
+                        result.Add(executableNodeView.Data.Id);
+                        break;
                     case DialogueCommentNodeView commentNodeView:
                         result.Add(commentNodeView.Data.Id);
                         break;
@@ -1610,6 +1881,9 @@ namespace NewDial.DialogueEditor
                 {
                     case DialogueTextNodeView textNodeView:
                         result.Remove(textNodeView.Data.Id);
+                        break;
+                    case DialogueExecutableNodeView executableNodeView:
+                        result.Remove(executableNodeView.Data.Id);
                         break;
                     case DialogueCommentNodeView commentNodeView when commentNodeView.Data.Id != rootComment.Id:
                         result.Remove(commentNodeView.Data.Id);
@@ -1642,6 +1916,12 @@ namespace NewDial.DialogueEditor
             if (_textNodeViews.TryGetValue(nodeId, out var textView))
             {
                 SelectNode(textView, textView.Data);
+                return true;
+            }
+
+            if (_executableNodeViews.TryGetValue(nodeId, out var executableView))
+            {
+                SelectNode(executableView, executableView.Data);
                 return true;
             }
 
@@ -1723,7 +2003,7 @@ namespace NewDial.DialogueEditor
         }
     }
 
-    public class DialogueTextNodeView : Node
+    public class DialogueTextNodeView : Node, IDialogueRuntimeNodeView
     {
         private const float LinkAnchorInset = 18f;
 
@@ -1747,7 +2027,7 @@ namespace NewDial.DialogueEditor
             inputContainer.style.display = DisplayStyle.None;
             outputContainer.style.display = DisplayStyle.None;
 
-            _startBadge = new Label("START");
+            _startBadge = new Label(DialogueEditorLocalization.Text("START"));
             _startBadge.AddToClassList("dialogue-node__start-badge");
             titleButtonContainer.Insert(0, _startBadge);
 
@@ -1775,6 +2055,12 @@ namespace NewDial.DialogueEditor
 
         public DialogueTextNodeData Data { get; }
 
+        public BaseNodeData NodeData => Data;
+
+        public GraphElement Element => this;
+
+        public Rect WorldBound => worldBound;
+
         public override void SetPosition(Rect newPos)
         {
             if (Data.Position != newPos.position)
@@ -1793,14 +2079,15 @@ namespace NewDial.DialogueEditor
                 .GetOutgoingLinks(Data.Id)
                 .Count(link => !string.IsNullOrWhiteSpace(link.ToNodeId));
 
-            title = string.IsNullOrWhiteSpace(Data.Title) ? "Untitled" : Data.Title;
+            title = string.IsNullOrWhiteSpace(Data.Title) ? DialogueEditorLocalization.Text("Untitled") : Data.Title;
+            _startBadge.text = DialogueEditorLocalization.Text("START");
             _startBadge.style.display = Data.IsStartNode ? DisplayStyle.Flex : DisplayStyle.None;
             _bodyPreviewLabel.text = BuildPreviewText(Data.BodyText);
             _metaLabel.text = outgoingCount == 0
-                ? "Drag from the lower half to create a connection."
+                ? DialogueEditorLocalization.Text("Drag from the lower half to create a connection.")
                 : Data.UseOutputsAsChoices
-                    ? $"{outgoingCount} choice link{(outgoingCount == 1 ? string.Empty : "s")}"
-                    : $"{outgoingCount} outgoing link{(outgoingCount == 1 ? string.Empty : "s")}";
+                    ? DialogueEditorLocalization.Format("{0} choice link{1}", outgoingCount, outgoingCount == 1 ? string.Empty : "s")
+                    : DialogueEditorLocalization.Format("{0} outgoing link{1}", outgoingCount, outgoingCount == 1 ? string.Empty : "s");
 
             EnableInClassList("dialogue-node--start", Data.IsStartNode);
             base.SetPosition(new Rect(
@@ -1833,13 +2120,13 @@ namespace NewDial.DialogueEditor
 
         private void OnMouseDown(MouseDownEvent evt)
         {
-            if (evt.button != 0 || evt.target is Button)
+            if (evt.button != 0 || IsInsideButton(evt.target as VisualElement))
             {
                 return;
             }
 
             var worldPointerPosition = this.LocalToWorld(evt.localMousePosition);
-            _graphView.NotifySelected(Data);
+            _graphView.SelectRuntimeNode(this);
 
             if (IsPointerInBottomHalf(worldPointerPosition))
             {
@@ -1867,11 +2154,26 @@ namespace NewDial.DialogueEditor
         {
             if (string.IsNullOrWhiteSpace(bodyText))
             {
-                return "Empty node text";
+                return DialogueEditorLocalization.Text("Empty node text");
             }
 
             var normalized = bodyText.Replace("\r", " ").Replace("\n", " ").Trim();
             return normalized.Length <= 120 ? normalized : $"{normalized.Substring(0, 117)}...";
+        }
+
+        private static bool IsInsideButton(VisualElement element)
+        {
+            while (element != null)
+            {
+                if (element is Button)
+                {
+                    return true;
+                }
+
+                element = element.parent;
+            }
+
+            return false;
         }
     }
 
@@ -2064,10 +2366,10 @@ namespace NewDial.DialogueEditor
 
         public void RefreshFromData()
         {
-            var titleText = string.IsNullOrWhiteSpace(Data.Title) ? "Comment" : Data.Title;
+            var titleText = string.IsNullOrWhiteSpace(Data.Title) ? DialogueEditorLocalization.Text("Comment") : Data.Title;
             title = titleText;
             _titleLabel.text = titleText;
-            _commentLabel.text = string.IsNullOrWhiteSpace(Data.Comment) ? "Add a description for this comment area." : Data.Comment;
+            _commentLabel.text = string.IsNullOrWhiteSpace(Data.Comment) ? DialogueEditorLocalization.Text("Add a description for this comment area.") : Data.Comment;
             ApplyTint();
             var area = Data.Area.width <= 0f || Data.Area.height <= 0f
                 ? new Rect(Data.Position, DialogueGraphView.CommentNodeInitialSize)

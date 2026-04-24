@@ -37,7 +37,7 @@ namespace NewDial.DialogueEditor
 
         public static void ShowWindow(DialogueEntry dialogue, DialogueEditorWindow owner)
         {
-            var window = GetWindow<DialoguePreviewWindow>("Dialogue Preview");
+            var window = GetWindow<DialoguePreviewWindow>(DialogueEditorLocalization.Text("Dialogue Preview"));
             var preferredSize = new Vector2(760f, 780f);
             window.minSize = new Vector2(640f, 700f);
             if (window.position.width < preferredSize.x || window.position.height < preferredSize.y)
@@ -61,9 +61,25 @@ namespace NewDial.DialogueEditor
             }
         }
 
+        private void OnEnable()
+        {
+            DialogueEditorLanguageSettings.LanguageChanged += OnEditorLanguageChanged;
+        }
+
         private void CreateGUI()
         {
             ApplyStyles();
+            BuildLayout();
+            RefreshView();
+        }
+
+        private void OnDisable()
+        {
+            DialogueEditorLanguageSettings.LanguageChanged -= OnEditorLanguageChanged;
+        }
+
+        private void OnEditorLanguageChanged()
+        {
             BuildLayout();
             RefreshView();
         }
@@ -101,6 +117,7 @@ namespace NewDial.DialogueEditor
         private void BuildLayout()
         {
             rootVisualElement.Clear();
+            titleContent = new GUIContent(DialogueEditorLocalization.Text("Dialogue Preview"));
             rootVisualElement.AddToClassList("dialogue-preview");
 
             var shell = new VisualElement();
@@ -115,11 +132,11 @@ namespace NewDial.DialogueEditor
             titleBlock.AddToClassList("dialogue-preview__title-block");
             header.Add(titleBlock);
 
-            _titleLabel = new Label("No dialogue selected");
+            _titleLabel = new Label(DialogueEditorLocalization.Text("No dialogue selected"));
             _titleLabel.AddToClassList("dialogue-preview__title");
             titleBlock.Add(_titleLabel);
 
-            _statusLabel = new Label("Preview uses the current dialogue asset state.");
+            _statusLabel = new Label(DialogueEditorLocalization.Text("Preview uses the current dialogue asset state."));
             _statusLabel.AddToClassList("dialogue-preview__status");
             titleBlock.Add(_statusLabel);
 
@@ -134,11 +151,11 @@ namespace NewDial.DialogueEditor
             historyHeader.AddToClassList("dialogue-preview__panel-header");
             historyPanel.Add(historyHeader);
 
-            var historyTitle = new Label("History");
+            var historyTitle = new Label(DialogueEditorLocalization.Text("History"));
             historyTitle.AddToClassList("dialogue-preview__panel-title");
             historyHeader.Add(historyTitle);
 
-            _historyHintLabel = new Label("The full run is recorded here.");
+            _historyHintLabel = new Label(DialogueEditorLocalization.Text("The full run is recorded here."));
             _historyHintLabel.AddToClassList("dialogue-preview__panel-hint");
             historyHeader.Add(_historyHintLabel);
 
@@ -167,7 +184,7 @@ namespace NewDial.DialogueEditor
             sceneHeader.AddToClassList("dialogue-preview__scene-header");
             _sceneContent.Add(sceneHeader);
 
-            var sceneLabel = new Label("Current Scene");
+            var sceneLabel = new Label(DialogueEditorLocalization.Text("Current Scene"));
             sceneLabel.AddToClassList("dialogue-preview__section-kicker");
             sceneHeader.Add(sceneLabel);
 
@@ -191,7 +208,7 @@ namespace NewDial.DialogueEditor
             choicesSection.AddToClassList("dialogue-preview__choices-section");
             _sceneContent.Add(choicesSection);
 
-            _choicesTitleLabel = new Label("Choices");
+            _choicesTitleLabel = new Label(DialogueEditorLocalization.Text("Choices"));
             _choicesTitleLabel.AddToClassList("dialogue-preview__choices-title");
             choicesSection.Add(_choicesTitleLabel);
 
@@ -222,7 +239,7 @@ namespace NewDial.DialogueEditor
                 RefreshView();
             })
             {
-                text = "Back"
+                text = DialogueEditorLocalization.Text("Back")
             };
             _backButton.AddToClassList("dialogue-preview__button");
             navGroup.Add(_backButton);
@@ -233,7 +250,7 @@ namespace NewDial.DialogueEditor
                 RefreshView();
             })
             {
-                text = "Next"
+                text = DialogueEditorLocalization.Text("Next")
             };
             _nextButton.AddToClassList("dialogue-preview__button");
             _nextButton.AddToClassList("dialogue-preview__button--primary");
@@ -245,14 +262,14 @@ namespace NewDial.DialogueEditor
                 RefreshView();
             })
             {
-                text = "Restart"
+                text = DialogueEditorLocalization.Text("Restart")
             };
             _restartButton.AddToClassList("dialogue-preview__button");
             utilityGroup.Add(_restartButton);
 
             _jumpButton = new Button(JumpToActiveNode)
             {
-                text = "Jump To Active Node"
+                text = DialogueEditorLocalization.Text("Jump To Active Node")
             };
             _jumpButton.AddToClassList("dialogue-preview__button");
             _jumpButton.AddToClassList("dialogue-preview__button--utility");
@@ -269,7 +286,7 @@ namespace NewDial.DialogueEditor
             header.AddToClassList("dialogue-preview__panel-header");
             panel.Add(header);
 
-            var title = new Label("Test Variables");
+            var title = new Label(DialogueEditorLocalization.Text("Test Variables"));
             title.AddToClassList("dialogue-preview__panel-title");
             header.Add(title);
 
@@ -277,11 +294,11 @@ namespace NewDial.DialogueEditor
             actions.AddToClassList("dialogue-preview__variables-actions");
             header.Add(actions);
 
-            var addButton = new Button(AddTestVariable) { text = "Add" };
+            var addButton = new Button(AddTestVariable) { text = DialogueEditorLocalization.Text("Add") };
             addButton.AddToClassList("dialogue-preview__mini-button");
             actions.Add(addButton);
 
-            var resetButton = new Button(ResetTestVariables) { text = "Reset" };
+            var resetButton = new Button(ResetTestVariables) { text = DialogueEditorLocalization.Text("Reset") };
             resetButton.AddToClassList("dialogue-preview__mini-button");
             actions.Add(resetButton);
 
@@ -301,12 +318,12 @@ namespace NewDial.DialogueEditor
             if (_session == null || _dialogue == null)
             {
                 RebuildVariables();
-                _titleLabel.text = "No dialogue selected";
-                _statusLabel.text = "Open a dialogue in the editor to preview it.";
-                _historyHintLabel.text = "The full run will appear here after a dialogue starts.";
-                _currentNodeLabel.text = "No active scene";
+                _titleLabel.text = DialogueEditorLocalization.Text("No dialogue selected");
+                _statusLabel.text = DialogueEditorLocalization.Text("Open a dialogue in the editor to preview it.");
+                _historyHintLabel.text = DialogueEditorLocalization.Text("The full run will appear here after a dialogue starts.");
+                _currentNodeLabel.text = DialogueEditorLocalization.Text("No active scene");
                 _bodyLabel.text = string.Empty;
-                _sceneEmptyLabel.text = "Select a dialogue in the editor to begin previewing it here.";
+                _sceneEmptyLabel.text = DialogueEditorLocalization.Text("Select a dialogue in the editor to begin previewing it here.");
                 _sceneEmptyLabel.style.display = DisplayStyle.Flex;
                 _reasonLabel.style.display = DisplayStyle.None;
                 _bodyLabel.style.display = DisplayStyle.None;
@@ -331,15 +348,15 @@ namespace NewDial.DialogueEditor
             if (_session.CurrentNode == null)
             {
                 _statusLabel.text = _session.IsEnded
-                    ? "Run complete. History remains above, and Back can rewind the latest action."
-                    : "Unable to start this dialogue with the current test variables.";
-                _historyHintLabel.text = "Scroll through the full run history above.";
-                _currentNodeLabel.text = _session.IsEnded ? "Dialogue Complete" : "No active scene";
+                    ? DialogueEditorLocalization.Text("Run complete. History remains above, and Back can rewind the latest action.")
+                    : DialogueEditorLocalization.Text("Unable to start this dialogue with the current test variables.");
+                _historyHintLabel.text = DialogueEditorLocalization.Text("Scroll through the full run history above.");
+                _currentNodeLabel.text = _session.IsEnded ? DialogueEditorLocalization.Text("Dialogue Complete") : DialogueEditorLocalization.Text("No active scene");
                 _bodyLabel.text = string.Empty;
                 _bodyLabel.style.display = DisplayStyle.None;
                 _sceneEmptyLabel.text = _session.IsEnded
-                    ? "This preview reached its end. Use Back to revisit the previous step or Restart to run it again."
-                    : "No valid start node could be activated for the current dialogue.";
+                    ? DialogueEditorLocalization.Text("This preview reached its end. Use Back to revisit the previous step or Restart to run it again.")
+                    : DialogueEditorLocalization.Text("No valid start node could be activated for the current dialogue.");
                 _sceneEmptyLabel.style.display = DisplayStyle.Flex;
                 _reasonLabel.text = _session.CurrentReason;
                 _reasonLabel.style.display = string.IsNullOrWhiteSpace(_session.CurrentReason)
@@ -351,14 +368,14 @@ namespace NewDial.DialogueEditor
             else
             {
                 _statusLabel.text = _session.CurrentNode.UseOutputsAsChoices
-                    ? "Choice mode: pick a response below while the upper rail keeps the full conversation history."
-                    : "Linear mode: use Back and Next to move through the current run.";
-                _historyHintLabel.text = "Newest entries collect at the bottom, like a running case log.";
+                    ? DialogueEditorLocalization.Text("Choice mode: pick a response below while the upper rail keeps the full conversation history.")
+                    : DialogueEditorLocalization.Text("Linear mode: use Back and Next to move through the current run.");
+                _historyHintLabel.text = DialogueEditorLocalization.Text("Newest entries collect at the bottom, like a running case log.");
                 _currentNodeLabel.text = string.IsNullOrWhiteSpace(_session.CurrentNode.Title)
-                    ? "Untitled Node"
+                    ? DialogueEditorLocalization.Text("Untitled Node")
                     : _session.CurrentNode.Title;
                 _bodyLabel.text = string.IsNullOrWhiteSpace(_session.CurrentNode.BodyText)
-                    ? "This node has no dialogue text yet."
+                    ? DialogueEditorLocalization.Text("This node has no dialogue text yet.")
                     : _session.CurrentNode.BodyText;
                 _bodyLabel.style.display = DisplayStyle.Flex;
                 _sceneEmptyLabel.style.display = DisplayStyle.None;
@@ -460,7 +477,7 @@ namespace NewDial.DialogueEditor
             _variablesContainer.Clear();
             if (_testVariables.Count == 0)
             {
-                var empty = new Label("No test variables.");
+                var empty = new Label(DialogueEditorLocalization.Text("No test variables."));
                 empty.AddToClassList("dialogue-preview__variables-empty");
                 _variablesContainer.Add(empty);
                 return;
@@ -473,7 +490,7 @@ namespace NewDial.DialogueEditor
                 var row = new VisualElement();
                 row.AddToClassList("dialogue-preview__variable-row");
 
-                var keyField = new TextField("Key") { value = variable.Key };
+                var keyField = new TextField(DialogueEditorLocalization.Text("Key")) { value = variable.Key };
                 keyField.AddToClassList("dialogue-preview__variable-key");
                 keyField.RegisterValueChangedCallback(evt =>
                 {
@@ -482,7 +499,7 @@ namespace NewDial.DialogueEditor
                 });
                 row.Add(keyField);
 
-                var typeField = new EnumField("Type", variable.Type);
+                var typeField = new EnumField(DialogueEditorLocalization.Text("Type"), variable.Type);
                 typeField.AddToClassList("dialogue-preview__variable-type");
                 typeField.RegisterValueChangedCallback(evt =>
                 {
@@ -499,7 +516,7 @@ namespace NewDial.DialogueEditor
 
                 if (variable.Type == DialoguePreviewVariableType.Bool)
                 {
-                    var boolField = new Toggle("Value")
+                    var boolField = new Toggle(DialogueEditorLocalization.Text("Value"))
                     {
                         value = bool.TryParse(variable.Value, out var boolValue) && boolValue
                     };
@@ -512,7 +529,7 @@ namespace NewDial.DialogueEditor
                 }
                 else
                 {
-                    var valueField = new TextField("Value") { value = variable.Value };
+                    var valueField = new TextField(DialogueEditorLocalization.Text("Value")) { value = variable.Value };
                     valueField.AddToClassList("dialogue-preview__variable-value");
                     valueField.RegisterValueChangedCallback(evt =>
                     {
@@ -528,7 +545,7 @@ namespace NewDial.DialogueEditor
                     RestartPreviewWithVariables();
                 })
                 {
-                    text = "Remove"
+                    text = DialogueEditorLocalization.Text("Remove")
                 };
                 removeButton.AddToClassList("dialogue-preview__mini-button");
                 row.Add(removeButton);

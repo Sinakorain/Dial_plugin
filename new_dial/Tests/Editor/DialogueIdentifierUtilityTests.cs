@@ -5,6 +5,12 @@ namespace NewDial.DialogueEditor.Tests
 {
     public class DialogueIdentifierUtilityTests
     {
+        [SetUp]
+        public void SetUp()
+        {
+            DialogueEditorLanguageSettings.CurrentLanguage = DialogueEditorLanguage.English;
+        }
+
         [Test]
         public void RenameNodeId_UpdatesIncomingAndOutgoingLinks()
         {

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Added
+
+- Added generic `Function`, `Scene`, and `Debug` executable node data with primitive argument support.
+- Added execution extension points for project-provided function/scene metadata and executors.
+- Added runtime traversal support for immediate executable-node execution, pending resume, failure policy handling, and automatic next-link traversal.
+- Added editor palette, graph rendering, inspectors, validation, and autosave support for executable nodes.
+- Added an editor EN/RU language switcher with localized toolbar, palette, inspector, preview, diagnostics, prompts, and node summaries.
+
 ### Changed
 
 - NPC, dialogue, and node identifiers can now be edited explicitly in the editor, with guarded generation actions and immediate empty/duplicate warnings.
@@ -16,6 +24,7 @@
 - Cutting a selected root comment group removes the full nested hierarchy after copying it to the clipboard payload.
 - Native Unity undo/redo now covers node-scope graph edits, comment resize, link edits, and node inspector changes on both macOS (`Cmd+Z`) and Windows (`Ctrl+Z`).
 - Undo/redo now refreshes graph selection, preview sessions, and autosave dirty-state against the last saved database snapshot.
+- Text and executable nodes now select from any non-button part of the node while preserving lower-half link dragging.
 
 ### Tests
 
@@ -24,6 +33,7 @@
 - Added `DialogueEditorWindowTests` for selection restoration, inspector refresh, and dirty/autosave reset after undo.
 - Added choice-flow diagnostic coverage for choice nodes, fallback labels, broken targets, order conflicts, and inspector warnings.
 - Added coverage for guided condition fields, preview test-variable gating, blocked-state reasons, and Where Used external resolver results.
+- Added coverage for editor language switching, localized node summaries, and full-node runtime selection.
 
 ### Docs
 

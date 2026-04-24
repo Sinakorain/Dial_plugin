@@ -46,7 +46,7 @@ namespace NewDial.DialogueEditor
             {
                 diagnostics.Add(new DialogueChoiceFlowDiagnostic(
                     DialogueChoiceFlowSeverity.Error,
-                    "Choice node has no outgoing links."));
+                    DialogueEditorLocalization.Text("Choice node has no outgoing links.")));
                 return diagnostics;
             }
 
@@ -60,7 +60,7 @@ namespace NewDial.DialogueEditor
                 {
                     diagnostics.Add(new DialogueChoiceFlowDiagnostic(
                         DialogueChoiceFlowSeverity.Error,
-                        "Choice target is missing or invalid.",
+                        DialogueEditorLocalization.Text("Choice target is missing or invalid."),
                         link));
                     continue;
                 }
@@ -72,8 +72,8 @@ namespace NewDial.DialogueEditor
                             ? DialogueChoiceFlowSeverity.Error
                             : DialogueChoiceFlowSeverity.Warning,
                         string.IsNullOrWhiteSpace(target.Title)
-                            ? "Choice text and target title are both empty."
-                            : "Choice text is empty; target title will be used.",
+                            ? DialogueEditorLocalization.Text("Choice text and target title are both empty.")
+                            : DialogueEditorLocalization.Text("Choice text is empty; target title will be used."),
                         link));
                 }
 
@@ -81,7 +81,7 @@ namespace NewDial.DialogueEditor
                 {
                     diagnostics.Add(new DialogueChoiceFlowDiagnostic(
                         DialogueChoiceFlowSeverity.Warning,
-                        "Choice target is not reachable from the dialogue start.",
+                        DialogueEditorLocalization.Text("Choice target is not reachable from the dialogue start."),
                         link));
                 }
             }
@@ -97,7 +97,7 @@ namespace NewDial.DialogueEditor
             {
                 diagnostics.Add(new DialogueChoiceFlowDiagnostic(
                     DialogueChoiceFlowSeverity.Warning,
-                    "Choice order is negative.",
+                    DialogueEditorLocalization.Text("Choice order is negative."),
                     link));
             }
 
@@ -107,7 +107,7 @@ namespace NewDial.DialogueEditor
                 {
                     diagnostics.Add(new DialogueChoiceFlowDiagnostic(
                         DialogueChoiceFlowSeverity.Warning,
-                        "Choice order conflicts with another choice.",
+                        DialogueEditorLocalization.Text("Choice order conflicts with another choice."),
                         link));
                 }
             }

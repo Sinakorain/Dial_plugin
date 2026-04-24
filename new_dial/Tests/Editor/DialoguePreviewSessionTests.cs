@@ -5,6 +5,12 @@ namespace NewDial.DialogueEditor.Tests
 {
     public class DialoguePreviewSessionTests
     {
+        [SetUp]
+        public void SetUp()
+        {
+            DialogueEditorLanguageSettings.CurrentLanguage = DialogueEditorLanguage.English;
+        }
+
         [Test]
         public void Choose_AppendsTranscriptAndBackRestoresChoiceState()
         {

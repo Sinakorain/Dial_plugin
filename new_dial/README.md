@@ -11,7 +11,7 @@ The package is intentionally scoped as an MVP. It already includes a reusable ru
 ## What ships today
 
 - dialogue database asset model built around NPCs, dialogues, graphs, nodes, and links
-- graph editor for text nodes, comment groups, ordered links, conditions, and choice-style branches
+- graph editor for text, function, scene, debug, and comment nodes with ordered links, conditions, choice-style branches, and an EN/RU editor language switcher
 - explicit identifier editing for NPCs, dialogues, and nodes, including empty/duplicate warnings
 - choice-flow diagnostics for choice nodes, broken targets, fallback labels, and ordering issues
 - guided condition editing with type-specific operators, hints, and project-provided key suggestions
@@ -57,9 +57,11 @@ The start window can create a new `DialogueDatabaseAsset` or load an existing on
 | Status | Capability | Notes |
 | --- | --- | --- |
 | Implemented | Runtime dialogue database model | `DialogueDatabaseAsset`, NPC/dialogue records, graph nodes and links |
-| Implemented | Traversal helper | `DialoguePlayer` supports start, linear advance, and choice selection |
+| Implemented | Traversal helper | `DialoguePlayer` supports start, linear advance, choice selection, executable node execution, and pending execution resume |
 | Implemented | Conditions | Lightweight start/node gating through `ConditionData` and evaluator interfaces |
 | Implemented | Graph authoring | Text nodes, comment nodes, ordered links, choice text, and details editing |
+| Implemented | Executable nodes | Generic `Function`, `Scene`, and `Debug` nodes with primitive argument bags |
+| Implemented | Execution extension points | Project-provided registries and executors drive concrete function and scene behavior |
 | Implemented | Identifier management | NPC, dialogue, and node ids can be edited explicitly; node id changes update internal graph links |
 | Implemented | Choice-flow diagnostics | Choice-mode nodes warn about missing outputs, invalid targets, fallback labels, order conflicts, and unreachable targets |
 | Implemented | Guided conditions | Condition fields show relevant operators, hints, and optional project key suggestions |
@@ -73,7 +75,7 @@ The start window can create a new `DialogueDatabaseAsset` or load an existing on
 | Out of scope | Production dialogue UI | No shipped in-game conversation presentation |
 | Out of scope | Advanced expressions | Current conditions are intentionally lightweight |
 | Out of scope | Project-tree undo/redo | NPC, Dialogue, and dialogue-settings edits outside node scope are not covered yet |
-| Out of scope | Function/Scene/Debug execution | Palette entries are placeholders only |
+| Out of scope | Project-specific execution logic | No gameplay, battle, quest, reward, or Addressables adapters ship in the package |
 
 ## Runtime API at a glance
 
@@ -82,10 +84,15 @@ The start window can create a new `DialogueDatabaseAsset` or load an existing on
 - `DialogueEntry`: dialogue record with a start condition and graph payload
 - `DialogueGraphData`: graph container for nodes and links
 - `DialogueTextNodeData`: playable text node with start-node and choice-mode flags
+- `FunctionNodeData`: generic project-function node with primitive arguments and failure policy
+- `SceneNodeData`: generic scene request node with scene key, load mode, optional entry/transition ids, and parameters
+- `DebugNodeData`: lightweight logging node for diagnostics
 - `CommentNodeData`: editor grouping and annotation node
 - `NodeLinkData`: ordered outgoing edge with optional `ChoiceText`
 - `ConditionData` and `ConditionType`: lightweight condition metadata
 - `DialoguePlayer`: runtime traversal helper for starting, advancing, and choosing branches
+- `DialogueExecutionResult`: result contract for success, failure, pending, and end-dialogue execution outcomes
+- `IDialogueExecutionRegistry`, `IDialogueFunctionExecutor`, and `IDialogueSceneExecutor`: extension points for project metadata and executable behavior
 - `DialogueChoice`: resolved choice option exposed by `DialoguePlayer`
 - `IDialogueConditionEvaluator`: custom condition-evaluation extension point
 - `IDialogueVariableStore`: variable lookup extension point
@@ -107,8 +114,11 @@ These APIs are suitable for the current MVP package workflow, but they should no
 - The editor currently prompts to save or discard unsaved changes before opening another dialogue database.
 - `Cmd+Z` on macOS and `Ctrl+Z` on Windows restore node-scope graph and inspector changes through Unity's undo stack.
 - Empty-graph messaging, nested comment-group movement, and clipboard-based group cutting are part of the current editor behavior.
+- The editor language is a per-user preference saved in `EditorPrefs`; English is the default and Russian can be selected from the graph toolbar without reopening Unity.
+- Text and executable nodes can be selected by clicking any non-button part of the node. Dragging from the lower half still starts link creation.
 - NPC, dialogue, and node identifiers are editable in the editor. Node identifier regeneration updates internal graph links; NPC and dialogue id changes warn about possible external references, but external reference lookup is not implemented yet.
 - Choice-mode node inspectors show authoring diagnostics for broken or unclear choice flows before entering play mode.
-- Projects can register `IDialogueConditionMetadataProvider` implementations for condition key suggestions and `IDialogueExternalReferenceResolver` implementations for external Where Used results.
+- Projects can register `IDialogueConditionMetadataProvider` implementations for condition key suggestions, `IDialogueExternalReferenceResolver` implementations for external Where Used results, and `IDialogueExecutionRegistry` implementations for executable function/scene metadata.
+- Function and scene nodes intentionally use only primitive arguments. Project-specific payloads such as battles, deck state, rewards, and quest outcomes belong in project-side executors.
 - The preview variable sandbox uses the built-in editor-side condition evaluator and is not intended to exactly reproduce project runtime logic.
 - For a fuller implementation snapshot, see [`../docs/current-state.md`](../docs/current-state.md).

@@ -10,6 +10,58 @@ namespace NewDial.DialogueEditor.Tests
 {
     public class DialogueEditorWindowTests
     {
+        [SetUp]
+        public void SetUp()
+        {
+            DialogueEditorLanguageSettings.CurrentLanguage = DialogueEditorLanguage.English;
+        }
+
+        [Test]
+        public void LanguageSettings_DefaultsToEnglish()
+        {
+            DialogueEditorLanguageSettings.ResetForTests();
+
+            Assert.That(DialogueEditorLanguageSettings.CurrentLanguage, Is.EqualTo(DialogueEditorLanguage.English));
+            Assert.That(DialogueEditorLocalization.Text("Palette"), Is.EqualTo("Palette"));
+        }
+
+        [Test]
+        public void LanguageSwitcher_RefreshesToolbarPaletteAndInspectorLabels()
+        {
+            var database = CreateDatabase("LanguageSwitch");
+            var dialogue = database.Npcs[0].Dialogues[0];
+            var node = (DialogueTextNodeData)dialogue.Graph.Nodes[0];
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                Assert.That(window.FocusDialogueNode(dialogue, node.Id), Is.True);
+
+                var languageField = window.rootVisualElement.Q<PopupField<string>>("editor-language-field");
+                Assert.That(languageField, Is.Not.Null);
+                Assert.That(HasLabel(window, "Palette"), Is.True);
+
+                languageField.value = "RU";
+
+                Assert.That(DialogueEditorLanguageSettings.CurrentLanguage, Is.EqualTo(DialogueEditorLanguage.Russian));
+                Assert.That(HasLabel(window, "Палитра"), Is.True);
+                Assert.That(HasLabel(window, "Текстовый узел"), Is.True);
+
+                languageField = window.rootVisualElement.Q<PopupField<string>>("editor-language-field");
+                languageField.value = "EN";
+
+                Assert.That(DialogueEditorLanguageSettings.CurrentLanguage, Is.EqualTo(DialogueEditorLanguage.English));
+                Assert.That(HasLabel(window, "Palette"), Is.True);
+            }
+            finally
+            {
+                DialogueEditorLanguageSettings.CurrentLanguage = DialogueEditorLanguage.English;
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
         [Test]
         public void UndoRedo_RestoresSelectedNodeAndInspectorState()
         {
@@ -476,6 +528,70 @@ namespace NewDial.DialogueEditor.Tests
             }
         }
 
+        [Test]
+        public void FunctionInspector_ShowsFallbackFreeFormFields()
+        {
+            var database = CreateDatabase("FunctionFallback");
+            var dialogue = database.Npcs[0].Dialogues[0];
+            var functionNode = new FunctionNodeData
+            {
+                Title = "Function",
+                FunctionId = "custom.function",
+                Position = new Vector2(360f, 120f)
+            };
+            dialogue.Graph.Nodes.Add(functionNode);
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                Assert.That(window.FocusDialogueNode(dialogue, functionNode.Id), Is.True);
+
+                Assert.That(window.rootVisualElement.Q<TextField>("function-id-field"), Is.Not.Null);
+                Assert.That(window.rootVisualElement.Q<TextField>("argument-name-field"), Is.Null);
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void ExecutableInspector_ShowsValidationErrors()
+        {
+            var registry = new TestExecutionRegistry();
+            DialogueExecutionRegistry.Register(registry);
+            var database = CreateDatabase("ExecutableValidation");
+            var dialogue = database.Npcs[0].Dialogues[0];
+            var functionNode = new FunctionNodeData
+            {
+                Title = "Function",
+                FunctionId = "session.set_int",
+                Arguments = new System.Collections.Generic.List<DialogueArgumentEntry>
+                {
+                    new() { Name = "value", Value = DialogueArgumentValue.FromString("wrong") }
+                }
+            };
+            dialogue.Graph.Nodes.Add(functionNode);
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                Assert.That(window.FocusDialogueNode(dialogue, functionNode.Id), Is.True);
+
+                Assert.That(HasChoiceDiagnostic(window, "Required argument 'key' is missing."), Is.True);
+                Assert.That(HasChoiceDiagnostic(window, "Argument 'value' expects Int but is String."), Is.True);
+            }
+            finally
+            {
+                DialogueExecutionRegistry.Unregister(registry);
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
         private static DialogueDatabaseAsset CreateDatabase(string prefix)
         {
             var database = ScriptableObject.CreateInstance<DialogueDatabaseAsset>();
@@ -554,6 +670,13 @@ namespace NewDial.DialogueEditor.Tests
                 .Any(label => label.text == diagnosticText);
         }
 
+        private static bool HasLabel(DialogueEditorWindow window, string text)
+        {
+            return window.rootVisualElement.Query<Label>()
+                .ToList()
+                .Any(label => label.text == text);
+        }
+
         private sealed class TestConditionMetadataProvider : IDialogueConditionMetadataProvider
         {
             public System.Collections.Generic.IEnumerable<DialogueConditionKeySuggestion> GetKeySuggestions(ConditionType type)
@@ -562,6 +685,27 @@ namespace NewDial.DialogueEditor.Tests
                 {
                     yield return new DialogueConditionKeySuggestion("door_open", "Door Open", "Flags");
                 }
+            }
+        }
+
+        private sealed class TestExecutionRegistry : IDialogueExecutionRegistry
+        {
+            public System.Collections.Generic.IEnumerable<DialogueFunctionDescriptor> GetFunctions()
+            {
+                yield return new DialogueFunctionDescriptor(
+                    "session.set_int",
+                    "Set Int",
+                    "Session",
+                    parameters: new[]
+                    {
+                        new DialogueParameterDescriptor("key", DialogueArgumentType.String, required: true),
+                        new DialogueParameterDescriptor("value", DialogueArgumentType.Int, required: true)
+                    });
+            }
+
+            public System.Collections.Generic.IEnumerable<DialogueSceneDescriptor> GetScenes()
+            {
+                return Enumerable.Empty<DialogueSceneDescriptor>();
             }
         }
     }

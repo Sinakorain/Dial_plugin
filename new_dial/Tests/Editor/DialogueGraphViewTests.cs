@@ -9,6 +9,12 @@ namespace NewDial.DialogueEditor.Tests
 {
     public class DialogueGraphViewTests
     {
+        [SetUp]
+        public void SetUp()
+        {
+            DialogueEditorLanguageSettings.CurrentLanguage = DialogueEditorLanguage.English;
+        }
+
         [Test]
         public void LoadGraph_RebuildsRenderableLinkCountForConnectedLinks()
         {
@@ -135,6 +141,115 @@ namespace NewDial.DialogueEditor.Tests
             view.CreateCommentNode(new Vector2(100f, 100f));
 
             Assert.That(GetEmptyStateLabel(view).style.display, Is.EqualTo(DisplayStyle.None));
+        }
+
+        [Test]
+        public void CreateExecutableNodes_AddsRenderableNodeTypes()
+        {
+            var graph = new DialogueGraphData();
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+
+            view.CreateFunctionNode(new Vector2(100f, 100f));
+            view.CreateSceneNode(new Vector2(420f, 100f));
+            view.CreateDebugNode(new Vector2(740f, 100f));
+
+            Assert.That(graph.Nodes.OfType<FunctionNodeData>(), Has.Count.EqualTo(1));
+            Assert.That(graph.Nodes.OfType<SceneNodeData>(), Has.Count.EqualTo(1));
+            Assert.That(graph.Nodes.OfType<DebugNodeData>(), Has.Count.EqualTo(1));
+            Assert.That(view.graphElements.OfType<DialogueExecutableNodeView>(), Has.Count.EqualTo(3));
+        }
+
+        [Test]
+        public void LoadGraph_RendersLinksBetweenExecutableNodes()
+        {
+            var graph = new DialogueGraphData();
+            var start = new DialogueTextNodeData { Title = "Start" };
+            var function = new FunctionNodeData { Title = "Function" };
+            var scene = new SceneNodeData { Title = "Scene" };
+            graph.Nodes.Add(start);
+            graph.Nodes.Add(function);
+            graph.Nodes.Add(scene);
+            graph.Links.Add(new NodeLinkData { FromNodeId = start.Id, ToNodeId = function.Id, Order = 0 });
+            graph.Links.Add(new NodeLinkData { FromNodeId = function.Id, ToNodeId = scene.Id, Order = 0 });
+
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+
+            Assert.That(view.GetRenderedLinkCount(), Is.EqualTo(2));
+        }
+
+        [Test]
+        public void SelectRuntimeNode_SelectsTextNodeAndNotifiesInspector()
+        {
+            var graph = new DialogueGraphData();
+            var node = new DialogueTextNodeData { Title = "Selectable" };
+            graph.Nodes.Add(node);
+
+            var view = new DialogueGraphView();
+            BaseNodeData selected = null;
+            view.SelectionChangedAction = nodeData => selected = nodeData;
+            view.LoadGraph(graph);
+            var nodeView = view.graphElements.OfType<DialogueTextNodeView>().Single();
+
+            view.SelectRuntimeNode(nodeView);
+
+            Assert.That(view.selection, Does.Contain(nodeView));
+            Assert.That(selected, Is.SameAs(node));
+        }
+
+        [Test]
+        public void SelectRuntimeNode_SelectsExecutableNodeAndNotifiesInspector()
+        {
+            var graph = new DialogueGraphData();
+            var node = new FunctionNodeData { Title = "Selectable Function" };
+            graph.Nodes.Add(node);
+
+            var view = new DialogueGraphView();
+            BaseNodeData selected = null;
+            view.SelectionChangedAction = nodeData => selected = nodeData;
+            view.LoadGraph(graph);
+            var nodeView = view.graphElements.OfType<DialogueExecutableNodeView>().Single();
+
+            view.SelectRuntimeNode(nodeView);
+
+            Assert.That(view.selection, Does.Contain(nodeView));
+            Assert.That(selected, Is.SameAs(node));
+        }
+
+        [Test]
+        public void BeginLinkDrag_AfterSelectingNode_PreservesSelection()
+        {
+            var graph = new DialogueGraphData();
+            var node = new DialogueTextNodeData { Title = "Source" };
+            graph.Nodes.Add(node);
+
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+            var nodeView = view.graphElements.OfType<DialogueTextNodeView>().Single();
+
+            view.SelectRuntimeNode(nodeView);
+            view.BeginLinkDrag(nodeView, new Vector2(100f, 100f));
+
+            Assert.That(view.selection, Does.Contain(nodeView));
+            Assert.That(view.IsLinkDragActiveForTests, Is.True);
+        }
+
+        [Test]
+        public void RefreshNodeVisuals_UsesCurrentLanguageForNodeSummaries()
+        {
+            var graph = new DialogueGraphData();
+            var node = new FunctionNodeData { Title = string.Empty };
+            graph.Nodes.Add(node);
+
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+            var nodeView = view.graphElements.OfType<DialogueExecutableNodeView>().Single();
+
+            DialogueEditorLanguageSettings.CurrentLanguage = DialogueEditorLanguage.Russian;
+            view.RefreshNodeVisuals();
+
+            Assert.That(nodeView.Q<Label>(className: "dialogue-node__body-preview")?.text, Is.EqualTo("Функция не выбрана"));
         }
 
         [Test]

@@ -18,7 +18,7 @@ namespace NewDial.DialogueEditor
                 !string.IsNullOrWhiteSpace(npc.Id) &&
                 database.Npcs.Count(candidate => candidate != null && candidate.Id == npc.Id) > 1)
             {
-                issues.Add("Duplicate NPC Id");
+                issues.Add(DialogueEditorLocalization.Text("Duplicate NPC Id"));
             }
 
             return issues;
@@ -35,7 +35,7 @@ namespace NewDial.DialogueEditor
             AddEmptyIssue(issues, dialogue.Id);
             if (!string.IsNullOrWhiteSpace(dialogue.Id) && CountDialoguesWithId(database, dialogue.Id) > 1)
             {
-                issues.Add("Duplicate Dialogue Id");
+                issues.Add(DialogueEditorLocalization.Text("Duplicate Dialogue Id"));
             }
 
             return issues;
@@ -54,7 +54,7 @@ namespace NewDial.DialogueEditor
                 !string.IsNullOrWhiteSpace(node.Id) &&
                 graph.Nodes.Count(candidate => candidate != null && candidate.Id == node.Id) > 1)
             {
-                issues.Add("Duplicate Node Id");
+                issues.Add(DialogueEditorLocalization.Text("Duplicate Node Id"));
             }
 
             return issues;
@@ -146,7 +146,7 @@ namespace NewDial.DialogueEditor
         {
             if (string.IsNullOrWhiteSpace(id))
             {
-                issues.Add("Id is empty");
+                issues.Add(DialogueEditorLocalization.Text("Id is empty"));
             }
         }
 

@@ -735,6 +735,30 @@
     border-left-color: #3f895a;
 }
 
+.dialogue-node--function .dialogue-node__surface {
+    background-color: #2b3140;
+    border-top-color: #8270c8;
+    border-right-color: #8270c8;
+    border-bottom-color: #8270c8;
+    border-left-color: #8270c8;
+}
+
+.dialogue-node--scene .dialogue-node__surface {
+    background-color: #22343a;
+    border-top-color: #56a3a6;
+    border-right-color: #56a3a6;
+    border-bottom-color: #56a3a6;
+    border-left-color: #56a3a6;
+}
+
+.dialogue-node--debug .dialogue-node__surface {
+    background-color: #33342d;
+    border-top-color: #b49b45;
+    border-right-color: #b49b45;
+    border-bottom-color: #b49b45;
+    border-left-color: #b49b45;
+}
+
 .dialogue-node__top-container {
     flex-direction: column;
     background-color: #2c3650;

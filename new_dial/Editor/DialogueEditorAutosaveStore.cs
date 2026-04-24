@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
@@ -286,6 +287,19 @@ namespace NewDial.DialogueEditor
             public Rect Area;
             public string Comment;
             public Color Tint;
+            public string SceneKey;
+            public DialogueSceneLoadMode LoadMode;
+            public string EntryPointId;
+            public string TransitionId;
+            public bool CloseDialogueBeforeExecute;
+            public bool WaitForCompletion;
+            public string FunctionId;
+            public DialogueExecutionFailurePolicy FailurePolicy;
+            public string MessageTemplate;
+            public DialogueDebugLogLevel LogLevel;
+            public bool IncludeArguments;
+            public List<DialogueArgumentEntry> Arguments = new();
+            public List<DialogueArgumentEntry> Parameters = new();
 
             public static NodeSnapshot FromNode(BaseNodeData node)
             {
@@ -311,6 +325,32 @@ namespace NewDial.DialogueEditor
                         snapshot.Comment = commentNode.Comment;
                         snapshot.Tint = commentNode.Tint;
                         break;
+                    case FunctionNodeData functionNode:
+                        snapshot.NodeType = nameof(FunctionNodeData);
+                        snapshot.FunctionId = functionNode.FunctionId;
+                        snapshot.CloseDialogueBeforeExecute = functionNode.CloseDialogueBeforeExecute;
+                        snapshot.WaitForCompletion = functionNode.WaitForCompletion;
+                        snapshot.FailurePolicy = functionNode.FailurePolicy;
+                        snapshot.Arguments = CloneArguments(functionNode.Arguments);
+                        break;
+                    case SceneNodeData sceneNode:
+                        snapshot.NodeType = nameof(SceneNodeData);
+                        snapshot.SceneKey = sceneNode.SceneKey;
+                        snapshot.LoadMode = sceneNode.LoadMode;
+                        snapshot.EntryPointId = sceneNode.EntryPointId;
+                        snapshot.TransitionId = sceneNode.TransitionId;
+                        snapshot.CloseDialogueBeforeExecute = sceneNode.CloseDialogueBeforeExecute;
+                        snapshot.WaitForCompletion = sceneNode.WaitForCompletion;
+                        snapshot.Parameters = CloneArguments(sceneNode.Parameters);
+                        break;
+                    case DebugNodeData debugNode:
+                        snapshot.NodeType = nameof(DebugNodeData);
+                        snapshot.MessageTemplate = debugNode.MessageTemplate;
+                        snapshot.LogLevel = debugNode.LogLevel;
+                        snapshot.IncludeArguments = debugNode.IncludeArguments;
+                        snapshot.FailurePolicy = debugNode.FailurePolicy;
+                        snapshot.Arguments = CloneArguments(debugNode.Arguments);
+                        break;
                 }
 
                 return snapshot;
@@ -332,6 +372,56 @@ namespace NewDial.DialogueEditor
                     };
                 }
 
+                if (NodeType == nameof(FunctionNodeData))
+                {
+                    return new FunctionNodeData
+                    {
+                        Id = Id,
+                        Title = Title,
+                        Position = Position,
+                        Condition = Condition?.Clone() ?? new ConditionData(),
+                        FunctionId = FunctionId,
+                        CloseDialogueBeforeExecute = CloseDialogueBeforeExecute,
+                        WaitForCompletion = WaitForCompletion,
+                        FailurePolicy = FailurePolicy,
+                        Arguments = CloneArguments(Arguments)
+                    };
+                }
+
+                if (NodeType == nameof(SceneNodeData))
+                {
+                    return new SceneNodeData
+                    {
+                        Id = Id,
+                        Title = Title,
+                        Position = Position,
+                        Condition = Condition?.Clone() ?? new ConditionData(),
+                        SceneKey = SceneKey,
+                        LoadMode = LoadMode,
+                        EntryPointId = EntryPointId,
+                        TransitionId = TransitionId,
+                        CloseDialogueBeforeExecute = CloseDialogueBeforeExecute,
+                        WaitForCompletion = WaitForCompletion,
+                        Parameters = CloneArguments(Parameters)
+                    };
+                }
+
+                if (NodeType == nameof(DebugNodeData))
+                {
+                    return new DebugNodeData
+                    {
+                        Id = Id,
+                        Title = Title,
+                        Position = Position,
+                        Condition = Condition?.Clone() ?? new ConditionData(),
+                        MessageTemplate = MessageTemplate,
+                        LogLevel = LogLevel,
+                        IncludeArguments = IncludeArguments,
+                        FailurePolicy = FailurePolicy,
+                        Arguments = CloneArguments(Arguments)
+                    };
+                }
+
                 return new DialogueTextNodeData
                 {
                     Id = Id,
@@ -342,6 +432,14 @@ namespace NewDial.DialogueEditor
                     IsStartNode = IsStartNode,
                     UseOutputsAsChoices = UseOutputsAsChoices
                 };
+            }
+
+            private static List<DialogueArgumentEntry> CloneArguments(IEnumerable<DialogueArgumentEntry> arguments)
+            {
+                return arguments?
+                    .Where(argument => argument != null)
+                    .Select(argument => argument.Clone())
+                    .ToList() ?? new List<DialogueArgumentEntry>();
             }
         }
     }

@@ -112,25 +112,25 @@ namespace NewDial.DialogueEditor
 
             if (Dialogue == null)
             {
-                CurrentReason = "No dialogue is selected.";
+                CurrentReason = DialogueEditorLocalization.Text("No dialogue is selected.");
                 return;
             }
 
             if (Dialogue.Graph == null)
             {
-                CurrentReason = "Missing graph.";
+                CurrentReason = DialogueEditorLocalization.Text("Missing graph.");
                 return;
             }
 
             if (!_conditionEvaluator.Evaluate(Dialogue.StartCondition, variableStore))
             {
-                CurrentReason = $"Dialogue start blocked by condition: {DescribeCondition(Dialogue.StartCondition)}";
+                CurrentReason = DialogueEditorLocalization.Format("Dialogue start blocked by condition: {0}", DescribeCondition(Dialogue.StartCondition));
                 return;
             }
 
             if (FindStartNode(Dialogue) == null)
             {
-                CurrentReason = "Missing start node.";
+                CurrentReason = DialogueEditorLocalization.Text("Missing start node.");
                 return;
             }
 
@@ -142,7 +142,7 @@ namespace NewDial.DialogueEditor
             }
             else
             {
-                CurrentReason = "Missing valid start node.";
+                CurrentReason = DialogueEditorLocalization.Text("Missing valid start node.");
                 return;
             }
 
@@ -170,7 +170,7 @@ namespace NewDial.DialogueEditor
                     case DialoguePreviewActionKind.Choose:
                         if (action.ChoiceIndex < 0 || action.ChoiceIndex >= _player.CurrentChoices.Count)
                         {
-                            CurrentReason = "Choice is no longer available with the current test variables.";
+                            CurrentReason = DialogueEditorLocalization.Text("Choice is no longer available with the current test variables.");
                             break;
                         }
 
@@ -187,7 +187,7 @@ namespace NewDial.DialogueEditor
                 _player.CurrentChoices.Count == 0 &&
                 _blockedChoices.Count > 0)
             {
-                CurrentReason = "No choices are available with the current test variables.";
+                CurrentReason = DialogueEditorLocalization.Text("No choices are available with the current test variables.");
             }
         }
 
@@ -197,7 +197,7 @@ namespace NewDial.DialogueEditor
                 string.IsNullOrWhiteSpace(choice.Link.ChoiceText) &&
                 string.IsNullOrWhiteSpace(choice.Target?.Title))
             {
-                return "Generic fallback label is being used.";
+                return DialogueEditorLocalization.Text("Generic fallback label is being used.");
             }
 
             return string.Empty;
@@ -216,7 +216,7 @@ namespace NewDial.DialogueEditor
                 var target = GetTextNode(Dialogue.Graph, link.ToNodeId);
                 if (target == null)
                 {
-                    _blockedChoices.Add(new DialoguePreviewBlockedChoice(GetChoiceLabel(link, target), "Missing valid target node."));
+                    _blockedChoices.Add(new DialoguePreviewBlockedChoice(GetChoiceLabel(link, target), DialogueEditorLocalization.Text("Missing valid target node.")));
                     continue;
                 }
 
@@ -224,7 +224,7 @@ namespace NewDial.DialogueEditor
                 {
                     _blockedChoices.Add(new DialoguePreviewBlockedChoice(
                         GetChoiceLabel(link, target),
-                        $"Choice unavailable because condition is not met: {DescribeCondition(target.Condition)}"));
+                        DialogueEditorLocalization.Format("Choice unavailable because condition is not met: {0}", DescribeCondition(target.Condition))));
                 }
             }
         }
@@ -234,7 +234,7 @@ namespace NewDial.DialogueEditor
             var links = GetOutgoingLinks(Dialogue.Graph, node?.Id);
             if (links.Count == 0)
             {
-                return "Branch reached an end.";
+                return DialogueEditorLocalization.Text("Branch reached an end.");
             }
 
             var hasBlockedCondition = false;
@@ -258,12 +258,12 @@ namespace NewDial.DialogueEditor
 
             if (hasBrokenLink)
             {
-                return "Broken link or missing valid target node.";
+                return DialogueEditorLocalization.Text("Broken link or missing valid target node.");
             }
 
             return hasBlockedCondition
-                ? "All outgoing branches are blocked by conditions."
-                : "Branch reached an end.";
+                ? DialogueEditorLocalization.Text("All outgoing branches are blocked by conditions.")
+                : DialogueEditorLocalization.Text("Branch reached an end.");
         }
 
         private static DialogueTextNodeData FindStartNode(DialogueEntry dialogue)
@@ -308,25 +308,25 @@ namespace NewDial.DialogueEditor
                 return target.Title;
             }
 
-            return "Choice";
+            return DialogueEditorLocalization.Text("Choice");
         }
 
         private static string DescribeCondition(ConditionData condition)
         {
             if (condition == null || condition.Type == ConditionType.None)
             {
-                return "None";
+                return DialogueEditorLocalization.Text("None");
             }
 
             if (condition.Type == ConditionType.Custom)
             {
-                return "Custom condition cannot be simulated by the built-in preview.";
+                return DialogueEditorLocalization.Text("Custom condition cannot be simulated by the built-in preview.");
             }
 
             var comparisonOperator = string.IsNullOrWhiteSpace(condition.Operator) ? "==" : condition.Operator.Trim();
             if (comparisonOperator == "Truthy")
             {
-                return $"{condition.Type} {condition.Key} is truthy";
+                return DialogueEditorLocalization.Format("{0} {1} is truthy", condition.Type, condition.Key);
             }
 
             return $"{condition.Type} {condition.Key} {comparisonOperator} {condition.Value}";
@@ -337,7 +337,7 @@ namespace NewDial.DialogueEditor
     {
         public DialoguePreviewBlockedChoice(string label, string reason)
         {
-            Label = label ?? "Choice";
+            Label = label ?? DialogueEditorLocalization.Text("Choice");
             Reason = reason ?? string.Empty;
         }
 
@@ -403,7 +403,7 @@ namespace NewDial.DialogueEditor
         {
             return new DialoguePreviewTranscriptEntry(
                 DialoguePreviewTranscriptEntryKind.Node,
-                string.IsNullOrWhiteSpace(node?.Title) ? "Untitled" : node.Title,
+                string.IsNullOrWhiteSpace(node?.Title) ? DialogueEditorLocalization.Text("Untitled") : node.Title,
                 node?.BodyText ?? string.Empty,
                 node?.Id);
         }
@@ -412,8 +412,8 @@ namespace NewDial.DialogueEditor
         {
             return new DialoguePreviewTranscriptEntry(
                 DialoguePreviewTranscriptEntryKind.Choice,
-                string.IsNullOrWhiteSpace(choiceText) ? "Continue" : choiceText,
-                string.IsNullOrWhiteSpace(node?.BodyText) ? "This choice has no dialogue text yet." : node.BodyText,
+                string.IsNullOrWhiteSpace(choiceText) ? DialogueEditorLocalization.Text("Continue") : choiceText,
+                string.IsNullOrWhiteSpace(node?.BodyText) ? DialogueEditorLocalization.Text("This choice has no dialogue text yet.") : node.BodyText,
                 node?.Id);
         }
     }

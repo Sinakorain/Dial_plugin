@@ -121,14 +121,14 @@ namespace NewDial.DialogueEditor
                     var dialogueCount = context.Npc?.Dialogues?.Count(dialogue => dialogue != null) ?? 0;
                     results.Add(new DialogueWhereUsedResult(
                         DialogueReferenceKind.Internal,
-                        "NPC owns dialogues in this database.",
-                        $"{dialogueCount} dialogue(s)"));
+                        DialogueEditorLocalization.Text("NPC owns dialogues in this database."),
+                        DialogueEditorLocalization.Format("{0} dialogue(s)", dialogueCount)));
                     break;
                 case DialogueReferenceTargetKind.Dialogue:
                     results.Add(new DialogueWhereUsedResult(
                         DialogueReferenceKind.Internal,
-                        "Dialogue belongs to NPC.",
-                        context.Npc == null ? "Owner NPC missing" : $"{context.Npc.Name} ({context.Npc.Id})"));
+                        DialogueEditorLocalization.Text("Dialogue belongs to NPC."),
+                        context.Npc == null ? DialogueEditorLocalization.Text("Owner NPC missing") : $"{context.Npc.Name} ({context.Npc.Id})"));
                     break;
                 case DialogueReferenceTargetKind.Node:
                     AddNodeReferences(results, context.Dialogue?.Graph, context.Node);
@@ -145,8 +145,8 @@ namespace NewDial.DialogueEditor
             {
                 results.Add(new DialogueWhereUsedResult(
                     DialogueReferenceKind.Internal,
-                    "Node graph references cannot be resolved.",
-                    "Missing graph or node id"));
+                    DialogueEditorLocalization.Text("Node graph references cannot be resolved."),
+                    DialogueEditorLocalization.Text("Missing graph or node id")));
                 return;
             }
 
@@ -161,7 +161,7 @@ namespace NewDial.DialogueEditor
             {
                 results.Add(new DialogueWhereUsedResult(
                     DialogueReferenceKind.Internal,
-                    "Node has no internal graph links."));
+                    DialogueEditorLocalization.Text("Node has no internal graph links.")));
                 return;
             }
 
@@ -170,7 +170,7 @@ namespace NewDial.DialogueEditor
                 var source = GetNode(graph, link.FromNodeId);
                 results.Add(new DialogueWhereUsedResult(
                     DialogueReferenceKind.Internal,
-                    "Incoming link",
+                    DialogueEditorLocalization.Text("Incoming link"),
                     source == null ? link.FromNodeId : $"{source.Title} ({source.Id})"));
             }
 
@@ -179,7 +179,7 @@ namespace NewDial.DialogueEditor
                 var target = GetNode(graph, link.ToNodeId);
                 results.Add(new DialogueWhereUsedResult(
                     DialogueReferenceKind.Internal,
-                    "Outgoing link",
+                    DialogueEditorLocalization.Text("Outgoing link"),
                     target == null ? link.ToNodeId : $"{target.Title} ({target.Id})"));
             }
         }

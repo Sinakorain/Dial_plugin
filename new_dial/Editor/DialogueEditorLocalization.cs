@@ -1,0 +1,310 @@
+using System;
+using System.Collections.Generic;
+using UnityEditor;
+
+namespace NewDial.DialogueEditor
+{
+    public enum DialogueEditorLanguage
+    {
+        English,
+        Russian
+    }
+
+    internal static class DialogueEditorLanguageSettings
+    {
+        private const string EditorPrefsKey = "NewDial.DialogueEditor.Language";
+
+        public static event Action LanguageChanged;
+
+        public static DialogueEditorLanguage CurrentLanguage
+        {
+            get
+            {
+                var value = EditorPrefs.GetString(EditorPrefsKey, DialogueEditorLanguage.English.ToString());
+                return Enum.TryParse(value, out DialogueEditorLanguage language)
+                    ? language
+                    : DialogueEditorLanguage.English;
+            }
+            set
+            {
+                if (CurrentLanguage == value)
+                {
+                    return;
+                }
+
+                EditorPrefs.SetString(EditorPrefsKey, value.ToString());
+                LanguageChanged?.Invoke();
+            }
+        }
+
+        public static string CurrentLanguageCode => CurrentLanguage == DialogueEditorLanguage.Russian ? "RU" : "EN";
+
+        internal static void ResetForTests()
+        {
+            EditorPrefs.DeleteKey(EditorPrefsKey);
+            LanguageChanged?.Invoke();
+        }
+    }
+
+    internal static class DialogueEditorLocalization
+    {
+        private static readonly Dictionary<string, string> Russian = new()
+        {
+            ["Dialogue Graph"] = "Граф диалога",
+            ["Dialogue Preview"] = "Предпросмотр диалога",
+            ["Dialogue Editor"] = "Редактор диалогов",
+            ["Dialogue & Cutscene Node Editor"] = "Редактор узлов диалогов и катсцен",
+            ["Create a new dialogue database or load an existing one."] = "Создайте новую базу диалогов или загрузите существующую.",
+            ["New File"] = "Новый файл",
+            ["Load File"] = "Загрузить файл",
+            ["Exit"] = "Выход",
+            ["Create Dialogue Database"] = "Создать базу диалогов",
+            ["Choose a location for the dialogue database."] = "Выберите место для базы диалогов.",
+            ["Load Dialogue Database"] = "Загрузить базу диалогов",
+            ["Load failed"] = "Не удалось загрузить",
+            ["The selected asset must be inside the current Unity project."] = "Выбранный ассет должен находиться внутри текущего Unity-проекта.",
+            ["The selected asset must live inside the current Unity project."] = "Выбранный ассет должен находиться внутри текущего Unity-проекта.",
+            ["The selected asset is not a DialogueDatabaseAsset."] = "Выбранный ассет не является DialogueDatabaseAsset.",
+            ["OK"] = "OK",
+            ["New"] = "Создать",
+            ["Load"] = "Загрузить",
+            ["Save"] = "Сохранить",
+            ["Preview"] = "Предпросмотр",
+            ["Delete"] = "Удалить",
+            ["Dialogue Settings"] = "Настройки диалога",
+            ["Graph Canvas"] = "Полотно графа",
+            ["Project"] = "Проект",
+            ["Palette"] = "Палитра",
+            ["Create NPC"] = "Создать NPC",
+            ["NPC"] = "NPC",
+            ["Dialogue"] = "диалога",
+            ["Node"] = "узла",
+            ["Create Dialogue"] = "Создать диалог",
+            ["No database loaded"] = "База не загружена",
+            ["Create or load a dialogue database first."] = "Сначала создайте или загрузите базу диалогов.",
+            ["unsaved changes"] = "несохраненные изменения",
+            ["Load or create a dialogue database to begin."] = "Загрузите или создайте базу диалогов, чтобы начать.",
+            ["Selected NPC"] = "Выбранный NPC",
+            ["Select NPC"] = "Выбрать NPC",
+            ["NPC Name"] = "Имя NPC",
+            ["Editing"] = "Редактируется",
+            ["Open"] = "Открыть",
+            ["Dialogue Name"] = "Имя диалога",
+            ["Start"] = "Старт",
+            ["Details"] = "Детали",
+            ["Hide"] = "Скрыть",
+            ["Show"] = "Показать",
+            ["Text Node"] = "Текстовый узел",
+            ["Comment"] = "Комментарий",
+            ["Function"] = "Функция",
+            ["Scene"] = "Сцена",
+            ["Debug"] = "Отладка",
+            ["Exec"] = "Вып.",
+            ["Group related dialogue nodes here."] = "Группируйте связанные узлы диалога здесь.",
+            ["Debug dialogue node executed."] = "Отладочный узел диалога выполнен.",
+            ["Add a description for this comment area."] = "Добавьте описание для этой области комментария.",
+            ["Click to add at center. Drag onto the graph to place."] = "Нажмите, чтобы добавить в центр. Перетащите на граф, чтобы выбрать место.",
+            ["Execute a project-provided function and continue."] = "Выполнить функцию проекта и продолжить.",
+            ["Request project scene loading and continue."] = "Запросить загрузку сцены проекта и продолжить.",
+            ["Write a diagnostic log entry and continue."] = "Записать диагностический лог и продолжить.",
+            ["Node Details"] = "Детали узла",
+            ["Comment Details"] = "Детали комментария",
+            ["Function Details"] = "Детали функции",
+            ["Scene Details"] = "Детали сцены",
+            ["Debug Details"] = "Детали отладки",
+            ["Select an NPC, a dialogue, or a node to inspect it."] = "Выберите NPC, диалог или узел, чтобы открыть детали.",
+            ["No database loaded."] = "База не загружена.",
+            ["No dialogues yet. Use Create Dialogue above to add one."] = "Диалогов пока нет. Используйте кнопку создания диалога выше.",
+            ["Nodes: {0}"] = "Узлов: {0}",
+            ["Start node: {0}"] = "Стартовый узел: {0}",
+            ["None"] = "Нет",
+            ["Click empty graph space to return here after editing a node."] = "Нажмите на пустую область графа, чтобы вернуться сюда после редактирования узла.",
+            ["Title"] = "Название",
+            ["Body Text"] = "Текст реплики",
+            ["Is Start Node"] = "Стартовый узел",
+            ["Use Outputs As Choices"] = "Использовать выходы как варианты",
+            ["Delete Node"] = "Удалить узел",
+            ["Delete Comment"] = "Удалить комментарий",
+            ["Delete Function"] = "Удалить функцию",
+            ["Delete Scene"] = "Удалить сцену",
+            ["Delete Debug"] = "Удалить отладку",
+            ["Area"] = "Область",
+            ["Tint"] = "Цвет",
+            ["FunctionId"] = "FunctionId",
+            ["SceneKey"] = "SceneKey",
+            ["EntryPointId"] = "EntryPointId",
+            ["TransitionId"] = "TransitionId",
+            ["Known Function"] = "Известная функция",
+            ["Known Scene"] = "Известная сцена",
+            ["Close Dialogue Before Execute"] = "Закрыть диалог перед выполнением",
+            ["Wait For Completion"] = "Ждать завершения",
+            ["Failure Policy"] = "Политика ошибки",
+            ["Load Mode"] = "Режим загрузки",
+            ["Message Template"] = "Шаблон сообщения",
+            ["Log Level"] = "Уровень лога",
+            ["Include Arguments"] = "Добавить аргументы",
+            ["Arguments"] = "Аргументы",
+            ["Parameters"] = "Параметры",
+            ["Debug Arguments"] = "Аргументы отладки",
+            ["Function Arguments"] = "Аргументы функции",
+            ["Scene Parameters"] = "Параметры сцены",
+            ["Validation"] = "Валидация",
+            ["No arguments configured."] = "Аргументы не настроены.",
+            ["Name"] = "Имя",
+            ["Type"] = "Тип",
+            ["Value"] = "Значение",
+            ["Remove Argument"] = "Удалить аргумент",
+            ["Add Argument"] = "Добавить аргумент",
+            ["Connected Links"] = "Связанные переходы",
+            ["No linked outputs yet. Drag from the bottom of this node to the top of another node."] = "Выходящих связей пока нет. Перетащите из нижней части этого узла к верхней части другого.",
+            ["Target: {0}"] = "Цель: {0}",
+            ["Unconnected"] = "Не подключено",
+            ["Order"] = "Порядок",
+            ["Choice Text"] = "Текст выбора",
+            ["Executable links ignore ChoiceText and use Order only."] = "Исполняемые переходы игнорируют ChoiceText и используют только порядок.",
+            ["Remove Link"] = "Удалить связь",
+            ["Choice Flow Diagnostics"] = "Диагностика ветвления",
+            ["Where Used"] = "Где используется",
+            ["Internal References"] = "Внутренние ссылки",
+            ["External References"] = "Внешние ссылки",
+            ["No internal references."] = "Внутренних ссылок нет.",
+            ["No external references reported."] = "Внешние ссылки не найдены.",
+            ["Condition"] = "Условие",
+            ["Start Condition"] = "Стартовое условие",
+            ["No condition data is available."] = "Данные условия недоступны.",
+            ["Known Key"] = "Известный ключ",
+            ["Key"] = "Ключ",
+            ["Operator"] = "Оператор",
+            ["The selected operator does not use an expected value."] = "Выбранный оператор не использует ожидаемое значение.",
+            ["NPC Id"] = "Id NPC",
+            ["Dialogue Id"] = "Id диалога",
+            ["Node Id"] = "Id узла",
+            ["Generate"] = "Сгенерировать",
+            ["Safe Regenerate"] = "Безопасно сгенерировать",
+            ["Change Id"] = "Изменить Id",
+            ["Cancel"] = "Отмена",
+            ["Change Id Button"] = "Изменить Id",
+            ["{0} Id values may be referenced outside this dialogue database."] = "Значения Id для {0} могут использоваться вне этой базы диалогов.",
+            ["Internal graph links that target this node will be updated automatically."] = "Внутренние связи графа, указывающие на этот узел, обновятся автоматически.",
+            ["Continue changing this Id?"] = "Продолжить изменение Id?",
+            ["No dialogue selected"] = "Диалог не выбран",
+            ["Select a dialogue to preview it."] = "Выберите диалог для предпросмотра.",
+            ["Preview uses the current dialogue asset state."] = "Предпросмотр использует текущее состояние ассета диалога.",
+            ["History"] = "История",
+            ["The full run is recorded here."] = "Здесь записывается весь прогон.",
+            ["Current Scene"] = "Текущая сцена",
+            ["Choices"] = "Варианты",
+            ["Back"] = "Назад",
+            ["Next"] = "Далее",
+            ["Restart"] = "Перезапуск",
+            ["Jump To Active Node"] = "К активному узлу",
+            ["Test Variables"] = "Тестовые переменные",
+            ["Add"] = "Добавить",
+            ["Reset"] = "Сбросить",
+            ["Open a dialogue in the editor to preview it."] = "Откройте диалог в редакторе для предпросмотра.",
+            ["The full run will appear here after a dialogue starts."] = "Полный прогон появится здесь после старта диалога.",
+            ["No active scene"] = "Нет активной сцены",
+            ["Select a dialogue in the editor to begin previewing it here."] = "Выберите диалог в редакторе, чтобы начать предпросмотр.",
+            ["Run complete. History remains above, and Back can rewind the latest action."] = "Прогон завершен. История остается выше, а кнопка Назад откатывает последнее действие.",
+            ["Unable to start this dialogue with the current test variables."] = "Не удалось запустить диалог с текущими тестовыми переменными.",
+            ["Scroll through the full run history above."] = "Прокрутите полную историю прогона выше.",
+            ["Dialogue Complete"] = "Диалог завершен",
+            ["This preview reached its end. Use Back to revisit the previous step or Restart to run it again."] = "Предпросмотр дошел до конца. Используйте Назад или Перезапуск.",
+            ["No valid start node could be activated for the current dialogue."] = "Не удалось активировать корректный стартовый узел для текущего диалога.",
+            ["Choice mode: pick a response below while the upper rail keeps the full conversation history."] = "Режим выбора: выберите ответ ниже, история остается сверху.",
+            ["Linear mode: use Back and Next to move through the current run."] = "Линейный режим: используйте Назад и Далее.",
+            ["Newest entries collect at the bottom, like a running case log."] = "Новые записи добавляются внизу.",
+            ["Untitled Node"] = "Безымянный узел",
+            ["This node has no dialogue text yet."] = "В этом узле пока нет текста реплики.",
+            ["Generic fallback label is being used."] = "Используется резервная подпись.",
+            ["Choice"] = "Выбор",
+            ["Continue"] = "Продолжить",
+            ["This choice has no dialogue text yet."] = "У этого выбора пока нет текста реплики.",
+            ["{0} {1} is truthy"] = "{0} {1} истинно",
+            ["No test variables."] = "Тестовых переменных нет.",
+            ["Remove"] = "Удалить",
+            ["Release on the graph to create this node."] = "Отпустите на графе, чтобы создать узел.",
+            ["Select a dialogue or create a new one to start building nodes."] = "Выберите диалог или создайте новый, чтобы начать.",
+            ["This dialogue is empty. Add your first node from the palette to begin."] = "Этот диалог пуст. Добавьте первый узел из палитры.",
+            ["START"] = "СТАРТ",
+            ["Untitled"] = "Без названия",
+            ["Empty node text"] = "Текст узла пуст",
+            ["Drag from the lower half to create a connection."] = "Тяните из нижней половины, чтобы создать связь.",
+            ["{0} choice link{1}"] = "{0} вариант(ов)",
+            ["{0} outgoing link{1}"] = "{0} выходящих связей",
+            ["No function selected"] = "Функция не выбрана",
+            ["No scene selected"] = "Сцена не выбрана",
+            ["{0} ({1} arg{2})"] = "{0} ({1} арг.)",
+            ["{0} debug log"] = "Отладочный лог: {0}",
+            ["Executable node"] = "Исполняемый узел",
+            ["Executes immediately, then ends unless connected."] = "Выполняется сразу; завершится, если нет связи.",
+            ["{0} execution link{1}"] = "{0} исполняемых связей",
+            ["Save changes?"] = "Сохранить изменения?",
+            ["Do you want to save changes before closing Dialogue Graph?"] = "Сохранить изменения перед закрытием графа диалога?",
+            ["Do you want to save changes before opening another dialogue database?"] = "Сохранить изменения перед открытием другой базы диалогов?",
+            ["Dialogue database saved."] = "База диалогов сохранена.",
+            ["Yes"] = "Да",
+            ["No"] = "Нет",
+            ["Choice node has no outgoing links."] = "Узел выбора не имеет выходящих связей.",
+            ["Choice target is missing or invalid."] = "Цель выбора отсутствует или некорректна.",
+            ["Choice text and target title are both empty."] = "Текст выбора и название цели пусты.",
+            ["Choice text is empty; target title will be used."] = "Текст выбора пуст; будет использовано название цели.",
+            ["Choice target is not reachable from the dialogue start."] = "Цель выбора недостижима от старта диалога.",
+            ["Choice order is negative."] = "Порядок выбора отрицательный.",
+            ["Choice order conflicts with another choice."] = "Порядок выбора конфликтует с другим выбором.",
+            ["Id is empty"] = "Id пуст",
+            ["Duplicate NPC Id"] = "Повторяющийся Id NPC",
+            ["Duplicate Dialogue Id"] = "Повторяющийся Id диалога",
+            ["Duplicate Node Id"] = "Повторяющийся Id узла",
+            ["No condition is required."] = "Условие не требуется.",
+            ["Custom conditions require a project evaluator. The built-in editor preview treats them as unavailable by default."] = "Пользовательские условия требуют проектный evaluator. Встроенный предпросмотр считает их недоступными по умолчанию.",
+            ["Expected value: number, using invariant format such as 10 or 2.5."] = "Ожидаемое значение: число в формате 10 или 2.5.",
+            ["Expected value: text, true/false, yes/no, or 1/0 depending on the selected operator."] = "Ожидаемое значение: текст, true/false, yes/no или 1/0 в зависимости от оператора.",
+            ["NPC owns dialogues in this database."] = "NPC содержит диалоги в этой базе.",
+            ["{0} dialogue(s)"] = "{0} диалог(ов)",
+            ["Dialogue belongs to NPC."] = "Диалог принадлежит NPC.",
+            ["Owner NPC missing"] = "NPC-владелец отсутствует",
+            ["Node graph references cannot be resolved."] = "Не удалось определить ссылки узла в графе.",
+            ["Missing graph or node id"] = "Отсутствует граф или id узла",
+            ["Node has no internal graph links."] = "У узла нет внутренних связей графа.",
+            ["Incoming link"] = "Входящая связь",
+            ["Outgoing link"] = "Исходящая связь",
+            ["FunctionId is empty."] = "FunctionId пуст.",
+            ["SceneKey is empty."] = "SceneKey пуст.",
+            ["Argument has invalid serialized value data."] = "У аргумента некорректные сериализованные данные значения.",
+            ["Function '{0}' is not registered."] = "Функция '{0}' не зарегистрирована.",
+            ["Scene '{0}' is not registered."] = "Сцена '{0}' не зарегистрирована.",
+            ["Required argument '{0}' is missing."] = "Обязательный аргумент '{0}' отсутствует.",
+            ["Argument '{0}' expects {1} but is {2}."] = "Аргумент '{0}' ожидает {1}, но имеет {2}.",
+            ["No dialogue is selected."] = "Диалог не выбран.",
+            ["Missing graph."] = "Граф отсутствует.",
+            ["Dialogue start blocked by condition: {0}"] = "Старт диалога заблокирован условием: {0}",
+            ["Missing start node."] = "Стартовый узел отсутствует.",
+            ["Missing valid start node."] = "Корректный стартовый узел отсутствует.",
+            ["Choice is no longer available with the current test variables."] = "Выбор больше недоступен с текущими тестовыми переменными.",
+            ["No choices are available with the current test variables."] = "Нет доступных выборов с текущими тестовыми переменными.",
+            ["Missing valid target node."] = "Корректный целевой узел отсутствует.",
+            ["Choice unavailable because condition is not met: {0}"] = "Выбор недоступен, условие не выполнено: {0}",
+            ["Branch reached an end."] = "Ветка дошла до конца.",
+            ["Broken link or missing valid target node."] = "Сломанная связь или отсутствует корректный целевой узел.",
+            ["All outgoing branches are blocked by conditions."] = "Все исходящие ветки заблокированы условиями.",
+            ["None"] = "Нет",
+            ["Custom condition cannot be simulated by the built-in preview."] = "Пользовательское условие нельзя симулировать во встроенном предпросмотре."
+        };
+
+        public static string Text(string key)
+        {
+            if (string.IsNullOrEmpty(key) || DialogueEditorLanguageSettings.CurrentLanguage == DialogueEditorLanguage.English)
+            {
+                return key ?? string.Empty;
+            }
+
+            return Russian.TryGetValue(key, out var value) ? value : key;
+        }
+
+        public static string Format(string key, params object[] args)
+        {
+            return string.Format(Text(key), args);
+        }
+    }
+}

@@ -9,7 +9,7 @@ The package is an MVP dialogue and cutscene editor for Unity 6.x. It combines a 
 - Active MVP package, not a finished production narrative stack
 - Targets Unity `6000.0`
 - Covers runtime data, traversal, graph editing, preview, autosave, package samples, and EditMode tests
-- Still excludes production in-game UI, advanced condition expressions, undo/redo, and Function/Scene/Debug execution logic
+- Still excludes production in-game UI, advanced condition expressions, undo/redo, and project-specific Function/Scene execution adapters
 
 ## Repository layout
 

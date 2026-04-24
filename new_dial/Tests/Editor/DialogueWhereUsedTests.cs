@@ -7,6 +7,12 @@ namespace NewDial.DialogueEditor.Tests
 {
     public class DialogueWhereUsedTests
     {
+        [SetUp]
+        public void SetUp()
+        {
+            DialogueEditorLanguageSettings.CurrentLanguage = DialogueEditorLanguage.English;
+        }
+
         [Test]
         public void GetWhereUsed_ReturnsNodeInternalReferences()
         {

@@ -31,6 +31,16 @@ namespace NewDial.DialogueEditor
             return GetNode(graph, nodeId) as DialogueTextNodeData;
         }
 
+        public static bool IsExecutableNode(BaseNodeData node)
+        {
+            return node is FunctionNodeData or SceneNodeData or DebugNodeData;
+        }
+
+        public static bool IsRuntimeNode(BaseNodeData node)
+        {
+            return node is DialogueTextNodeData || IsExecutableNode(node);
+        }
+
         public static List<NodeLinkData> GetOutgoingLinks(DialogueGraphData graph, string nodeId)
         {
             if (graph == null || string.IsNullOrWhiteSpace(nodeId))

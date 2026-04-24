@@ -1,7 +1,9 @@
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using NUnit.Framework;
 using UnityEngine;
+using UnityEngine.TestTools;
 
 namespace NewDial.DialogueEditor.Tests
 {
@@ -147,6 +149,229 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
+        public void Next_ExecutesFunctionNodeAndAdvancesToNextTextNode()
+        {
+            var dialogue = new DialogueEntry { Name = "Function Test" };
+            var start = new DialogueTextNodeData { Title = "Start", IsStartNode = true };
+            var function = new FunctionNodeData { Title = "Do Thing", FunctionId = "test.function" };
+            var end = new DialogueTextNodeData { Title = "End" };
+            dialogue.Graph.Nodes.Add(start);
+            dialogue.Graph.Nodes.Add(function);
+            dialogue.Graph.Nodes.Add(end);
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = start.Id, ToNodeId = function.Id, Order = 0 });
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = function.Id, ToNodeId = end.Id, Order = 0, ChoiceText = "Ignored" });
+
+            var executor = new RecordingFunctionExecutor(DialogueExecutionResult.Success());
+            var player = new DialoguePlayer(functionExecutor: executor);
+
+            Assert.That(player.Start(dialogue), Is.True);
+            Assert.That(player.Next(), Is.True);
+            Assert.That(executor.ExecutedFunctionIds, Is.EqualTo(new[] { "test.function" }));
+            Assert.That(player.CurrentNode, Is.EqualTo(end));
+        }
+
+        [Test]
+        public void Next_ExecutesSceneNodeAndEndsWhenNoOutgoingLink()
+        {
+            var dialogue = new DialogueEntry { Name = "Scene Test" };
+            var start = new DialogueTextNodeData { Title = "Start", IsStartNode = true };
+            var scene = new SceneNodeData { Title = "Load", SceneKey = "Intro" };
+            dialogue.Graph.Nodes.Add(start);
+            dialogue.Graph.Nodes.Add(scene);
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = start.Id, ToNodeId = scene.Id, Order = 0 });
+
+            var player = new DialoguePlayer(sceneExecutor: new RecordingSceneExecutor(DialogueExecutionResult.Success()));
+
+            Assert.That(player.Start(dialogue), Is.True);
+            Assert.That(player.Next(), Is.False);
+            Assert.That(player.CurrentNode, Is.Null);
+        }
+
+        [Test]
+        public void Next_DebugNodeLogsAndContinues()
+        {
+            var dialogue = new DialogueEntry { Name = "Debug Test" };
+            var start = new DialogueTextNodeData { Title = "Start", IsStartNode = true };
+            var debug = new DebugNodeData
+            {
+                Title = "Debug",
+                MessageTemplate = "Reached debug",
+                IncludeArguments = true,
+                Arguments = new List<DialogueArgumentEntry>
+                {
+                    new() { Name = "flag", Value = DialogueArgumentValue.FromBool(true) }
+                }
+            };
+            var end = new DialogueTextNodeData { Title = "End" };
+            dialogue.Graph.Nodes.Add(start);
+            dialogue.Graph.Nodes.Add(debug);
+            dialogue.Graph.Nodes.Add(end);
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = start.Id, ToNodeId = debug.Id, Order = 0 });
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = debug.Id, ToNodeId = end.Id, Order = 0 });
+
+            LogAssert.Expect(LogType.Log, "Reached debug [flag=true]");
+            var player = new DialoguePlayer();
+
+            Assert.That(player.Start(dialogue), Is.True);
+            Assert.That(player.Next(), Is.True);
+            Assert.That(player.CurrentNode, Is.EqualTo(end));
+        }
+
+        [Test]
+        public void FunctionFailure_StopDialogueEndsWithRuntimeError()
+        {
+            var dialogue = new DialogueEntry { Name = "Failure Test" };
+            var start = new DialogueTextNodeData { Title = "Start", IsStartNode = true };
+            var function = new FunctionNodeData
+            {
+                Title = "Fail",
+                FunctionId = "fail",
+                FailurePolicy = DialogueExecutionFailurePolicy.StopDialogue
+            };
+            var end = new DialogueTextNodeData { Title = "End" };
+            dialogue.Graph.Nodes.Add(start);
+            dialogue.Graph.Nodes.Add(function);
+            dialogue.Graph.Nodes.Add(end);
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = start.Id, ToNodeId = function.Id, Order = 0 });
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = function.Id, ToNodeId = end.Id, Order = 0 });
+
+            LogAssert.Expect(LogType.Warning, "failed");
+            var player = new DialoguePlayer(functionExecutor: new RecordingFunctionExecutor(DialogueExecutionResult.Failed("failed")));
+
+            Assert.That(player.Start(dialogue), Is.True);
+            Assert.That(player.Next(), Is.False);
+            Assert.That(player.CurrentNode, Is.Null);
+            Assert.That(player.LastRuntimeError, Is.EqualTo("failed"));
+        }
+
+        [Test]
+        public void FunctionFailure_LogAndContinueAdvancesToNextValidLink()
+        {
+            var dialogue = new DialogueEntry { Name = "Continue Test" };
+            var start = new DialogueTextNodeData { Title = "Start", IsStartNode = true };
+            var function = new FunctionNodeData
+            {
+                Title = "Fail",
+                FunctionId = "fail",
+                FailurePolicy = DialogueExecutionFailurePolicy.LogAndContinue
+            };
+            var end = new DialogueTextNodeData { Title = "End" };
+            dialogue.Graph.Nodes.Add(start);
+            dialogue.Graph.Nodes.Add(function);
+            dialogue.Graph.Nodes.Add(end);
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = start.Id, ToNodeId = function.Id, Order = 0 });
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = function.Id, ToNodeId = end.Id, Order = 0 });
+
+            LogAssert.Expect(LogType.Warning, "failed");
+            var player = new DialoguePlayer(functionExecutor: new RecordingFunctionExecutor(DialogueExecutionResult.Failed("failed")));
+
+            Assert.That(player.Start(dialogue), Is.True);
+            Assert.That(player.Next(), Is.True);
+            Assert.That(player.CurrentNode, Is.EqualTo(end));
+        }
+
+        [Test]
+        public void PendingFunction_WaitsUntilCompletionThenContinues()
+        {
+            var dialogue = new DialogueEntry { Name = "Pending Test" };
+            var start = new DialogueTextNodeData { Title = "Start", IsStartNode = true };
+            var function = new FunctionNodeData
+            {
+                Title = "Wait",
+                FunctionId = "wait",
+                WaitForCompletion = true
+            };
+            var end = new DialogueTextNodeData { Title = "End" };
+            dialogue.Graph.Nodes.Add(start);
+            dialogue.Graph.Nodes.Add(function);
+            dialogue.Graph.Nodes.Add(end);
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = start.Id, ToNodeId = function.Id, Order = 0 });
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = function.Id, ToNodeId = end.Id, Order = 0 });
+
+            var player = new DialoguePlayer(functionExecutor: new RecordingFunctionExecutor(DialogueExecutionResult.Pending()));
+
+            Assert.That(player.Start(dialogue), Is.True);
+            Assert.That(player.Next(), Is.True);
+            Assert.That(player.IsWaitingForExecution, Is.True);
+            Assert.That(player.CurrentNode, Is.Null);
+
+            Assert.That(player.CompletePendingExecution(DialogueExecutionResult.Success()), Is.True);
+            Assert.That(player.IsWaitingForExecution, Is.False);
+            Assert.That(player.CurrentNode, Is.EqualTo(end));
+        }
+
+        [Test]
+        public void ExecutableNode_UsesOutgoingLinkOrderThenStableId()
+        {
+            var dialogue = new DialogueEntry { Name = "Order Test" };
+            var start = new DialogueTextNodeData { Title = "Start", IsStartNode = true };
+            var debug = new DebugNodeData { Title = "Debug", MessageTemplate = "ordering" };
+            var first = new DialogueTextNodeData { Title = "First" };
+            var second = new DialogueTextNodeData { Title = "Second" };
+            dialogue.Graph.Nodes.Add(start);
+            dialogue.Graph.Nodes.Add(debug);
+            dialogue.Graph.Nodes.Add(first);
+            dialogue.Graph.Nodes.Add(second);
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = start.Id, ToNodeId = debug.Id, Order = 0 });
+            dialogue.Graph.Links.Add(new NodeLinkData { Id = "b-link", FromNodeId = debug.Id, ToNodeId = second.Id, Order = 0 });
+            dialogue.Graph.Links.Add(new NodeLinkData { Id = "a-link", FromNodeId = debug.Id, ToNodeId = first.Id, Order = 0 });
+
+            LogAssert.Expect(LogType.Log, "ordering");
+            var player = new DialoguePlayer();
+
+            Assert.That(player.Start(dialogue), Is.True);
+            Assert.That(player.Next(), Is.True);
+            Assert.That(player.CurrentNode, Is.EqualTo(first));
+        }
+
+        [Test]
+        public void ArgumentClone_PreservesPrimitiveValues()
+        {
+            var node = new FunctionNodeData
+            {
+                Arguments = new List<DialogueArgumentEntry>
+                {
+                    new() { Name = "name", Value = DialogueArgumentValue.FromString("Ada") },
+                    new() { Name = "count", Value = DialogueArgumentValue.FromInt(3) },
+                    new() { Name = "scale", Value = DialogueArgumentValue.FromFloat(1.5f) },
+                    new() { Name = "enabled", Value = DialogueArgumentValue.FromBool(true) }
+                }
+            };
+
+            var clone = (FunctionNodeData)node.Clone();
+
+            Assert.That(clone.Arguments.Select(argument => argument.Value.GetDisplayValue()), Is.EqualTo(new[] { "Ada", "3", "1.5", "true" }));
+        }
+
+        [Test]
+        public void Validator_FindsMissingRequiredArgumentAndTypeMismatch()
+        {
+            var node = new FunctionNodeData
+            {
+                FunctionId = "test",
+                Arguments = new List<DialogueArgumentEntry>
+                {
+                    new() { Name = "amount", Value = DialogueArgumentValue.FromString("wrong") }
+                }
+            };
+            var registry = new TestExecutionRegistry(new[]
+            {
+                new DialogueFunctionDescriptor(
+                    "test",
+                    parameters: new[]
+                    {
+                        new DialogueParameterDescriptor("amount", DialogueArgumentType.Int, required: true),
+                        new DialogueParameterDescriptor("flag", DialogueArgumentType.Bool, required: true)
+                    })
+            });
+
+            var issues = DialogueExecutableValidator.ValidateNode(node, registry);
+
+            Assert.That(issues.Any(issue => issue.Message.Contains("amount") && issue.Message.Contains("expects Int")), Is.True);
+            Assert.That(issues.Any(issue => issue.Message.Contains("flag") && issue.Message.Contains("missing")), Is.True);
+        }
+
+        [Test]
         public void AutosaveStore_RoundTripsDatabaseState()
         {
             var root = Path.Combine(Path.GetTempPath(), $"newdial-tests-{System.Guid.NewGuid():N}");
@@ -185,6 +410,59 @@ namespace NewDial.DialogueEditor.Tests
                 {
                     Directory.Delete(root, true);
                 }
+            }
+        }
+
+        private sealed class RecordingFunctionExecutor : IDialogueFunctionExecutor
+        {
+            private readonly DialogueExecutionResult _result;
+
+            public RecordingFunctionExecutor(DialogueExecutionResult result)
+            {
+                _result = result;
+            }
+
+            public List<string> ExecutedFunctionIds { get; } = new();
+
+            public DialogueExecutionResult Execute(FunctionNodeData node, DialogueExecutionContext context)
+            {
+                ExecutedFunctionIds.Add(node.FunctionId);
+                return _result;
+            }
+        }
+
+        private sealed class RecordingSceneExecutor : IDialogueSceneExecutor
+        {
+            private readonly DialogueExecutionResult _result;
+
+            public RecordingSceneExecutor(DialogueExecutionResult result)
+            {
+                _result = result;
+            }
+
+            public DialogueExecutionResult Execute(SceneNodeData node, DialogueExecutionContext context)
+            {
+                return _result;
+            }
+        }
+
+        private sealed class TestExecutionRegistry : IDialogueExecutionRegistry
+        {
+            private readonly IEnumerable<DialogueFunctionDescriptor> _functions;
+
+            public TestExecutionRegistry(IEnumerable<DialogueFunctionDescriptor> functions)
+            {
+                _functions = functions;
+            }
+
+            public IEnumerable<DialogueFunctionDescriptor> GetFunctions()
+            {
+                return _functions;
+            }
+
+            public IEnumerable<DialogueSceneDescriptor> GetScenes()
+            {
+                return Enumerable.Empty<DialogueSceneDescriptor>();
             }
         }
     }
