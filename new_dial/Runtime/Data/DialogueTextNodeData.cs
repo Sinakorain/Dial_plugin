@@ -7,6 +7,7 @@ namespace NewDial.DialogueEditor
     {
         public string BodyText = string.Empty;
         public string VoiceKey = string.Empty;
+        public string SpeakerId = string.Empty;
         public bool IsStartNode;
         public bool UseOutputsAsChoices;
 
@@ -20,6 +21,7 @@ namespace NewDial.DialogueEditor
                 Condition = Condition?.Clone() ?? new ConditionData(),
                 BodyText = BodyText,
                 VoiceKey = VoiceKey,
+                SpeakerId = SpeakerId,
                 IsStartNode = IsStartNode,
                 UseOutputsAsChoices = UseOutputsAsChoices
             };

@@ -136,6 +136,7 @@ namespace NewDial.DialogueEditor
         public Action<string, Action> ApplyUndoableChangeAction { get; set; }
         public Action<string> BeginUndoGestureAction { get; set; }
         public Action EndUndoGestureAction { get; set; }
+        public Func<DialogueTextNodeData, string> SpeakerNameResolver { get; set; }
 
         public DialogueGraphData Graph => _graph;
         public bool HasCanvasFocus => _hasCanvasFocus;
@@ -602,6 +603,11 @@ namespace NewDial.DialogueEditor
             }
 
             RefreshEdgeLayer();
+        }
+
+        internal string ResolveSpeakerName(DialogueTextNodeData node)
+        {
+            return SpeakerNameResolver?.Invoke(node) ?? string.Empty;
         }
 
         public void RefreshLinksForNode(string nodeId)
@@ -2083,11 +2089,15 @@ namespace NewDial.DialogueEditor
             _startBadge.text = DialogueEditorLocalization.Text("START");
             _startBadge.style.display = Data.IsStartNode ? DisplayStyle.Flex : DisplayStyle.None;
             _bodyPreviewLabel.text = BuildPreviewText(Data.BodyText);
-            _metaLabel.text = outgoingCount == 0
+            var speakerName = _graphView.ResolveSpeakerName(Data);
+            var linkSummary = outgoingCount == 0
                 ? DialogueEditorLocalization.Text("Drag from the lower half to create a connection.")
                 : Data.UseOutputsAsChoices
                     ? DialogueEditorLocalization.Format("{0} choice link{1}", outgoingCount, outgoingCount == 1 ? string.Empty : "s")
                     : DialogueEditorLocalization.Format("{0} outgoing link{1}", outgoingCount, outgoingCount == 1 ? string.Empty : "s");
+            _metaLabel.text = string.IsNullOrWhiteSpace(speakerName)
+                ? linkSummary
+                : $"{DialogueEditorLocalization.Text("Speaker")}: {speakerName} - {linkSummary}";
 
             EnableInClassList("dialogue-node--start", Data.IsStartNode);
             base.SetPosition(new Rect(

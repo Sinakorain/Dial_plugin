@@ -19,9 +19,10 @@ This file describes the current working-tree behavior of `new_dial`, including c
 
 - `DialogueDatabaseAsset` is the top-level `ScriptableObject` and stores a list of `NpcEntry`.
 - `NpcEntry` stores an `Id`, a display `Name`, and a list of `DialogueEntry`.
-- `DialogueEntry` stores an `Id`, `Name`, `StartCondition`, and a `DialogueGraphData`.
+- `DialogueEntry` stores an `Id`, `Name`, per-dialogue `Speakers`, `StartCondition`, and a `DialogueGraphData`.
+- `DialogueSpeakerEntry` stores a stable `Id` and display `Name` for a speaker available inside one dialogue.
 - `DialogueGraphData` stores `Nodes` through `SerializeReference` plus ordered `Links`.
-- `DialogueTextNodeData` is the main playable text node type. It carries `BodyText`, optional `VoiceKey` metadata, `IsStartNode`, and `UseOutputsAsChoices`.
+- `DialogueTextNodeData` is the main playable text node type. It carries `BodyText`, optional `SpeakerId` and `VoiceKey` metadata, `IsStartNode`, and `UseOutputsAsChoices`.
 - `FunctionNodeData`, `SceneNodeData`, and `DebugNodeData` are executable runtime node types.
 - `DialogueArgumentEntry` and `DialogueArgumentValue` store primitive executable parameters: string, int, float, and bool.
 - `CommentNodeData` stores editor-only grouping information: `Area`, `Comment`, and `Tint`.
@@ -30,7 +31,7 @@ This file describes the current working-tree behavior of `new_dial`, including c
 
 ### Runtime traversal
 
-- `DialoguePlayer` supports `CanStart`, `Start`, `Next`, `Choose`, executable node execution, and pending execution resume.
+- `DialoguePlayer` supports `CanStart`, `Start`, `Next`, `Choose`, current speaker resolution, executable node execution, and pending execution resume.
 - `DialogueChoice` exposes the selected `NodeLinkData`, target text node, and resolved display text.
 - `IDialogueFunctionExecutor` and `IDialogueSceneExecutor` execute project-provided function and scene behavior.
 - `IDialogueExecutionRegistry` supplies optional function and scene descriptors for editor/runtime metadata.
@@ -52,7 +53,8 @@ This file describes the current working-tree behavior of `new_dial`, including c
 - The start window can create a new `DialogueDatabaseAsset` or load an existing asset inside the current Unity project.
 - `DialogueEditorWindow` is the main authoring surface. Its toolbar exposes `New`, `Load`, `Save`, `Preview`, `Delete`, `Dialogue Settings`, and a per-user `EN/RU` language switcher backed by `EditorPrefs`.
 - The palette supports `Text Node`, `Comment`, `Function`, `Scene`, and `Debug`.
-- `DialoguePreviewWindow` opens from the main editor toolbar for the currently selected dialogue and supports transcript history, advancing, choosing branches, going back, restarting, and jumping to the active node.
+- Dialogue settings expose a speaker roster editor. Text node inspectors can bind a line to a speaker from that dialogue.
+- `DialoguePreviewWindow` opens from the main editor toolbar for the currently selected dialogue and supports speaker labels, transcript history, advancing, choosing branches, going back, restarting, and jumping to the active node.
 - The main editor, graph hints/summaries, preview window, start window, prompts, diagnostics, and inspector labels are localized for English and Russian. Authored dialogue content, serialized field names, ids, and public APIs remain unchanged.
 - `DialogueEditorAutosaveStore` serializes snapshots as JSON into the consuming Unity project's `Library/DialogueEditorAutosaves` folder.
 - Executable node inspectors support registry-backed metadata when available and free-form editing when no registry is registered.
@@ -68,6 +70,7 @@ This file describes the current working-tree behavior of `new_dial`, including c
 - NPC, dialogue, and node `Id` values are explicitly editable in the editor, with generate and safe-regenerate actions plus immediate empty/duplicate warnings.
 - Changing a node `Id` updates internal graph links that referenced the old node `Id`; NPC and dialogue `Id` changes warn about possible external references but do not resolve them yet.
 - Text node inspectors expose optional `VoiceKey` metadata for future project-side voiceover, audio, or localization lookup; the package does not resolve or play audio assets itself.
+- Text node inspectors expose speaker selection. Empty or missing text-node speaker references fall back to the first speaker in the dialogue roster.
 - Choice-mode text nodes show editor diagnostics for missing outgoing links, broken targets, empty/fallback choice labels, conflicting link order, negative link order, and unreachable choice targets.
 - Condition editing is guided by `ConditionType`: irrelevant fields are hidden, operators come from built-in metadata, hints explain expected values, and projects can register key suggestions.
 - The preview window includes a bool/number/string test-variable sandbox and explains blocked dialogue starts, unavailable choices, missing targets, branch ends, and generic fallback labels.
@@ -87,6 +90,7 @@ This file describes the current working-tree behavior of `new_dial`, including c
 
 The sample also includes:
 
+- an `Innkeeper` speaker roster entry used by text nodes through default speaker fallback
 - link-level choice text
 - a `UseOutputsAsChoices` start node
 - a simple numeric trust-level condition
@@ -96,16 +100,17 @@ The sample also includes:
 
 - `DialogueDatabaseAsset`: top-level serialized dialogue database asset intended for editor authoring and runtime consumption.
 - `NpcEntry`: serializable NPC container that groups dialogues.
-- `DialogueEntry`: serializable dialogue record with start condition and graph payload.
+- `DialogueEntry`: serializable dialogue record with speakers, start condition, and graph payload.
+- `DialogueSpeakerEntry`: serializable per-dialogue speaker record.
 - `DialogueGraphData`: serializable graph container for node and link data.
-- `DialogueTextNodeData`: playable dialogue node model with optional voice-key metadata.
+- `DialogueTextNodeData`: playable dialogue node model with optional speaker and voice-key metadata.
 - `FunctionNodeData`: executable project function node model.
 - `SceneNodeData`: executable scene request node model.
 - `DebugNodeData`: executable diagnostic log node model.
 - `CommentNodeData`: editor grouping/annotation node, not a runtime dialogue line.
 - `NodeLinkData`: ordered outgoing connection between nodes with optional choice text.
 - `ConditionData` and `ConditionType`: lightweight condition metadata for start and node gating.
-- `DialoguePlayer`: runtime traversal helper for moving through a dialogue graph.
+- `DialoguePlayer`: runtime traversal helper for moving through a dialogue graph and resolving the current speaker.
 - `DialogueChoice`: resolved branch option returned by `DialoguePlayer`.
 - `IDialogueConditionEvaluator`: extension point for custom condition evaluation.
 - `IDialogueVariableStore`: extension point for variable lookup.

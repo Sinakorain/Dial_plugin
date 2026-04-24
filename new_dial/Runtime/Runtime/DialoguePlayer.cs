@@ -37,6 +37,10 @@ namespace NewDial.DialogueEditor
 
         public DialogueTextNodeData CurrentNode { get; private set; }
 
+        public DialogueSpeakerEntry CurrentSpeaker { get; private set; }
+
+        public string CurrentSpeakerName => CurrentSpeaker?.Name ?? string.Empty;
+
         public IReadOnlyList<DialogueChoice> CurrentChoices => _choices;
 
         public bool IsWaitingForExecution { get; private set; }
@@ -63,6 +67,7 @@ namespace NewDial.DialogueEditor
             if (dialogue == null || dialogue.Graph == null)
             {
                 CurrentNode = null;
+                CurrentSpeaker = null;
                 return false;
             }
 
@@ -70,6 +75,7 @@ namespace NewDial.DialogueEditor
             if (startNode == null)
             {
                 CurrentNode = null;
+                CurrentSpeaker = null;
                 return false;
             }
 
@@ -142,6 +148,7 @@ namespace NewDial.DialogueEditor
             }
 
             CurrentNode = null;
+            CurrentSpeaker = null;
             _choices.Clear();
             return ExecuteNode(node);
         }
@@ -150,6 +157,7 @@ namespace NewDial.DialogueEditor
         {
             _currentDataNode = node;
             CurrentNode = node;
+            CurrentSpeaker = DialogueSpeakerUtility.ResolveSpeaker(_currentDialogue, node);
             RebuildChoices();
             NodeChanged?.Invoke(CurrentNode);
         }
@@ -351,6 +359,7 @@ namespace NewDial.DialogueEditor
         {
             _currentDataNode = null;
             CurrentNode = null;
+            CurrentSpeaker = null;
             _choices.Clear();
             DialogueEnded?.Invoke();
         }

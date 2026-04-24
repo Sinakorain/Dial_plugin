@@ -190,6 +190,7 @@ namespace NewDial.DialogueEditor
         {
             public string Id;
             public string Name;
+            public List<DialogueSpeakerEntry> Speakers = new();
             public ConditionData StartCondition;
             public GraphSnapshot Graph;
 
@@ -199,6 +200,7 @@ namespace NewDial.DialogueEditor
                 {
                     Id = dialogue.Id,
                     Name = dialogue.Name,
+                    Speakers = dialogue.Speakers?.Where(speaker => speaker != null).Select(speaker => speaker.Clone()).ToList() ?? new List<DialogueSpeakerEntry>(),
                     StartCondition = dialogue.StartCondition?.Clone() ?? new ConditionData(),
                     Graph = GraphSnapshot.FromGraph(dialogue.Graph)
                 };
@@ -210,6 +212,7 @@ namespace NewDial.DialogueEditor
                 {
                     Id = Id,
                     Name = Name,
+                    Speakers = Speakers?.Where(speaker => speaker != null).Select(speaker => speaker.Clone()).ToList() ?? new List<DialogueSpeakerEntry>(),
                     StartCondition = StartCondition?.Clone() ?? new ConditionData(),
                     Graph = Graph?.ToGraph() ?? new DialogueGraphData()
                 };
@@ -282,6 +285,8 @@ namespace NewDial.DialogueEditor
             public Vector2 Position;
             public ConditionData Condition;
             public string BodyText;
+            public string VoiceKey;
+            public string SpeakerId;
             public bool IsStartNode;
             public bool UseOutputsAsChoices;
             public Rect Area;
@@ -316,6 +321,8 @@ namespace NewDial.DialogueEditor
                     case DialogueTextNodeData textNode:
                         snapshot.NodeType = nameof(DialogueTextNodeData);
                         snapshot.BodyText = textNode.BodyText;
+                        snapshot.VoiceKey = textNode.VoiceKey;
+                        snapshot.SpeakerId = textNode.SpeakerId;
                         snapshot.IsStartNode = textNode.IsStartNode;
                         snapshot.UseOutputsAsChoices = textNode.UseOutputsAsChoices;
                         break;
@@ -429,6 +436,8 @@ namespace NewDial.DialogueEditor
                     Position = Position,
                     Condition = Condition?.Clone() ?? new ConditionData(),
                     BodyText = BodyText,
+                    VoiceKey = VoiceKey,
+                    SpeakerId = SpeakerId,
                     IsStartNode = IsStartNode,
                     UseOutputsAsChoices = UseOutputsAsChoices
                 };

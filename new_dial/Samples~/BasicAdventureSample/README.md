@@ -6,6 +6,7 @@ This sample adds a menu item that creates a playable `DialogueDatabaseAsset` for
 
 - 1 NPC: `Innkeeper`
 - 2 dialogues: `Greeting` and `After Hours`
+- an `Innkeeper` speaker entry on each dialogue
 - branching choices driven by `ChoiceText` links
 - a start node that uses outputs as explicit player choices
 - a trust-gated branch using a simple numeric condition
@@ -24,6 +25,7 @@ This sample adds a menu item that creates a playable `DialogueDatabaseAsset` for
 
 - basic package onboarding
 - a branching dialogue authored with graph links
+- text lines using dialogue speaker fallback
 - simple node and dialogue conditions
 - comment-node annotations in the editor
 - the current preview workflow for authored dialogue graphs

@@ -316,6 +316,109 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
+        public void NodeInspector_EditsSpeakerAndMarksDatabaseDirty()
+        {
+            var database = CreateDatabase("SpeakerInspector");
+            var dialogue = database.Npcs[0].Dialogues[0];
+            dialogue.Speakers.Add(new DialogueSpeakerEntry { Id = "npc", Name = "NPC" });
+            dialogue.Speakers.Add(new DialogueSpeakerEntry { Id = "hero", Name = "Hero" });
+            var node = (DialogueTextNodeData)dialogue.Graph.Nodes[0];
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                window.SaveBaselineForTests();
+                Assert.That(window.FocusDialogueNode(dialogue, node.Id), Is.True);
+
+                var speakerField = window.rootVisualElement.Q<PopupField<string>>("node-speaker-field");
+                Assert.That(speakerField, Is.Not.Null);
+                Assert.That(speakerField.value, Is.EqualTo("NPC"));
+
+                speakerField.value = "Hero";
+
+                Assert.That(node.SpeakerId, Is.EqualTo("hero"));
+                Assert.That(window.HasUnsavedChangesForTests, Is.True);
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void DialogueInspector_ManagesSpeakerRosterAndClearsRemovedReferences()
+        {
+            var database = CreateDatabase("SpeakerRoster");
+            var dialogue = database.Npcs[0].Dialogues[0];
+            dialogue.Speakers.Add(new DialogueSpeakerEntry { Id = "npc", Name = "NPC" });
+            dialogue.Speakers.Add(new DialogueSpeakerEntry { Id = "hero", Name = "Hero" });
+            var node = (DialogueTextNodeData)dialogue.Graph.Nodes[0];
+            node.SpeakerId = "hero";
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                window.SaveBaselineForTests();
+
+                var nameFields = window.rootVisualElement.Query<TextField>("dialogue-speaker-name-field").ToList();
+                Assert.That(nameFields, Has.Count.EqualTo(2));
+                nameFields[0].value = "Innkeeper";
+                Assert.That(dialogue.Speakers[0].Name, Is.EqualTo("Innkeeper"));
+
+                window.AddSpeaker(dialogue);
+                Assert.That(dialogue.Speakers, Has.Count.EqualTo(3));
+                Assert.That(dialogue.Speakers[2].Name, Is.EqualTo("Speaker 3"));
+
+                window.RemoveSpeaker(dialogue, dialogue.Speakers[1]);
+                Assert.That(dialogue.Speakers.Select(speaker => speaker.Id), Does.Not.Contain("hero"));
+                Assert.That(node.SpeakerId, Is.Empty);
+                Assert.That(window.HasUnsavedChangesForTests, Is.True);
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void Autosave_PreservesSpeakersAndNodeSpeakerId()
+        {
+            var database = CreateDatabase("SpeakerAutosave");
+            var dialogue = database.Npcs[0].Dialogues[0];
+            dialogue.Speakers.Add(new DialogueSpeakerEntry { Id = "npc", Name = "NPC" });
+            dialogue.Speakers.Add(new DialogueSpeakerEntry { Id = "hero", Name = "Hero" });
+            var node = (DialogueTextNodeData)dialogue.Graph.Nodes[0];
+            node.SpeakerId = "hero";
+            node.VoiceKey = "hero.line";
+            var restored = ScriptableObject.CreateInstance<DialogueDatabaseAsset>();
+            var tempRoot = Path.Combine(Path.GetTempPath(), $"NewDialSpeakerAutosave-{Guid.NewGuid():N}");
+
+            try
+            {
+                DialogueEditorAutosaveStore.SaveSnapshot(database, "speaker-test", tempRoot);
+
+                Assert.That(DialogueEditorAutosaveStore.TryLoadSnapshot(restored, "speaker-test", tempRoot), Is.True);
+                var restoredDialogue = restored.Npcs[0].Dialogues[0];
+                var restoredNode = (DialogueTextNodeData)restoredDialogue.Graph.Nodes[0];
+
+                Assert.That(restoredDialogue.Speakers.Select(speaker => speaker.Name), Is.EqualTo(new[] { "NPC", "Hero" }));
+                Assert.That(restoredNode.SpeakerId, Is.EqualTo("hero"));
+                Assert.That(restoredNode.VoiceKey, Is.EqualTo("hero.line"));
+            }
+            finally
+            {
+                if (Directory.Exists(tempRoot))
+                {
+                    Directory.Delete(tempRoot, true);
+                }
+            }
+        }
+
+        [Test]
         public void EditingNodeId_UpdatesLinksAndKeepsSelection()
         {
             var database = CreateDatabaseWithLinks("NodeIdRename");

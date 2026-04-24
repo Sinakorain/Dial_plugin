@@ -325,6 +325,26 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
+        public void DialogueClone_PreservesSpeakers()
+        {
+            var dialogue = new DialogueEntry
+            {
+                Name = "Multi Speaker",
+                Speakers = new List<DialogueSpeakerEntry>
+                {
+                    new() { Id = "speaker_a", Name = "Ada" },
+                    new() { Id = "speaker_b", Name = "Byron" }
+                }
+            };
+
+            var clone = dialogue.Clone();
+
+            Assert.That(clone.Speakers.Select(speaker => speaker.Id), Is.EqualTo(new[] { "speaker_a", "speaker_b" }));
+            Assert.That(clone.Speakers.Select(speaker => speaker.Name), Is.EqualTo(new[] { "Ada", "Byron" }));
+            Assert.That(clone.Speakers[0], Is.Not.SameAs(dialogue.Speakers[0]));
+        }
+
+        [Test]
         public void ArgumentClone_PreservesPrimitiveValues()
         {
             var node = new FunctionNodeData
@@ -344,13 +364,14 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
-        public void TextNodeClone_PreservesVoiceKey()
+        public void TextNodeClone_PreservesVoiceKeyAndSpeakerId()
         {
             var node = new DialogueTextNodeData
             {
                 Title = "Greeting",
                 BodyText = "Hello there.",
                 VoiceKey = "innkeeper.greeting.hello",
+                SpeakerId = "speaker_innkeeper",
                 IsStartNode = true,
                 UseOutputsAsChoices = true
             };
@@ -358,9 +379,59 @@ namespace NewDial.DialogueEditor.Tests
             var clone = (DialogueTextNodeData)node.Clone();
 
             Assert.That(clone.VoiceKey, Is.EqualTo("innkeeper.greeting.hello"));
+            Assert.That(clone.SpeakerId, Is.EqualTo("speaker_innkeeper"));
             Assert.That(clone.BodyText, Is.EqualTo("Hello there."));
             Assert.That(clone.IsStartNode, Is.True);
             Assert.That(clone.UseOutputsAsChoices, Is.True);
+        }
+
+        [Test]
+        public void CurrentSpeakerName_ResolvesExplicitSpeakerAndDefaultFallback()
+        {
+            var dialogue = new DialogueEntry
+            {
+                Name = "Speaker Test",
+                Speakers = new List<DialogueSpeakerEntry>
+                {
+                    new() { Id = "narrator", Name = "Narrator" },
+                    new() { Id = "hero", Name = "Hero" }
+                }
+            };
+            var start = new DialogueTextNodeData
+            {
+                Title = "Start",
+                BodyText = "Default speaker line.",
+                IsStartNode = true
+            };
+            var explicitSpeaker = new DialogueTextNodeData
+            {
+                Title = "Hero Line",
+                BodyText = "Explicit speaker line.",
+                SpeakerId = "hero"
+            };
+            var missingSpeaker = new DialogueTextNodeData
+            {
+                Title = "Fallback Line",
+                BodyText = "Missing speaker falls back.",
+                SpeakerId = "missing"
+            };
+
+            dialogue.Graph.Nodes.Add(start);
+            dialogue.Graph.Nodes.Add(explicitSpeaker);
+            dialogue.Graph.Nodes.Add(missingSpeaker);
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = start.Id, ToNodeId = explicitSpeaker.Id, Order = 0 });
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = explicitSpeaker.Id, ToNodeId = missingSpeaker.Id, Order = 0 });
+
+            var player = new DialoguePlayer();
+
+            Assert.That(player.Start(dialogue), Is.True);
+            Assert.That(player.CurrentSpeakerName, Is.EqualTo("Narrator"));
+
+            Assert.That(player.Next(), Is.True);
+            Assert.That(player.CurrentSpeakerName, Is.EqualTo("Hero"));
+
+            Assert.That(player.Next(), Is.True);
+            Assert.That(player.CurrentSpeakerName, Is.EqualTo("Narrator"));
         }
 
         [Test]

@@ -371,9 +371,11 @@ namespace NewDial.DialogueEditor
                     ? DialogueEditorLocalization.Text("Choice mode: pick a response below while the upper rail keeps the full conversation history.")
                     : DialogueEditorLocalization.Text("Linear mode: use Back and Next to move through the current run.");
                 _historyHintLabel.text = DialogueEditorLocalization.Text("Newest entries collect at the bottom, like a running case log.");
-                _currentNodeLabel.text = string.IsNullOrWhiteSpace(_session.CurrentNode.Title)
-                    ? DialogueEditorLocalization.Text("Untitled Node")
-                    : _session.CurrentNode.Title;
+                _currentNodeLabel.text = string.IsNullOrWhiteSpace(_session.CurrentSpeakerName)
+                    ? string.IsNullOrWhiteSpace(_session.CurrentNode.Title)
+                        ? DialogueEditorLocalization.Text("Untitled Node")
+                        : _session.CurrentNode.Title
+                    : _session.CurrentSpeakerName;
                 _bodyLabel.text = string.IsNullOrWhiteSpace(_session.CurrentNode.BodyText)
                     ? DialogueEditorLocalization.Text("This node has no dialogue text yet.")
                     : _session.CurrentNode.BodyText;

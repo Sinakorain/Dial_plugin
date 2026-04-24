@@ -47,6 +47,7 @@ namespace NewDial.DialogueEditor.Samples
             {
                 Name = "Greeting"
             };
+            dialogue.Speakers.Add(new DialogueSpeakerEntry { Name = "Innkeeper" });
 
             var start = new DialogueTextNodeData
             {
@@ -139,6 +140,7 @@ namespace NewDial.DialogueEditor.Samples
                     Value = "false"
                 }
             };
+            dialogue.Speakers.Add(new DialogueSpeakerEntry { Name = "Innkeeper" });
 
             var start = new DialogueTextNodeData
             {

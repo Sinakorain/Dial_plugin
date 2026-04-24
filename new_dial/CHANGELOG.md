@@ -10,6 +10,7 @@
 - Added editor palette, graph rendering, inspectors, validation, and autosave support for executable nodes.
 - Added an editor EN/RU language switcher with localized toolbar, palette, inspector, preview, diagnostics, prompts, and node summaries.
 - Added optional `VoiceKey` metadata on text nodes for future project-side voiceover/audio lookup.
+- Added per-dialogue speaker rosters, text-node speaker binding, current-speaker runtime resolution, and speaker labels in graph and preview UI.
 
 ### Changed
 
@@ -29,6 +30,7 @@
 - Text and executable nodes now select from any non-button part of the node while preserving lower-half link dragging.
 - Scene node inspectors now write the first available Known Scene into an empty `SceneKey` instead of only showing it as the dropdown default.
 - The editor left dock now keeps the NPC/dialogue project area at a fixed height and shows the full compact node palette without palette scrolling.
+- Existing dialogues without speakers now receive a default speaker from their owning NPC when opened in the editor.
 
 ### Tests
 
@@ -39,6 +41,7 @@
 - Added choice-flow diagnostic coverage for choice nodes, fallback labels, broken targets, order conflicts, and inspector warnings.
 - Added coverage for guided condition fields, preview test-variable gating, blocked-state reasons, and Where Used external resolver results.
 - Added coverage for editor language switching, localized node summaries, and full-node runtime selection.
+- Added coverage for speaker cloning, runtime speaker fallback, speaker inspector editing, roster removal, and autosave restore.
 
 ### Docs
 

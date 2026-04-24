@@ -40,6 +40,8 @@ namespace NewDial.DialogueEditor
 
         public string CurrentNodeId => CurrentNode?.Id;
 
+        public string CurrentSpeakerName => _player.CurrentSpeakerName;
+
         public string CurrentReason { get; private set; }
 
         public void SetVariables(IDictionary<string, string> variables, bool replay = true)
@@ -138,7 +140,7 @@ namespace NewDial.DialogueEditor
 
             if (_player.CurrentNode != null)
             {
-                _transcript.Add(DialoguePreviewTranscriptEntry.Node(_player.CurrentNode));
+                _transcript.Add(DialoguePreviewTranscriptEntry.Node(_player.CurrentNode, _player.CurrentSpeakerName));
             }
             else
             {
@@ -160,7 +162,7 @@ namespace NewDial.DialogueEditor
                         _player.Next();
                         if (_player.CurrentNode != null)
                         {
-                            _transcript.Add(DialoguePreviewTranscriptEntry.Node(_player.CurrentNode));
+                            _transcript.Add(DialoguePreviewTranscriptEntry.Node(_player.CurrentNode, _player.CurrentSpeakerName));
                         }
                         else
                         {
@@ -176,7 +178,7 @@ namespace NewDial.DialogueEditor
 
                         var choice = _player.CurrentChoices[action.ChoiceIndex];
                         _player.Choose(action.ChoiceIndex);
-                        _transcript.Add(DialoguePreviewTranscriptEntry.Choice(choice.Text, _player.CurrentNode));
+                        _transcript.Add(DialoguePreviewTranscriptEntry.Choice(choice.Text, _player.CurrentNode, _player.CurrentSpeakerName));
                         break;
                 }
             }
@@ -399,21 +401,33 @@ namespace NewDial.DialogueEditor
 
         public string NodeId { get; }
 
-        public static DialoguePreviewTranscriptEntry Node(DialogueTextNodeData node)
+        public static DialoguePreviewTranscriptEntry Node(DialogueTextNodeData node, string speakerName)
         {
             return new DialoguePreviewTranscriptEntry(
                 DialoguePreviewTranscriptEntryKind.Node,
-                string.IsNullOrWhiteSpace(node?.Title) ? DialogueEditorLocalization.Text("Untitled") : node.Title,
+                string.IsNullOrWhiteSpace(speakerName)
+                    ? string.IsNullOrWhiteSpace(node?.Title) ? DialogueEditorLocalization.Text("Untitled") : node.Title
+                    : speakerName,
                 node?.BodyText ?? string.Empty,
                 node?.Id);
         }
 
-        public static DialoguePreviewTranscriptEntry Choice(string choiceText, DialogueTextNodeData node)
+        public static DialoguePreviewTranscriptEntry Choice(string choiceText, DialogueTextNodeData node, string speakerName)
         {
+            var body = string.IsNullOrWhiteSpace(node?.BodyText)
+                ? DialogueEditorLocalization.Text("This choice has no dialogue text yet.")
+                : node.BodyText;
+            if (!string.IsNullOrWhiteSpace(speakerName) && !string.IsNullOrWhiteSpace(choiceText))
+            {
+                body = $"{DialogueEditorLocalization.Text("Choice")}: {choiceText}\n{body}";
+            }
+
             return new DialoguePreviewTranscriptEntry(
                 DialoguePreviewTranscriptEntryKind.Choice,
-                string.IsNullOrWhiteSpace(choiceText) ? DialogueEditorLocalization.Text("Continue") : choiceText,
-                string.IsNullOrWhiteSpace(node?.BodyText) ? DialogueEditorLocalization.Text("This choice has no dialogue text yet.") : node.BodyText,
+                string.IsNullOrWhiteSpace(speakerName)
+                    ? string.IsNullOrWhiteSpace(choiceText) ? DialogueEditorLocalization.Text("Continue") : choiceText
+                    : speakerName,
+                body,
                 node?.Id);
         }
     }

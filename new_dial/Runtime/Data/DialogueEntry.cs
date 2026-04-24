@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace NewDial.DialogueEditor
 {
@@ -7,6 +9,7 @@ namespace NewDial.DialogueEditor
     {
         public string Id = GuidUtility.NewGuid();
         public string Name = "Dialogue";
+        public List<DialogueSpeakerEntry> Speakers = new();
         public ConditionData StartCondition = new();
         public DialogueGraphData Graph = new();
 
@@ -16,6 +19,7 @@ namespace NewDial.DialogueEditor
             {
                 Id = Id,
                 Name = Name,
+                Speakers = Speakers?.Where(speaker => speaker != null).Select(speaker => speaker.Clone()).ToList() ?? new List<DialogueSpeakerEntry>(),
                 StartCondition = StartCondition?.Clone() ?? new ConditionData(),
                 Graph = Graph?.Clone() ?? new DialogueGraphData()
             };

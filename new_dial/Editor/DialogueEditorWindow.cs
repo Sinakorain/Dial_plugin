@@ -150,7 +150,8 @@ namespace NewDial.DialogueEditor
                 CanvasFocusChangedAction = focused => _graphHost?.EnableInClassList("is-focused", focused),
                 ApplyUndoableChangeAction = ApplyUndoableNodeChange,
                 BeginUndoGestureAction = BeginUndoGesture,
-                EndUndoGestureAction = EndUndoGesture
+                EndUndoGestureAction = EndUndoGesture,
+                SpeakerNameResolver = node => DialogueSpeakerUtility.ResolveSpeakerName(_selectedDialogue, node)
             };
             _graphView.AddToClassList("dialogue-editor__graph-surface");
             _graphHost.Add(_graphView);
@@ -363,23 +364,24 @@ namespace NewDial.DialogueEditor
         {
             _database = asset;
             _selectedNode = null;
-            _savedStateSnapshot = _database == null
-                ? string.Empty
-                : DialogueEditorAutosaveStore.CaptureSnapshotJson(_database);
 
             if (_database != null)
             {
                 DialogueEditorAutosaveStore.TryLoadSnapshot(_database, DialogueEditorAutosaveStore.GetStorageKey(_database));
+                _savedStateSnapshot = DialogueEditorAutosaveStore.CaptureSnapshotJson(_database);
+                var migratedSpeakers = EnsureDialogueSpeakers(_database);
                 _selectedNpc = _database.Npcs.FirstOrDefault();
                 _selectedDialogue = _selectedNpc?.Dialogues.FirstOrDefault();
+                SyncDirtyState(migratedSpeakers);
             }
             else
             {
+                _savedStateSnapshot = string.Empty;
                 _selectedNpc = null;
                 _selectedDialogue = null;
+                SyncDirtyState(false);
             }
 
-            SyncDirtyState(false);
             RefreshAll();
         }
 
@@ -485,6 +487,7 @@ namespace NewDial.DialogueEditor
             RefreshStatus();
             RefreshProjectPanel();
             var selectedNodeId = _selectedNode?.Id;
+            _graphView.SpeakerNameResolver = node => DialogueSpeakerUtility.ResolveSpeakerName(_selectedDialogue, node);
             _graphView.LoadGraph(_selectedDialogue?.Graph);
             if (!string.IsNullOrWhiteSpace(selectedNodeId) && !_graphView.RestoreSelection(selectedNodeId))
             {
@@ -690,10 +693,60 @@ namespace NewDial.DialogueEditor
             summaryCard.Add(new Label(DialogueEditorLocalization.Format("Start node: {0}", DialogueGraphUtility.FindStartNode(dialogue)?.Title ?? DialogueEditorLocalization.Text("None"))));
             _inspectorView.Add(summaryCard);
 
+            BuildSpeakerRosterEditor(dialogue);
             _inspectorView.Add(BuildDialogueIdEditor(dialogue));
             _inspectorView.Add(BuildWhereUsedSection(DialogueWhereUsedUtility.GetWhereUsed(_database, _selectedNpc, dialogue)));
             BuildConditionEditor(dialogue.StartCondition, DialogueEditorLocalization.Text("Start Condition"));
             _inspectorView.Add(CreateInlineHelp(DialogueEditorLocalization.Text("Click empty graph space to return here after editing a node.")));
+        }
+
+        private void BuildSpeakerRosterEditor(DialogueEntry dialogue)
+        {
+            EnsureDialogueSpeakers(_selectedNpc, dialogue);
+
+            _inspectorView.Add(CreateSectionTitle(DialogueEditorLocalization.Text("Speakers")));
+            var box = new Box();
+            box.AddToClassList("dialogue-editor__inspector-card");
+
+            var speakers = dialogue.Speakers.Where(speaker => speaker != null).ToList();
+            foreach (var speaker in speakers)
+            {
+                var row = new VisualElement();
+                row.AddToClassList("dialogue-editor__row");
+
+                var nameField = new TextField(DialogueEditorLocalization.Text("Speaker Name"))
+                {
+                    value = speaker.Name,
+                    isDelayed = true,
+                    name = "dialogue-speaker-name-field"
+                };
+                nameField.RegisterValueChangedCallback(evt =>
+                {
+                    PerformDialogueScopedChange("Rename Speaker", () => speaker.Name = evt.newValue, refreshNodeVisuals: true, refreshInspector: true);
+                });
+                row.Add(nameField);
+
+                var removeButton = new Button(() => RemoveSpeaker(dialogue, speaker))
+                {
+                    text = DialogueEditorLocalization.Text("Remove"),
+                    name = "dialogue-speaker-remove-button"
+                };
+                removeButton.SetEnabled(speakers.Count > 1);
+                removeButton.AddToClassList("dialogue-editor__danger-button");
+                row.Add(removeButton);
+                box.Add(row);
+            }
+
+            var addButton = new Button(() =>
+            {
+                AddSpeaker(dialogue);
+            })
+            {
+                text = DialogueEditorLocalization.Text("Add Speaker"),
+                name = "dialogue-speaker-add-button"
+            };
+            box.Add(addButton);
+            _inspectorView.Add(box);
         }
 
         private void BuildTextNodeInspector(DialogueTextNodeData node)
@@ -709,6 +762,8 @@ namespace NewDial.DialogueEditor
 
             _inspectorView.Add(BuildNodeIdEditor(node));
             _inspectorView.Add(BuildWhereUsedSection(DialogueWhereUsedUtility.GetWhereUsed(_database, _selectedNpc, _selectedDialogue, node)));
+
+            BuildTextNodeSpeakerField(node);
 
             var bodyField = new TextField(DialogueEditorLocalization.Text("Body Text"))
             {
@@ -765,6 +820,37 @@ namespace NewDial.DialogueEditor
             var deleteButton = new Button(() => _graphView.DeleteNode(node)) { text = DialogueEditorLocalization.Text("Delete Node") };
             deleteButton.AddToClassList("dialogue-editor__danger-button");
             _inspectorView.Add(deleteButton);
+        }
+
+        private void BuildTextNodeSpeakerField(DialogueTextNodeData node)
+        {
+            EnsureDialogueSpeakers(_selectedNpc, _selectedDialogue);
+            var speakers = _selectedDialogue?.Speakers?.Where(speaker => speaker != null).ToList() ?? new List<DialogueSpeakerEntry>();
+            if (speakers.Count == 0)
+            {
+                _inspectorView.Add(CreateInlineHelp(DialogueEditorLocalization.Text("No speakers configured for this dialogue.")));
+                return;
+            }
+
+            var selectedSpeaker = DialogueSpeakerUtility.ResolveSpeaker(_selectedDialogue, node);
+            var selectedIndex = Mathf.Max(0, speakers.IndexOf(selectedSpeaker));
+            var labels = BuildSpeakerOptionLabels(speakers);
+            var speakerField = new PopupField<string>(DialogueEditorLocalization.Text("Speaker"), labels, selectedIndex)
+            {
+                name = "node-speaker-field"
+            };
+            speakerField.RegisterValueChangedCallback(evt =>
+            {
+                var index = labels.IndexOf(evt.newValue);
+                if (index < 0 || index >= speakers.Count)
+                {
+                    return;
+                }
+
+                PerformNodeScopedChange("Edit Node Speaker", () => node.SpeakerId = speakers[index].Id, refreshNodeVisuals: true);
+                DialoguePreviewWindow.RefreshOpenWindows(this);
+            });
+            _inspectorView.Add(speakerField);
         }
 
         private void BuildCommentNodeInspector(CommentNodeData node)
@@ -1704,12 +1790,119 @@ namespace NewDial.DialogueEditor
             {
                 Name = $"Dialogue {_selectedNpc.Dialogues.Count + 1}"
             };
+            EnsureDialogueSpeakers(_selectedNpc, dialogue);
 
             _selectedNpc.Dialogues.Add(dialogue);
             _selectedDialogue = dialogue;
             _selectedNode = null;
             MarkChanged();
             RefreshAll();
+        }
+
+        private static bool EnsureDialogueSpeakers(DialogueDatabaseAsset database)
+        {
+            var changed = false;
+            if (database?.Npcs == null)
+            {
+                return false;
+            }
+
+            foreach (var npc in database.Npcs)
+            {
+                if (npc?.Dialogues == null)
+                {
+                    continue;
+                }
+
+                foreach (var dialogue in npc.Dialogues)
+                {
+                    changed |= EnsureDialogueSpeakers(npc, dialogue);
+                }
+            }
+
+            return changed;
+        }
+
+        private static bool EnsureDialogueSpeakers(NpcEntry ownerNpc, DialogueEntry dialogue)
+        {
+            if (dialogue == null)
+            {
+                return false;
+            }
+
+            var changed = false;
+            if (dialogue.Speakers == null)
+            {
+                dialogue.Speakers = new List<DialogueSpeakerEntry>();
+                changed = true;
+            }
+
+            var removed = dialogue.Speakers.RemoveAll(speaker => speaker == null);
+            changed |= removed > 0;
+
+            if (dialogue.Speakers.Count == 0)
+            {
+                dialogue.Speakers.Add(new DialogueSpeakerEntry
+                {
+                    Name = string.IsNullOrWhiteSpace(ownerNpc?.Name) ? "NPC" : ownerNpc.Name
+                });
+                changed = true;
+            }
+
+            return changed;
+        }
+
+        internal void AddSpeaker(DialogueEntry dialogue)
+        {
+            if (dialogue?.Speakers == null)
+            {
+                return;
+            }
+
+            PerformDialogueScopedChange("Add Speaker", () =>
+            {
+                dialogue.Speakers.Add(new DialogueSpeakerEntry
+                {
+                    Name = DialogueEditorLocalization.Format("Speaker {0}", dialogue.Speakers.Count + 1)
+                });
+            }, refreshNodeVisuals: true, refreshInspector: true);
+        }
+
+        internal void RemoveSpeaker(DialogueEntry dialogue, DialogueSpeakerEntry speaker)
+        {
+            if (dialogue?.Speakers == null || speaker == null || dialogue.Speakers.Count <= 1)
+            {
+                return;
+            }
+
+            var speakerId = speaker.Id;
+            PerformDialogueScopedChange("Remove Speaker", () =>
+            {
+                dialogue.Speakers.Remove(speaker);
+                foreach (var textNode in dialogue.Graph?.Nodes?.OfType<DialogueTextNodeData>() ?? Enumerable.Empty<DialogueTextNodeData>())
+                {
+                    if (textNode.SpeakerId == speakerId)
+                    {
+                        textNode.SpeakerId = string.Empty;
+                    }
+                }
+            }, refreshNodeVisuals: true, refreshInspector: true);
+        }
+
+        private static List<string> BuildSpeakerOptionLabels(IReadOnlyList<DialogueSpeakerEntry> speakers)
+        {
+            var nameCounts = speakers
+                .Select(speaker => string.IsNullOrWhiteSpace(speaker.Name) ? DialogueEditorLocalization.Text("Speaker") : speaker.Name)
+                .GroupBy(name => name)
+                .ToDictionary(group => group.Key, group => group.Count());
+
+            return speakers
+                .Select((speaker, index) =>
+                {
+                    var name = string.IsNullOrWhiteSpace(speaker.Name) ? DialogueEditorLocalization.Text("Speaker") : speaker.Name;
+                    return nameCounts[name] > 1 ? $"{name} ({index + 1})" : name;
+                })
+                .ToList();
         }
 
         private void AddNodeFromToolbar()
@@ -2188,6 +2381,42 @@ namespace NewDial.DialogueEditor
                 }
 
                 MarkChanged();
+
+                if (refreshProjectPanel)
+                {
+                    RefreshProjectPanel();
+                }
+
+                if (refreshInspector)
+                {
+                    RefreshInspector();
+                }
+            });
+        }
+
+        private void PerformDialogueScopedChange(
+            string actionName,
+            Action mutate,
+            bool refreshNodeVisuals = false,
+            bool reloadGraph = false,
+            bool refreshInspector = false,
+            bool refreshProjectPanel = false)
+        {
+            ApplyUndoableNodeChange(actionName, () =>
+            {
+                mutate();
+
+                if (reloadGraph)
+                {
+                    _graphView?.LoadGraph(_selectedDialogue?.Graph);
+                }
+                else if (refreshNodeVisuals)
+                {
+                    _graphView?.RefreshNodeVisuals();
+                }
+
+                MarkChanged();
+                DialoguePreviewWindow.RefreshOpenWindows(this);
 
                 if (refreshProjectPanel)
                 {

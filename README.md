@@ -26,9 +26,9 @@ The package is an MVP dialogue and cutscene editor for Unity 6.x. It combines a 
 
 ## Package highlights
 
-- `DialogueDatabaseAsset` stores NPCs, dialogues, graph nodes, links, and start conditions
+- `DialogueDatabaseAsset` stores NPCs, dialogues, per-dialogue speakers, graph nodes, links, and start conditions
 - Editor workflow for creating or loading dialogue databases from `Tools/New Dial/Dialogue Editor`
-- Graph authoring for text nodes, comment nodes, ordered links, and choice-based branches
+- Graph authoring for speaker-bound text nodes, comment nodes, ordered links, and choice-based branches
 - Preview flow with transcript history, restart, backtracking, and active-node jump
 - Autosave snapshots stored under the consuming Unity project's `Library/DialogueEditorAutosaves`
 - `Basic Adventure Sample` that demonstrates branching dialogue, comment notes, and simple conditions
