@@ -44,6 +44,7 @@ This file describes the current working-tree behavior of `new_dial`, including c
 - `IDialogueConditionEvaluator` abstracts condition evaluation.
 - `DefaultDialogueConditionEvaluator` currently supports:
   - pass-through for `ConditionType.None`
+  - universal `ConditionType.VariableCheck` lookups through `IDialogueVariableStore`
   - numeric comparisons for `>`, `<`, `>=`, `<=`
   - string comparisons for `==`, `!=`, and `Contains`
   - a `Truthy` operator for simple boolean-like values
@@ -56,7 +57,7 @@ This file describes the current working-tree behavior of `new_dial`, including c
 - `DialogueEditorWindow` is the main authoring surface. Its toolbar exposes `New`, `Load`, `Save`, `Preview`, `Localization`, `Delete`, `Dialogue Settings`, a per-user content-language switcher for authored text, and a separate `EN/RU` editor UI language switcher backed by `EditorPrefs`.
 - The palette supports `Text Node`, `Comment`, `Function`, `Scene`, and `Debug`.
 - Dialogue settings expose a speaker roster editor. Text node inspectors can bind a line to a speaker from that dialogue.
-- Text node inspectors expose `LocalizationKey`, a rich-text toolbar for bold, italic, user-editable text color/highlight lists, clear formatting, a wrapping body text field for the active content language, and a sanitized formatted live preview.
+- Text node inspectors prioritize speaker and body editing, with `LocalizationKey` kept near the bottom as lower-priority localization metadata.
 - `DialogueLocalizationWindow` imports and exports Google Sheets `.tsv`/`.csv` exports for dialogue rows shaped like `Conversation/<conversationId>/Entry/<n>/Dialogue Text`, with selected or all-conversation batch import.
 - Rich-text color and highlight lists are editor-only user preferences saved in `EditorPrefs`; `+` adds an empty hex slot, valid values collapse into color icons, one click selects a color, `Apply` formats the current selection, and double click reopens hex editing.
 - `DialoguePreviewWindow` opens from the main editor toolbar for the currently selected dialogue and supports speaker labels, transcript history, advancing, choosing branches, going back, restarting, and jumping to the active node.
@@ -70,7 +71,10 @@ This file describes the current working-tree behavior of `new_dial`, including c
 - Opening another database while the current one has unsaved changes triggers a save/discard prompt before the switch completes.
 - Native Unity undo/redo now covers node-scope graph operations: create/delete, drag, comment resize, links, cut/paste, and node/link inspector edits.
 - Undo/redo refreshes graph selection, inspector state, preview sessions, and autosave dirty-state against the last saved database snapshot.
+- The graph canvas shows a large, low-contrast grid slightly lighter than the canvas background.
 - The graph empty-state warning is visible for an empty graph, hides as soon as the first text or comment node is created, and returns when the last node is deleted.
+- Selected NPC and dialogue metadata in the project panel uses compact inline ID and Where Used rows instead of nested cards.
+- Dialogue settings speaker roster rows keep the speaker name field and remove action on one line.
 - Text and executable nodes select from any non-button body area; lower-half drags still begin link creation and top-half targeting still accepts link drops.
 - NPC, dialogue, and node `Id` values are explicitly editable in the editor, with generate and safe-regenerate actions plus immediate empty/duplicate warnings.
 - Changing a node `Id` updates internal graph links that referenced the old node `Id`; NPC and dialogue `Id` changes warn about possible external references but do not resolve them yet.
@@ -83,7 +87,7 @@ This file describes the current working-tree behavior of `new_dial`, including c
 - Text node `BodyText` supports `<b>`, `<i>`, `<color=#RRGGBB>`, and `<mark=#RRGGBBAA>` markup. Unknown or malformed tags remain in raw `BodyText` and render as plain text in editor previews.
 - Inspector, graph, current-line preview, and transcript surfaces render supported rich text through a shared segmented UI Toolkit renderer for bold, italic, color, and highlight.
 - Choice-mode text nodes show editor diagnostics for missing outgoing links, broken targets, empty/fallback choice labels, conflicting link order, negative link order, and unreachable choice targets.
-- Condition editing is guided by `ConditionType`: irrelevant fields are hidden, operators come from built-in metadata, hints explain expected values, and projects can register key suggestions.
+- Condition editing uses generic `None`, `VariableCheck`, and `Custom` types; irrelevant fields are hidden, operators come from built-in metadata, hints explain expected values, and projects can register key suggestions.
 - The preview window includes a bool/number/string test-variable sandbox and explains blocked dialogue starts, unavailable choices, missing targets, branch ends, and generic fallback labels.
 - Collapsible Where Used blocks show internal NPC/dialogue/node references and can include project-provided external references through an editor resolver registry.
 - Comment groups can own both text nodes and nested comment groups.
@@ -91,7 +95,7 @@ This file describes the current working-tree behavior of `new_dial`, including c
 - Moving a parent comment group moves text nodes and nested comment groups that were directly contained when the drag started; nodes newly overlapped during the drag are not attached mid-drag.
 - Cutting a selected root comment group removes the full nested hierarchy from the graph after copying it to the clipboard payload.
 - Clipboard shortcuts for copy, cut, and paste are implemented in the graph view.
-- WASD pans only while the graph canvas is focused, uses screen-space speed independent of zoom, keeps a mouse-dragged selected node under the cursor during pan, and clamps delayed editor ticks to avoid large jumps on big graphs.
+- WASD pans only while the graph canvas is focused, uses screen-space speed independent of zoom, keeps mouse-dragged selected nodes under the cursor with a drag-start baseline during pan, and clamps delayed editor ticks to avoid large jumps on big graphs.
 
 ### Sample content
 
@@ -105,7 +109,7 @@ The sample also includes:
 - an `Innkeeper` speaker roster entry used by text nodes through default speaker fallback
 - link-level choice text
 - a `UseOutputsAsChoices` start node
-- a simple numeric trust-level condition
+- a simple numeric variable condition
 - a comment node used as an in-editor design note
 
 ## Runtime API at a glance

@@ -75,20 +75,20 @@ namespace NewDial.DialogueEditor
                     showOperator: true,
                     showValue: true,
                     DialogueEditorLocalization.Text("Custom conditions require a project evaluator. The built-in editor preview treats them as unavailable by default.")),
-                ConditionType.TrustLevel => new DialogueConditionMetadata(
+                ConditionType.VariableCheck => new DialogueConditionMetadata(
                     type,
-                    new[] { "==", "!=", ">", "<", ">=", "<=" },
+                    new[] { "==", "!=", "Contains", "Truthy", ">", "<", ">=", "<=" },
                     showKey: true,
                     showOperator: true,
                     showValue: true,
-                    DialogueEditorLocalization.Text("Expected value: number, using invariant format such as 10 or 2.5.")),
+                    DialogueEditorLocalization.Text("Expected value: text, true/false, yes/no, 1/0, or a number for numeric comparisons.")),
                 _ => new DialogueConditionMetadata(
                     type,
-                    new[] { "==", "!=", "Contains", "Truthy" },
+                    Array.Empty<string>(),
                     showKey: true,
-                    showOperator: true,
-                    showValue: true,
-                    DialogueEditorLocalization.Text("Expected value: text, true/false, yes/no, or 1/0 depending on the selected operator."))
+                    showOperator: false,
+                    showValue: false,
+                    DialogueEditorLocalization.Text("Unsupported condition type."))
             };
         }
     }

@@ -21,11 +21,15 @@
 - NPC, dialogue, and node identifiers can now be edited explicitly in the editor, with guarded generation actions and immediate empty/duplicate warnings.
 - Node identifier changes now update internal graph links that reference the old node id.
 - Choice-mode nodes now surface authoring diagnostics for missing outputs, broken targets, fallback labels, order conflicts, and unreachable choice targets.
-- Condition editing now uses guided operator choices, type-specific hints, and optional project-provided key suggestions.
+- Condition editing now uses guided operator choices, generic variable-check hints, and optional project-provided key suggestions.
+- Removed game-specific condition types (`QuestState`, `TrustLevel`, `Fact`, and `GlobalVariableCheck`); conditions now use generic `VariableCheck` or project-defined `Custom`.
 - Dialogue preview now includes test variables and explains blocked starts, unavailable choices, missing targets, branch ends, and fallback labels.
 - Added Where Used sections with internal references and a project-extensible external reference resolver registry.
 - Prompt to save or discard unsaved changes before opening another dialogue database in the editor.
 - Graph empty-state visibility now updates when the first node is created and when the last node is removed.
+- Graph canvas now uses a large, low-contrast grid slightly lighter than the canvas background.
+- Selected NPC and dialogue metadata in the project panel now uses compact inline rows instead of nested cards.
+- Scene, function, start, and debug graph-node badges now use distinct semantic colors.
 - Nested comment-group ownership and movement behavior now follow the most specific containing comment group.
 - Dragging a comment group now keeps its drag-start membership instead of attaching newly overlapped nodes mid-drag.
 - Cutting a selected root comment group removes the full nested hierarchy after copying it to the clipboard payload.
@@ -37,6 +41,8 @@
 - Existing dialogues without speakers now receive a default speaker from their owning NPC when opened in the editor.
 - Rich-text previews now use segmented UI Toolkit rendering for bold, italic, color, and highlight instead of relying only on `Label.enableRichText`.
 - Text-node body fields now visually wrap long raw lines in the inspector.
+- Text-node inspectors now keep the localization key near the bottom so core authoring fields stay prominent.
+- Dialogue settings speaker rows now keep speaker name editing and removal controls on one line.
 - Rich-text toolbar formatting now preserves selected text ranges when applying bold, italic, color, or highlight.
 - Saved rich-text color slots now display as color icons; one click selects the color, `Apply` formats the current selection, and double click returns that slot to hex edit mode.
 - Localization imports update existing text-node data by `LocalizationKey` without rebuilding graph links, positions, executable nodes, conditions, speakers, or choice flags.
@@ -44,6 +50,7 @@
 - First-time localization imports now create a vertical top-to-bottom text-node chain instead of a horizontal row.
 - WASD graph panning now uses zoom-independent screen-space speed and clamps delayed editor ticks to avoid jumps on large graphs.
 - WASD graph panning now keeps a mouse-dragged selected node under the cursor instead of letting it drift during the drag.
+- WASD graph panning during node drag now uses a drag-start baseline to avoid snapping selected nodes back after keyboard pan.
 - Content-language choices now refresh after localization import, including when the editor UI language is Russian.
 - Where Used reference details are now collapsed by default in editor inspectors.
 

@@ -14,7 +14,7 @@ The package is intentionally scoped as an MVP. It already includes a reusable ru
 - graph editor for text, function, scene, debug, and comment nodes with ordered links, conditions, voice-key/localization metadata, choice-style branches, content-language switching, and an EN/RU editor language switcher
 - explicit identifier editing for NPCs, dialogues, and nodes, including empty/duplicate warnings
 - choice-flow diagnostics for choice nodes, broken targets, fallback labels, and ordering issues
-- guided condition editing with type-specific operators, hints, and project-provided key suggestions
+- guided condition editing with generic variable checks, hints, and project-provided key suggestions
 - per-dialogue speaker rosters with text-node speaker binding and preview speaker labels
 - rich-text body authoring for text nodes with bold, italic, user-editable color/highlight lists, clear formatting, and formatted sanitized previews
 - TSV/CSV localization import/export for Google Sheets dialogue rows using `Conversation/<conversationId>/Entry/<n>/Dialogue Text` keys, including selected or all-conversation batch import
@@ -68,7 +68,7 @@ The start window can create a new `DialogueDatabaseAsset` or load an existing on
 | Implemented | Execution extension points | Project-provided registries and executors drive concrete function and scene behavior |
 | Implemented | Identifier management | NPC, dialogue, and node ids can be edited explicitly; node id changes update internal graph links |
 | Implemented | Choice-flow diagnostics | Choice-mode nodes warn about missing outputs, invalid targets, fallback labels, order conflicts, and unreachable targets |
-| Implemented | Guided conditions | Condition fields show relevant operators, hints, and optional project key suggestions |
+| Implemented | Guided conditions | Condition fields show generic variable-check operators, hints, and optional project key suggestions |
 | Implemented | Preview test variables | Preview can simulate bool, number, and string values and show blocked-state explanations |
 | Implemented | Where Used | Editor shows internal references and can display project-provided external references |
 | Implemented | Undo/redo | Native Unity undo/redo for node creation, deletion, movement, resize, links, and node/link inspector edits |
@@ -95,7 +95,7 @@ The start window can create a new `DialogueDatabaseAsset` or load an existing on
 - `DebugNodeData`: lightweight logging node for diagnostics
 - `CommentNodeData`: editor grouping and annotation node
 - `NodeLinkData`: ordered outgoing edge with optional `ChoiceText`
-- `ConditionData` and `ConditionType`: lightweight condition metadata
+- `ConditionData` and `ConditionType`: lightweight `None`, `VariableCheck`, and `Custom` condition metadata
 - `DialoguePlayer`: runtime traversal helper for starting, advancing, choosing branches, and resolving the current speaker
 - `DialogueExecutionResult`: result contract for success, failure, pending, and end-dialogue execution outcomes
 - `IDialogueExecutionRegistry`, `IDialogueFunctionExecutor`, and `IDialogueSceneExecutor`: extension points for project metadata and executable behavior

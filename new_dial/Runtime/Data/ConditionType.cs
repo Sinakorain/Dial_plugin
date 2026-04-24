@@ -4,10 +4,6 @@ namespace NewDial.DialogueEditor
     {
         None,
         Custom,
-        QuestState,
-        TrustLevel,
-        Fact,
-        VariableCheck,
-        GlobalVariableCheck
+        VariableCheck
     }
 }

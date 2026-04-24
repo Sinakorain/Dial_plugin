@@ -79,7 +79,7 @@ namespace NewDial.DialogueEditor.Samples
                 Position = new Vector2(460f, 340f),
                 Condition = new ConditionData
                 {
-                    Type = ConditionType.TrustLevel,
+                    Type = ConditionType.VariableCheck,
                     Key = "trust_level",
                     Operator = ">=",
                     Value = "2"
@@ -134,7 +134,7 @@ namespace NewDial.DialogueEditor.Samples
                 Name = "After Hours",
                 StartCondition = new ConditionData
                 {
-                    Type = ConditionType.QuestState,
+                    Type = ConditionType.VariableCheck,
                     Key = "tavern_open",
                     Operator = "==",
                     Value = "false"

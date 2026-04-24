@@ -68,7 +68,8 @@
 7. Базовая condition semantics должна оставаться совместимой с текущим `DefaultDialogueConditionEvaluator`:
    - `ConditionType.None` пропускает узел или диалог без дополнительных проверок;
    - `ConditionType.Custom` по умолчанию считается неподдержанным и должен быть закрыт проектной реализацией;
-   - для остальных типов отсутствие `variableStore`, пустой `Key` или отсутствие значения по ключу приводят к `false`;
+   - `ConditionType.VariableCheck` использует `variableStore`, `Key`, `Operator` и `Value`;
+   - отсутствие `variableStore`, пустой `Key` или отсутствие значения по ключу приводят к `false`;
    - строковые сравнения `==`, `!=`, `Contains` должны быть case-insensitive;
    - numeric comparisons `>`, `<`, `>=`, `<=` должны работать по числам.
 8. `CommentNodeData` игнорируется runtime-системой во всех in-game сценариях.

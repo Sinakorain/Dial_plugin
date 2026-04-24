@@ -56,6 +56,54 @@ namespace NewDial.DialogueEditor
         public HashSet<string> DirectSelectedNodeIds { get; }
     }
 
+    internal readonly struct SelectionPointerDragNodeStart
+    {
+        public SelectionPointerDragNodeStart(Node node, string nodeId, Rect startRect)
+        {
+            Node = node;
+            NodeId = nodeId ?? string.Empty;
+            StartRect = startRect;
+        }
+
+        public Node Node { get; }
+        public string NodeId { get; }
+        public Rect StartRect { get; }
+    }
+
+    internal sealed class SelectionPointerDragState
+    {
+        public SelectionPointerDragState(
+            Vector2 startWorldPointerPosition,
+            float startGraphScale,
+            IReadOnlyList<SelectionPointerDragNodeStart> rootCommentStarts,
+            IReadOnlyList<SelectionPointerDragNodeStart> directNodeStarts)
+        {
+            StartWorldPointerPosition = startWorldPointerPosition;
+            CurrentWorldPointerPosition = startWorldPointerPosition;
+            StartGraphScale = Mathf.Approximately(startGraphScale, 0f) ? 1f : startGraphScale;
+            RootCommentStarts = rootCommentStarts ?? Array.Empty<SelectionPointerDragNodeStart>();
+            DirectNodeStarts = directNodeStarts ?? Array.Empty<SelectionPointerDragNodeStart>();
+        }
+
+        public Vector2 StartWorldPointerPosition { get; }
+        public Vector2 CurrentWorldPointerPosition { get; set; }
+        public float StartGraphScale { get; }
+        public Vector2 KeyboardPanCanvasOffset { get; set; }
+        public IReadOnlyList<SelectionPointerDragNodeStart> RootCommentStarts { get; }
+        public IReadOnlyList<SelectionPointerDragNodeStart> DirectNodeStarts { get; }
+
+        public bool HasNodes => RootCommentStarts.Count > 0 || DirectNodeStarts.Count > 0;
+
+        public Vector2 TotalCanvasDelta
+        {
+            get
+            {
+                var mouseCanvasDelta = (CurrentWorldPointerPosition - StartWorldPointerPosition) / StartGraphScale;
+                return mouseCanvasDelta + KeyboardPanCanvasOffset;
+            }
+        }
+    }
+
     public class DialogueGraphView : GraphView
     {
         private const float AnchorInset = 18f;
@@ -88,9 +136,7 @@ namespace NewDial.DialogueEditor
         private bool _moveDownPressed;
         private bool _moveLeftPressed;
         private bool _moveRightPressed;
-        private bool _isSelectionPointerDragActive;
-        private bool _isApplyingSelectionPointerDragPanCompensation;
-        private Vector2 _selectionPointerDragKeyboardPanOffset;
+        private SelectionPointerDragState _selectionPointerDragState;
         private double _lastPanTickTime;
         private string _pendingFrameNodeId;
         private int _pendingFrameAttempts;
@@ -891,6 +937,22 @@ namespace NewDial.DialogueEditor
             SelectNode(view.Element, view.NodeData);
         }
 
+        internal void SelectRuntimeNodeForPointerDrag(IDialogueRuntimeNodeView view)
+        {
+            if (view?.Element == null || view.NodeData == null)
+            {
+                return;
+            }
+
+            if (selection.Contains(view.Element))
+            {
+                SelectionChangedAction?.Invoke(view.NodeData);
+                return;
+            }
+
+            SelectRuntimeNode(view);
+        }
+
         internal void SelectCommentGroup(CommentNodeData commentNode)
         {
             if (commentNode == null || !_commentNodeViews.TryGetValue(commentNode.Id, out var commentView))
@@ -912,6 +974,22 @@ namespace NewDial.DialogueEditor
 
             RestoreCommentNodeLayering();
             SelectionChangedAction?.Invoke(commentNode);
+        }
+
+        internal void SelectCommentGroupForPointerDrag(CommentNodeData commentNode)
+        {
+            if (commentNode == null || !_commentNodeViews.TryGetValue(commentNode.Id, out var commentView))
+            {
+                return;
+            }
+
+            if (selection.Contains(commentView))
+            {
+                SelectionChangedAction?.Invoke(commentNode);
+                return;
+            }
+
+            SelectCommentGroup(commentNode);
         }
 
         internal void NotifyNodeMoved()
@@ -1774,16 +1852,89 @@ namespace NewDial.DialogueEditor
 
         internal void BeginSelectionPointerDrag()
         {
-            _isSelectionPointerDragActive = true;
-            _isApplyingSelectionPointerDragPanCompensation = false;
-            _selectionPointerDragKeyboardPanOffset = Vector2.zero;
+            BeginSelectionPointerDrag(_lastPointerPosition);
+        }
+
+        internal void BeginSelectionPointerDrag(Vector2 worldPointerPosition)
+        {
+            var state = CreateSelectionPointerDragState(worldPointerPosition);
+            _selectionPointerDragState = state.HasNodes ? state : null;
+        }
+
+        internal void ContinueSelectionPointerDrag(Vector2 worldPointerPosition)
+        {
+            if (_selectionPointerDragState == null)
+            {
+                return;
+            }
+
+            _selectionPointerDragState.CurrentWorldPointerPosition = worldPointerPosition;
+            ApplySelectionPointerDragPositions();
         }
 
         internal void EndSelectionPointerDrag()
         {
-            _isSelectionPointerDragActive = false;
-            _isApplyingSelectionPointerDragPanCompensation = false;
-            _selectionPointerDragKeyboardPanOffset = Vector2.zero;
+            _selectionPointerDragState = null;
+        }
+
+        internal bool IsSelectionPointerDragActive => _selectionPointerDragState != null;
+
+        private SelectionPointerDragState CreateSelectionPointerDragState(Vector2 worldPointerPosition)
+        {
+            var selectedNodes = selection
+                .OfType<Node>()
+                .Where(node => !string.IsNullOrWhiteSpace(GetNodeId(node)))
+                .ToList();
+            var selectedComments = selectedNodes
+                .OfType<DialogueCommentNodeView>()
+                .ToList();
+            var selectedCommentIds = new HashSet<string>(selectedComments.Select(commentView => commentView.Data.Id));
+            var rootCommentStarts = new List<SelectionPointerDragNodeStart>();
+            var groupedByRootComments = new HashSet<string>();
+
+            foreach (var commentView in selectedComments)
+            {
+                var parentComment = GetParentCommentNode(commentView.Data);
+                if (parentComment != null && selectedCommentIds.Contains(parentComment.Id))
+                {
+                    continue;
+                }
+
+                var startRect = GetGraphElementRect(commentView);
+                rootCommentStarts.Add(new SelectionPointerDragNodeStart(
+                    commentView,
+                    commentView.Data.Id,
+                    startRect));
+
+                foreach (var nodeId in GetCommentGroupElements(commentView.Data, startRect)
+                             .OfType<Node>()
+                             .Select(GetNodeId)
+                             .Where(id => !string.IsNullOrWhiteSpace(id)))
+                {
+                    groupedByRootComments.Add(nodeId);
+                }
+            }
+
+            var directNodeStarts = new List<SelectionPointerDragNodeStart>();
+            foreach (var node in selectedNodes)
+            {
+                var nodeId = GetNodeId(node);
+                if (string.IsNullOrWhiteSpace(nodeId) || groupedByRootComments.Contains(nodeId))
+                {
+                    continue;
+                }
+
+                directNodeStarts.Add(new SelectionPointerDragNodeStart(
+                    node,
+                    nodeId,
+                    GetGraphElementRect(node)));
+            }
+
+            return new SelectionPointerDragState(
+                worldPointerPosition,
+                GetCurrentGraphScale(),
+                rootCommentStarts,
+                directNodeStarts);
         }
 
         internal void StepKeyboardPan(float deltaTimeSeconds)
@@ -1826,100 +1977,55 @@ namespace NewDial.DialogueEditor
             UpdateViewTransform(
                 new Vector3(currentPan.x + panDelta.x, currentPan.y + panDelta.y, 0f),
                 GetCurrentGraphScaleVector());
-            CompensateSelectionPointerDragPan(panDelta, graphScale);
+            ApplySelectionPointerDragPan(panDelta, graphScale);
             RefreshEdgeLayer();
         }
 
-        private void CompensateSelectionPointerDragPan(Vector2 screenPanDelta, float graphScale)
+        private void ApplySelectionPointerDragPan(Vector2 screenPanDelta, float graphScale)
         {
-            if (!_isSelectionPointerDragActive || screenPanDelta == Vector2.zero)
+            if (_selectionPointerDragState == null || screenPanDelta == Vector2.zero)
             {
                 return;
             }
 
             var safeScale = Mathf.Approximately(graphScale, 0f) ? 1f : graphScale;
             var canvasDelta = -screenPanDelta / safeScale;
-            var selectedComments = selection
-                .OfType<DialogueCommentNodeView>()
-                .ToList();
-            var selectedCommentIds = new HashSet<string>(selectedComments.Select(commentView => commentView.Data.Id));
-            var movedIds = new HashSet<string>();
+            _selectionPointerDragState.KeyboardPanCanvasOffset += canvasDelta;
+            ApplySelectionPointerDragPositions();
+        }
 
-            _selectionPointerDragKeyboardPanOffset += canvasDelta;
-            _isApplyingSelectionPointerDragPanCompensation = true;
-            try
+        private void ApplySelectionPointerDragPositions()
+        {
+            if (_selectionPointerDragState == null)
             {
-                foreach (var commentView in selectedComments)
-                {
-                    var parentComment = GetParentCommentNode(commentView.Data);
-                    if (parentComment != null && selectedCommentIds.Contains(parentComment.Id))
-                    {
-                        continue;
-                    }
-
-                    var groupedIdsBeforeMove = GetCommentGroupElements(commentView.Data)
-                        .OfType<Node>()
-                        .Select(GetNodeId)
-                        .Where(id => !string.IsNullOrWhiteSpace(id))
-                        .ToList();
-                    MoveSelectedElementByCanvasDelta(commentView, canvasDelta);
-                    IEnumerable<string> groupedIds = _commentDragSnapshot != null &&
-                                                     _commentDragSnapshot.RootCommentId == commentView.Data.Id
-                        ? _commentDragSnapshot.GroupedNodeIds
-                        : groupedIdsBeforeMove;
-                    foreach (var groupedId in groupedIds)
-                    {
-                        if (!string.IsNullOrWhiteSpace(groupedId))
-                        {
-                            movedIds.Add(groupedId);
-                        }
-                    }
-                }
-
-                foreach (var node in selection.OfType<Node>())
-                {
-                    var nodeId = GetNodeId(node);
-                    if (!string.IsNullOrWhiteSpace(nodeId) && movedIds.Contains(nodeId))
-                    {
-                        continue;
-                    }
-
-                    MoveSelectedElementByCanvasDelta(node, canvasDelta);
-                    if (!string.IsNullOrWhiteSpace(nodeId))
-                    {
-                        movedIds.Add(nodeId);
-                    }
-                }
+                return;
             }
-            finally
+
+            var totalDelta = _selectionPointerDragState.TotalCanvasDelta;
+            foreach (var start in _selectionPointerDragState.RootCommentStarts)
             {
-                _isApplyingSelectionPointerDragPanCompensation = false;
+                if (start.Node == null)
+                {
+                    continue;
+                }
+
+                start.Node.SetPosition(new Rect(start.StartRect.position + totalDelta, start.StartRect.size));
+            }
+
+            foreach (var start in _selectionPointerDragState.DirectNodeStarts)
+            {
+                if (start.Node == null)
+                {
+                    continue;
+                }
+
+                start.Node.SetPosition(new Rect(start.StartRect.position + totalDelta, start.StartRect.size));
             }
         }
 
         internal Rect AdjustSelectionPointerDragPosition(Node node, Rect newPos)
         {
-            if (!_isSelectionPointerDragActive ||
-                _isApplyingSelectionPointerDragPanCompensation ||
-                _selectionPointerDragKeyboardPanOffset == Vector2.zero ||
-                node == null ||
-                !selection.Contains(node))
-            {
-                return newPos;
-            }
-
-            return new Rect(newPos.position + _selectionPointerDragKeyboardPanOffset, newPos.size);
-        }
-
-        private static void MoveSelectedElementByCanvasDelta(Node node, Vector2 canvasDelta)
-        {
-            if (node == null || canvasDelta == Vector2.zero)
-            {
-                return;
-            }
-
-            var position = node.GetPosition();
-            node.SetPosition(new Rect(position.position + canvasDelta, position.size));
+            return newPos;
         }
 
         private float GetCurrentGraphScale()
@@ -2321,6 +2427,7 @@ namespace NewDial.DialogueEditor
             extensionContainer.Add(_metaLabel);
 
             RegisterCallback<MouseDownEvent>(OnMouseDown, TrickleDown.TrickleDown);
+            RegisterCallback<MouseMoveEvent>(OnMouseMove, TrickleDown.TrickleDown);
             RegisterCallback<MouseUpEvent>(OnMouseUp, TrickleDown.TrickleDown);
             RegisterCallback<MouseCaptureOutEvent>(_ =>
             {
@@ -2413,7 +2520,7 @@ namespace NewDial.DialogueEditor
             }
 
             var worldPointerPosition = this.LocalToWorld(evt.localMousePosition);
-            _graphView.SelectRuntimeNode(this);
+            _graphView.SelectRuntimeNodeForPointerDrag(this);
 
             if (IsPointerInBottomHalf(worldPointerPosition))
             {
@@ -2422,7 +2529,20 @@ namespace NewDial.DialogueEditor
                 return;
             }
 
-            _graphView.BeginSelectionPointerDrag();
+            _graphView.BeginSelectionPointerDrag(worldPointerPosition);
+            this.CaptureMouse();
+            evt.StopImmediatePropagation();
+        }
+
+        private void OnMouseMove(MouseMoveEvent evt)
+        {
+            if (!_graphView.IsSelectionPointerDragActive)
+            {
+                return;
+            }
+
+            _graphView.ContinueSelectionPointerDrag(this.LocalToWorld(evt.localMousePosition));
+            evt.StopImmediatePropagation();
         }
 
         private void OnMouseUp(MouseUpEvent evt)
@@ -2434,6 +2554,10 @@ namespace NewDial.DialogueEditor
 
             _graphView.EndSelectionPointerDrag();
             _graphView.EndUndoGesture();
+            if (this.HasMouseCapture())
+            {
+                this.ReleaseMouse();
+            }
         }
 
         private Vector2 ToLocalPoint(Vector2 worldPointerPosition)
@@ -2546,12 +2670,15 @@ namespace NewDial.DialogueEditor
 
                 if (evt.target is not Button)
                 {
-                    _graphView.NotifySelected(Data);
+                    var worldPointerPosition = this.LocalToWorld(evt.localMousePosition);
+                    _graphView.SelectCommentGroupForPointerDrag(Data);
                     _graphView.BeginCommentDrag(Data);
-                    _graphView.BeginSelectionPointerDrag();
+                    _graphView.BeginSelectionPointerDrag(worldPointerPosition);
                     _pendingCommentSelect = true;
                     _commentDragExceededThreshold = false;
                     _commentPressStartLocalPointer = evt.localMousePosition;
+                    this.CaptureMouse();
+                    evt.StopImmediatePropagation();
                 }
             }, TrickleDown.TrickleDown);
 
@@ -2568,6 +2695,12 @@ namespace NewDial.DialogueEditor
 
                 if (!_isResizing)
                 {
+                    if (_graphView.IsSelectionPointerDragActive)
+                    {
+                        _graphView.ContinueSelectionPointerDrag(this.LocalToWorld(evt.localMousePosition));
+                        evt.StopImmediatePropagation();
+                    }
+
                     return;
                 }
 
@@ -2594,6 +2727,10 @@ namespace NewDial.DialogueEditor
                     _pendingCommentSelect = false;
                     _graphView.EndCommentDrag(Data);
                     _graphView.EndSelectionPointerDrag();
+                    if (this.HasMouseCapture())
+                    {
+                        this.ReleaseMouse();
+                    }
                     schedule.Execute(() => _graphView.SelectCommentGroup(Data));
                     evt.StopImmediatePropagation();
                     return;
@@ -2602,6 +2739,10 @@ namespace NewDial.DialogueEditor
                 _graphView.EndUndoGesture();
                 _graphView.EndCommentDrag(Data);
                 _graphView.EndSelectionPointerDrag();
+                if (this.HasMouseCapture())
+                {
+                    this.ReleaseMouse();
+                }
                 ResetPendingCommentSelect();
             }, TrickleDown.TrickleDown);
 

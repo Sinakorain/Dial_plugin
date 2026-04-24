@@ -412,6 +412,42 @@
     overflow: hidden;
 }
 
+.dialogue-editor__speaker-row {
+    align-items: center;
+    min-width: 0;
+    margin-bottom: 6px;
+}
+
+.dialogue-editor__speaker-name-field {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+    margin-bottom: 0;
+}
+
+.dialogue-editor__speaker-name-field > .unity-base-field__label {
+    min-width: 116px;
+    color: #b6c5dd;
+    white-space: nowrap;
+}
+
+.dialogue-editor__speaker-name-field > .unity-base-field__input {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 64px;
+    max-width: 100%;
+    overflow: hidden;
+}
+
+.dialogue-editor__speaker-remove-button {
+    flex-grow: 0;
+    flex-shrink: 0;
+    min-width: 82px;
+    min-height: 28px;
+    margin-top: 0;
+    margin-left: 8px;
+}
+
 .dialogue-editor__id-card {
     flex-direction: column;
     margin-top: 6px;
@@ -435,6 +471,20 @@
     border-top-right-radius: 8px;
     border-bottom-left-radius: 8px;
     border-bottom-right-radius: 8px;
+}
+
+.dialogue-editor__id-card--compact {
+    margin-top: 4px;
+    margin-bottom: 6px;
+    padding-left: 0;
+    padding-right: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    background-color: rgba(0, 0, 0, 0);
+    border-top-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 0;
+    border-left-width: 0;
 }
 
 .dialogue-editor__id-field {
@@ -461,10 +511,19 @@
     min-width: 0;
 }
 
+.dialogue-editor__id-card--compact .dialogue-editor__id-actions {
+    margin-top: 4px;
+}
+
 .dialogue-editor__id-button {
     flex-grow: 1;
     min-height: 28px;
     margin-right: 6px;
+}
+
+.dialogue-editor__id-card--compact .dialogue-editor__id-button {
+    min-height: 24px;
+    font-size: 11px;
 }
 
 .dialogue-editor__id-issue {
@@ -511,15 +570,37 @@
     border-bottom-right-radius: 8px;
 }
 
+.dialogue-editor__where-used-card--compact {
+    margin-top: 4px;
+    margin-bottom: 6px;
+    padding-left: 0;
+    padding-right: 0;
+    padding-top: 2px;
+    padding-bottom: 2px;
+    background-color: rgba(0, 0, 0, 0);
+    border-top-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 0;
+    border-left-width: 0;
+}
+
 .dialogue-editor__where-used-foldout {
     -unity-font-style: bold;
     color: #f7fbff;
+}
+
+.dialogue-editor__where-used-card--compact .dialogue-editor__where-used-foldout {
+    margin-left: 0;
 }
 
 .dialogue-editor__where-used-foldout .unity-foldout__text {
     -unity-font-style: bold;
     color: #f7fbff;
     margin-bottom: 6px;
+}
+
+.dialogue-editor__where-used-card--compact .unity-foldout__text {
+    margin-bottom: 2px;
 }
 
 .dialogue-editor__where-used-group-title {
@@ -799,6 +880,11 @@
 
 .dialogue-graph-grid {
     background-color: #131925;
+    --grid-background-color: #131925;
+    --line-color: rgba(39, 47, 65, 0.62);
+    --thick-line-color: rgba(48, 58, 78, 0.78);
+    --spacing: 96;
+    --thick-lines: 3;
 }
 
 .dialogue-graph-empty-state {
@@ -905,26 +991,26 @@
 
 .dialogue-node--function .dialogue-node__surface {
     background-color: #2b3140;
-    border-top-color: #8270c8;
-    border-right-color: #8270c8;
-    border-bottom-color: #8270c8;
-    border-left-color: #8270c8;
+    border-top-color: #c78332;
+    border-right-color: #c78332;
+    border-bottom-color: #c78332;
+    border-left-color: #c78332;
 }
 
 .dialogue-node--scene .dialogue-node__surface {
-    background-color: #22343a;
-    border-top-color: #56a3a6;
-    border-right-color: #56a3a6;
-    border-bottom-color: #56a3a6;
-    border-left-color: #56a3a6;
+    background-color: #2b2942;
+    border-top-color: #8a6ad8;
+    border-right-color: #8a6ad8;
+    border-bottom-color: #8a6ad8;
+    border-left-color: #8a6ad8;
 }
 
 .dialogue-node--debug .dialogue-node__surface {
-    background-color: #33342d;
-    border-top-color: #b49b45;
-    border-right-color: #b49b45;
-    border-bottom-color: #b49b45;
-    border-left-color: #b49b45;
+    background-color: #34272d;
+    border-top-color: #8a3440;
+    border-right-color: #8a3440;
+    border-bottom-color: #8a3440;
+    border-left-color: #8a3440;
 }
 
 .dialogue-node__top-container {
@@ -982,6 +1068,21 @@
     font-size: 9px;
     -unity-text-align: middle-center;
     align-self: center;
+}
+
+.dialogue-node--scene .dialogue-node__start-badge {
+    background-color: #6046a6;
+    color: #f0eaff;
+}
+
+.dialogue-node--function .dialogue-node__start-badge {
+    background-color: #a76a22;
+    color: #fff3d8;
+}
+
+.dialogue-node--debug .dialogue-node__start-badge {
+    background-color: #632631;
+    color: #ffe6eb;
 }
 
 .dialogue-node__delete-button {

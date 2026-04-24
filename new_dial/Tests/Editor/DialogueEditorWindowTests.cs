@@ -552,6 +552,9 @@ namespace NewDial.DialogueEditor.Tests
 
                 var nameFields = window.rootVisualElement.Query<TextField>("dialogue-speaker-name-field").ToList();
                 Assert.That(nameFields, Has.Count.EqualTo(2));
+                Assert.That(nameFields[0].ClassListContains("dialogue-editor__speaker-name-field"), Is.True);
+                Assert.That(window.rootVisualElement.Q<Button>("dialogue-speaker-remove-button")
+                    ?.ClassListContains("dialogue-editor__speaker-remove-button"), Is.True);
                 nameFields[0].value = "Innkeeper";
                 Assert.That(dialogue.Speakers[0].Name, Is.EqualTo("Innkeeper"));
 
@@ -708,6 +711,37 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
+        public void ProjectPanel_UsesCompactMetadataCards()
+        {
+            var database = CreateDatabase("ProjectCompactMetadata");
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+
+                var projectNpcIdField = window.rootVisualElement.Q<TextField>("npc-id-field");
+                var projectDialogueIdField = window.rootVisualElement.Q<TextField>("dialogue-id-field");
+                var compactIdCards = window.rootVisualElement
+                    .Query(className: "dialogue-editor__id-card--compact")
+                    .ToList();
+                var compactWhereUsedCards = window.rootVisualElement
+                    .Query(className: "dialogue-editor__where-used-card--compact")
+                    .ToList();
+
+                Assert.That(projectNpcIdField, Is.Not.Null);
+                Assert.That(projectDialogueIdField, Is.Not.Null);
+                Assert.That(compactIdCards, Has.Count.GreaterThanOrEqualTo(2));
+                Assert.That(compactWhereUsedCards, Has.Count.GreaterThanOrEqualTo(2));
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
         public void ProjectPanel_ShowsDuplicateNpcAndDialogueWarnings()
         {
             var database = CreateDatabase("ProjectIdWarnings");
@@ -854,7 +888,9 @@ namespace NewDial.DialogueEditor.Tests
                 Assert.That(window.FocusDialogueNode(dialogue, node.Id), Is.True);
 
                 Assert.That(window.rootVisualElement.Q<TextField>("condition-key-field"), Is.Not.Null);
-                Assert.That(window.rootVisualElement.Q<PopupField<string>>("condition-operator-field"), Is.Not.Null);
+                var operatorField = window.rootVisualElement.Q<PopupField<string>>("condition-operator-field");
+                Assert.That(operatorField, Is.Not.Null);
+                Assert.That(operatorField.choices, Does.Contain(">="));
                 Assert.That(window.rootVisualElement.Q<TextField>("condition-value-field"), Is.Not.Null);
             }
             finally
@@ -862,6 +898,17 @@ namespace NewDial.DialogueEditor.Tests
                 DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
                 window.Close();
             }
+        }
+
+        [Test]
+        public void ConditionTypes_ArePluginGenericOnly()
+        {
+            Assert.That(Enum.GetNames(typeof(ConditionType)), Is.EqualTo(new[]
+            {
+                nameof(ConditionType.None),
+                nameof(ConditionType.Custom),
+                nameof(ConditionType.VariableCheck)
+            }));
         }
 
         [Test]

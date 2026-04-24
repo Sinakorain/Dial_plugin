@@ -52,6 +52,7 @@ namespace NewDial.DialogueEditor
             extensionContainer.Add(_metaLabel);
 
             RegisterCallback<MouseDownEvent>(OnMouseDown, TrickleDown.TrickleDown);
+            RegisterCallback<MouseMoveEvent>(OnMouseMove, TrickleDown.TrickleDown);
             RegisterCallback<MouseUpEvent>(OnMouseUp, TrickleDown.TrickleDown);
             RegisterCallback<MouseCaptureOutEvent>(_ =>
             {
@@ -131,7 +132,7 @@ namespace NewDial.DialogueEditor
             }
 
             var worldPointerPosition = this.LocalToWorld(evt.localMousePosition);
-            _graphView.SelectRuntimeNode(this);
+            _graphView.SelectRuntimeNodeForPointerDrag(this);
 
             if (IsPointerInBottomHalf(worldPointerPosition))
             {
@@ -140,7 +141,20 @@ namespace NewDial.DialogueEditor
                 return;
             }
 
-            _graphView.BeginSelectionPointerDrag();
+            _graphView.BeginSelectionPointerDrag(worldPointerPosition);
+            this.CaptureMouse();
+            evt.StopImmediatePropagation();
+        }
+
+        private void OnMouseMove(MouseMoveEvent evt)
+        {
+            if (!_graphView.IsSelectionPointerDragActive)
+            {
+                return;
+            }
+
+            _graphView.ContinueSelectionPointerDrag(this.LocalToWorld(evt.localMousePosition));
+            evt.StopImmediatePropagation();
         }
 
         private void OnMouseUp(MouseUpEvent evt)
@@ -152,6 +166,10 @@ namespace NewDial.DialogueEditor
 
             _graphView.EndSelectionPointerDrag();
             _graphView.EndUndoGesture();
+            if (this.HasMouseCapture())
+            {
+                this.ReleaseMouse();
+            }
         }
 
         private Vector2 ToLocalPoint(Vector2 worldPointerPosition)

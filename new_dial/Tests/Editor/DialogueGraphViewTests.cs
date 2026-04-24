@@ -839,7 +839,7 @@ namespace NewDial.DialogueEditor.Tests
                 .OfType<DialogueTextNodeView>()
                 .Single(element => element.Data.Id == node.Id);
             view.SelectRuntimeNode(nodeView);
-            view.BeginSelectionPointerDrag();
+            view.BeginSelectionPointerDrag(Vector2.zero);
             view.SetMovementKeyState(KeyCode.W, true);
 
             view.StepKeyboardPan(1f);
@@ -849,7 +849,7 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
-        public void SetPosition_AfterKeyboardPanDuringDrag_KeepsPanCompensation()
+        public void ContinueSelectionPointerDrag_AfterKeyboardPanDuringDrag_UsesDragStartBaseline()
         {
             var graph = new DialogueGraphData();
             var node = new DialogueTextNodeData
@@ -867,13 +867,76 @@ namespace NewDial.DialogueEditor.Tests
                 .OfType<DialogueTextNodeView>()
                 .Single(element => element.Data.Id == node.Id);
             view.SelectRuntimeNode(nodeView);
-            view.BeginSelectionPointerDrag();
+            view.BeginSelectionPointerDrag(new Vector2(10f, 10f));
             view.SetMovementKeyState(KeyCode.W, true);
 
             view.StepKeyboardPan(1f);
-            nodeView.SetPosition(new Rect(new Vector2(120f, 100f), DialogueGraphView.TextNodeInitialSize));
+            view.ContinueSelectionPointerDrag(new Vector2(20f, 10f));
 
             Assert.That(node.Position, Is.EqualTo(new Vector2(120f, 10f)));
+        }
+
+        [Test]
+        public void ContinueSelectionPointerDrag_AfterRepeatedKeyboardPan_DoesNotDoubleApplyPanOffset()
+        {
+            var graph = new DialogueGraphData();
+            var node = new DialogueTextNodeData
+            {
+                Title = "Dragged",
+                Position = new Vector2(100f, 100f)
+            };
+            graph.Nodes.Add(node);
+
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+            view.FocusCanvas();
+            view.UpdateViewTransform(Vector3.zero, Vector3.one * 0.5f);
+            var nodeView = view.graphElements
+                .OfType<DialogueTextNodeView>()
+                .Single(element => element.Data.Id == node.Id);
+            view.SelectRuntimeNode(nodeView);
+            view.BeginSelectionPointerDrag(new Vector2(10f, 10f));
+            view.SetMovementKeyState(KeyCode.W, true);
+
+            view.StepKeyboardPan(1f);
+            view.StepKeyboardPan(1f);
+            view.ContinueSelectionPointerDrag(new Vector2(10f, 10f));
+            view.ContinueSelectionPointerDrag(new Vector2(10f, 10f));
+
+            Assert.That(node.Position, Is.EqualTo(new Vector2(100f, -80f)));
+        }
+
+        [Test]
+        public void StepKeyboardPan_DraggingSelectedCommentGroup_MovesChildOnlyOnce()
+        {
+            var graph = new DialogueGraphData();
+            var comment = new CommentNodeData
+            {
+                Title = "Group",
+                Position = new Vector2(80f, 80f),
+                Area = new Rect(80f, 80f, 360f, 240f)
+            };
+            var child = new DialogueTextNodeData
+            {
+                Title = "Child",
+                Position = new Vector2(120f, 120f)
+            };
+            graph.Nodes.Add(comment);
+            graph.Nodes.Add(child);
+
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+            view.FocusCanvas();
+            view.UpdateViewTransform(Vector3.zero, Vector3.one * 0.5f);
+            view.SelectCommentGroup(comment);
+            view.BeginCommentDrag(comment);
+            view.BeginSelectionPointerDrag(Vector2.zero);
+            view.SetMovementKeyState(KeyCode.W, true);
+
+            view.StepKeyboardPan(1f);
+
+            Assert.That(comment.Position, Is.EqualTo(new Vector2(80f, -10f)));
+            Assert.That(child.Position, Is.EqualTo(new Vector2(120f, 30f)));
         }
 
         [Test]

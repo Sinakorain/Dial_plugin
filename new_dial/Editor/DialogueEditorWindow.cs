@@ -621,10 +621,10 @@ namespace NewDial.DialogueEditor
                 });
                 npcName.AddToClassList("dialogue-editor__project-name-field");
                 npcCard.Add(npcName);
-                npcCard.Add(BuildNpcIdEditor(npc));
+                npcCard.Add(BuildNpcIdEditor(npc, true));
                 if (_selectedNpc == npc)
                 {
-                    npcCard.Add(BuildWhereUsedSection(DialogueWhereUsedUtility.GetWhereUsed(_database, npc)));
+                    npcCard.Add(BuildWhereUsedSection(DialogueWhereUsedUtility.GetWhereUsed(_database, npc), true));
                 }
 
                 if (npc.Dialogues.Count == 0)
@@ -666,10 +666,10 @@ namespace NewDial.DialogueEditor
                     });
                     nameField.AddToClassList("dialogue-editor__project-name-field");
                     dialogueCard.Add(nameField);
-                    dialogueCard.Add(BuildDialogueIdEditor(dialogue));
+                    dialogueCard.Add(BuildDialogueIdEditor(dialogue, true));
                     if (_selectedDialogue == dialogue)
                     {
-                        dialogueCard.Add(BuildWhereUsedSection(DialogueWhereUsedUtility.GetWhereUsed(_database, npc, dialogue)));
+                        dialogueCard.Add(BuildWhereUsedSection(DialogueWhereUsedUtility.GetWhereUsed(_database, npc, dialogue), true));
                     }
 
                     npcCard.Add(dialogueCard);
@@ -780,6 +780,7 @@ namespace NewDial.DialogueEditor
             {
                 var row = new VisualElement();
                 row.AddToClassList("dialogue-editor__row");
+                row.AddToClassList("dialogue-editor__speaker-row");
 
                 var nameField = new TextField(DialogueEditorLocalization.Text("Speaker Name"))
                 {
@@ -787,6 +788,7 @@ namespace NewDial.DialogueEditor
                     isDelayed = true,
                     name = "dialogue-speaker-name-field"
                 };
+                nameField.AddToClassList("dialogue-editor__speaker-name-field");
                 nameField.RegisterValueChangedCallback(evt =>
                 {
                     PerformDialogueScopedChange("Rename Speaker", () => speaker.Name = evt.newValue, refreshNodeVisuals: true, refreshInspector: true);
@@ -800,6 +802,7 @@ namespace NewDial.DialogueEditor
                 };
                 removeButton.SetEnabled(speakers.Count > 1);
                 removeButton.AddToClassList("dialogue-editor__danger-button");
+                removeButton.AddToClassList("dialogue-editor__speaker-remove-button");
                 row.Add(removeButton);
                 box.Add(row);
             }
@@ -843,7 +846,6 @@ namespace NewDial.DialogueEditor
             {
                 PerformNodeScopedChange("Edit Node Localization Key", () => node.LocalizationKey = evt.newValue, refreshNodeVisuals: true);
             });
-            _inspectorView.Add(localizationKeyField);
 
             var bodyPreview = CreateRichTextPreview(bodyText);
             var bodyField = new TextField(DialogueEditorLocalization.Text("Body Text"))
@@ -908,6 +910,8 @@ namespace NewDial.DialogueEditor
             BuildChoiceFlowDiagnostics(node);
             BuildConditionEditor(node.Condition, DialogueEditorLocalization.Text("Condition"), "Edit Node Condition");
             BuildLinksInspector(node);
+
+            _inspectorView.Add(localizationKeyField);
 
             var deleteButton = new Button(() => _graphView.DeleteNode(node)) { text = DialogueEditorLocalization.Text("Delete Node") };
             deleteButton.AddToClassList("dialogue-editor__danger-button");
@@ -2015,7 +2019,7 @@ namespace NewDial.DialogueEditor
             }
         }
 
-        private VisualElement BuildNpcIdEditor(NpcEntry npc)
+        private VisualElement BuildNpcIdEditor(NpcEntry npc, bool compact = false)
         {
             return BuildIdEditor(
                 DialogueEditorLocalization.Text("NPC Id"),
@@ -2024,10 +2028,11 @@ namespace NewDial.DialogueEditor
                 DialogueIdentifierUtility.GetIssues(_database, npc),
                 () => ChangeNpcId(npc, GuidUtility.NewGuid()),
                 () => ChangeNpcId(npc, GuidUtility.NewGuid()),
-                newValue => ChangeNpcId(npc, newValue));
+                newValue => ChangeNpcId(npc, newValue),
+                compact);
         }
 
-        private VisualElement BuildDialogueIdEditor(DialogueEntry dialogue)
+        private VisualElement BuildDialogueIdEditor(DialogueEntry dialogue, bool compact = false)
         {
             return BuildIdEditor(
                 DialogueEditorLocalization.Text("Dialogue Id"),
@@ -2036,7 +2041,8 @@ namespace NewDial.DialogueEditor
                 DialogueIdentifierUtility.GetIssues(_database, dialogue),
                 () => ChangeDialogueId(dialogue, GuidUtility.NewGuid()),
                 () => ChangeDialogueId(dialogue, GuidUtility.NewGuid()),
-                newValue => ChangeDialogueId(dialogue, newValue));
+                newValue => ChangeDialogueId(dialogue, newValue),
+                compact);
         }
 
         private VisualElement BuildNodeIdEditor(BaseNodeData node)
@@ -2058,10 +2064,12 @@ namespace NewDial.DialogueEditor
             IReadOnlyList<string> issues,
             Action generate,
             Action safeRegenerate,
-            Action<string> commit)
+            Action<string> commit,
+            bool compact = false)
         {
             var box = new Box();
             box.AddToClassList("dialogue-editor__id-card");
+            box.EnableInClassList("dialogue-editor__id-card--compact", compact);
 
             var field = new TextField(label)
             {
@@ -2113,10 +2121,11 @@ namespace NewDial.DialogueEditor
             }
         }
 
-        private VisualElement BuildWhereUsedSection(IReadOnlyList<DialogueWhereUsedResult> results)
+        private VisualElement BuildWhereUsedSection(IReadOnlyList<DialogueWhereUsedResult> results, bool compact = false)
         {
             var box = new Box();
             box.AddToClassList("dialogue-editor__where-used-card");
+            box.EnableInClassList("dialogue-editor__where-used-card--compact", compact);
 
             var foldout = new Foldout
             {
