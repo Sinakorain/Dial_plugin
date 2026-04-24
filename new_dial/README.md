@@ -11,12 +11,13 @@ The package is intentionally scoped as an MVP. It already includes a reusable ru
 ## What ships today
 
 - dialogue database asset model built around NPCs, dialogues, graphs, nodes, and links
-- graph editor for text, function, scene, debug, and comment nodes with ordered links, conditions, voice-key metadata, choice-style branches, and an EN/RU editor language switcher
+- graph editor for text, function, scene, debug, and comment nodes with ordered links, conditions, voice-key/localization metadata, choice-style branches, content-language switching, and an EN/RU editor language switcher
 - explicit identifier editing for NPCs, dialogues, and nodes, including empty/duplicate warnings
 - choice-flow diagnostics for choice nodes, broken targets, fallback labels, and ordering issues
 - guided condition editing with type-specific operators, hints, and project-provided key suggestions
 - per-dialogue speaker rosters with text-node speaker binding and preview speaker labels
 - rich-text body authoring for text nodes with bold, italic, user-editable color/highlight lists, clear formatting, and formatted sanitized previews
+- TSV/CSV localization import/export for Google Sheets dialogue rows using `Conversation/<conversationId>/Entry/<n>/Dialogue Text` keys
 - preview test variables with blocked-state explanations for conditions and broken flow
 - Where Used blocks with internal references and a project-extensible external reference resolver
 - native Unity undo/redo for graph-node operations and node-inspector edits
@@ -120,11 +121,14 @@ These APIs are suitable for the current MVP package workflow, but they should no
 - `Cmd+Z` on macOS and `Ctrl+Z` on Windows restore node-scope graph and inspector changes through Unity's undo stack.
 - Empty-graph messaging, nested comment-group movement, and clipboard-based group cutting are part of the current editor behavior.
 - The editor language is a per-user preference saved in `EditorPrefs`; English is the default and Russian can be selected from the graph toolbar without reopening Unity.
+- The content-language dropdown is separate from the editor UI language and controls which localized body text is displayed and edited in graph, inspector, and preview surfaces. New databases show only `ru`; extra language options appear only after CSV/TSV import or other localized node data is present.
+- `Localization` opens a TSV/CSV import/export window. The first import into an empty dialogue creates a linear row of text nodes; repeat imports match by `LocalizationKey` and update text data without rebuilding links, positions, executable nodes, speakers, conditions, or choice flags.
 - Text and executable nodes can be selected by clicking any non-button part of the node. Dragging from the lower half still starts link creation.
 - Each dialogue has a speaker roster. Text nodes can bind to a speaker, and empty or missing speaker references fall back to the first speaker in that dialogue.
 - Text node body text supports a small Unity/TMP-like rich-text subset: `<b>`, `<i>`, `<color=#RRGGBB>`, and `<mark=#RRGGBBAA>`. Unsupported tags are preserved in authored data and shown as plain text in editor previews.
 - Rich-text color lists are user editor preferences: `+` adds an empty slot, text colors use `#RRGGBB`, highlights use `#RRGGBBAA`, and saved slots display as color icons: click to select, `Apply` to format, double-click to edit.
 - Text node `VoiceKey` values are stable string metadata for project-side voiceover or localization lookup; the package does not play audio clips, call FMOD events, or resolve voice assets itself.
+- Text node `LocalizationKey` values are stable table row keys, while `BodyText` remains the Russian/default fallback for older content.
 - NPC, dialogue, and node identifiers are editable in the editor. Node identifier regeneration updates internal graph links; NPC and dialogue id changes warn about possible external references, but external reference lookup is not implemented yet.
 - Choice-mode node inspectors show authoring diagnostics for broken or unclear choice flows before entering play mode.
 - Projects can register `IDialogueConditionMetadataProvider` implementations for condition key suggestions, `IDialogueExternalReferenceResolver` implementations for external Where Used results, and `IDialogueExecutionRegistry` implementations for executable function/scene metadata.

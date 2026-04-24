@@ -408,15 +408,16 @@ namespace NewDial.DialogueEditor
                 string.IsNullOrWhiteSpace(speakerName)
                     ? string.IsNullOrWhiteSpace(node?.Title) ? DialogueEditorLocalization.Text("Untitled") : node.Title
                     : speakerName,
-                node?.BodyText ?? string.Empty,
+                DialogueTextLocalizationUtility.GetBodyText(node, DialogueContentLanguageSettings.CurrentLanguageCode),
                 node?.Id);
         }
 
         public static DialoguePreviewTranscriptEntry Choice(string choiceText, DialogueTextNodeData node, string speakerName)
         {
-            var body = string.IsNullOrWhiteSpace(node?.BodyText)
+            var localizedBody = DialogueTextLocalizationUtility.GetBodyText(node, DialogueContentLanguageSettings.CurrentLanguageCode);
+            var body = string.IsNullOrWhiteSpace(localizedBody)
                 ? DialogueEditorLocalization.Text("This choice has no dialogue text yet.")
-                : node.BodyText;
+                : localizedBody;
             if (!string.IsNullOrWhiteSpace(speakerName) && !string.IsNullOrWhiteSpace(choiceText))
             {
                 body = $"{DialogueEditorLocalization.Text("Choice")}: {choiceText}\n{body}";

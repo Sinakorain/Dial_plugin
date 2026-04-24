@@ -370,6 +370,11 @@ namespace NewDial.DialogueEditor.Tests
             {
                 Title = "Greeting",
                 BodyText = "Hello there.",
+                LocalizationKey = "Conversation/Farm.Plot.Dialogue_0001/Entry/1/Dialogue Text",
+                LocalizedBodyText = new List<DialogueLocalizedTextEntry>
+                {
+                    new() { LanguageCode = "en", Text = "Hello there." }
+                },
                 VoiceKey = "innkeeper.greeting.hello",
                 SpeakerId = "speaker_innkeeper",
                 IsStartNode = true,
@@ -381,6 +386,10 @@ namespace NewDial.DialogueEditor.Tests
             Assert.That(clone.VoiceKey, Is.EqualTo("innkeeper.greeting.hello"));
             Assert.That(clone.SpeakerId, Is.EqualTo("speaker_innkeeper"));
             Assert.That(clone.BodyText, Is.EqualTo("Hello there."));
+            Assert.That(clone.LocalizationKey, Is.EqualTo("Conversation/Farm.Plot.Dialogue_0001/Entry/1/Dialogue Text"));
+            Assert.That(clone.LocalizedBodyText[0].LanguageCode, Is.EqualTo("en"));
+            Assert.That(clone.LocalizedBodyText[0].Text, Is.EqualTo("Hello there."));
+            Assert.That(clone.LocalizedBodyText[0], Is.Not.SameAs(node.LocalizedBodyText[0]));
             Assert.That(clone.IsStartNode, Is.True);
             Assert.That(clone.UseOutputsAsChoices, Is.True);
         }

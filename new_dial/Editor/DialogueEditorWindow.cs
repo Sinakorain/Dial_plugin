@@ -74,6 +74,7 @@ namespace NewDial.DialogueEditor
             _hasHandledClosePrompt = false;
             RegisterLifecycleHooks();
             DialogueEditorLanguageSettings.LanguageChanged += OnEditorLanguageChanged;
+            DialogueContentLanguageSettings.LanguageChanged += OnContentLanguageChanged;
         }
 
         private void OnDisable()
@@ -85,6 +86,7 @@ namespace NewDial.DialogueEditor
 
             UnregisterLifecycleHooks();
             DialogueEditorLanguageSettings.LanguageChanged -= OnEditorLanguageChanged;
+            DialogueContentLanguageSettings.LanguageChanged -= OnContentLanguageChanged;
         }
 
         private void OnDestroy()
@@ -120,6 +122,13 @@ namespace NewDial.DialogueEditor
             titleContent = new GUIContent(DialogueEditorLocalization.Text("Dialogue Graph"));
             BuildLayout();
             RefreshAll();
+            DialoguePreviewWindow.RefreshOpenWindows(this);
+        }
+
+        private void OnContentLanguageChanged()
+        {
+            _graphView?.RefreshNodeVisuals();
+            RefreshInspector();
             DialoguePreviewWindow.RefreshOpenWindows(this);
         }
 
@@ -182,6 +191,7 @@ namespace NewDial.DialogueEditor
             saveButton.AddToClassList("dialogue-editor__toolbar-button--save");
             mainActions.Add(saveButton);
             mainActions.Add(CreateToolbarButton(DialogueEditorLocalization.Text("Preview"), OpenPreview));
+            mainActions.Add(CreateToolbarButton(DialogueEditorLocalization.Text("Localization"), OpenLocalizationWindow));
             var deleteButton = CreateToolbarButton(DialogueEditorLocalization.Text("Delete"), DeleteSelection);
             deleteButton.AddToClassList("dialogue-editor__toolbar-button--danger");
             mainActions.Add(deleteButton);
@@ -199,6 +209,30 @@ namespace NewDial.DialogueEditor
             _statusLabel = new Label(DialogueEditorLocalization.Text("No database loaded"));
             _statusLabel.AddToClassList("dialogue-editor__status");
             utilityActions.Add(_statusLabel);
+
+            var contentLanguages = GetAvailableContentLanguages();
+            var currentContentLanguage = DialogueContentLanguageSettings.CurrentLanguageCode;
+            if (!contentLanguages.Contains(currentContentLanguage, StringComparer.OrdinalIgnoreCase))
+            {
+                currentContentLanguage = DialogueTextLocalizationUtility.DefaultLanguageCode;
+                DialogueContentLanguageSettings.SetCurrentLanguageCodeWithoutNotify(currentContentLanguage);
+            }
+
+            var contentLanguageIndex = Mathf.Max(0, contentLanguages.FindIndex(language =>
+                string.Equals(language, currentContentLanguage, StringComparison.OrdinalIgnoreCase)));
+            var contentLanguageField = new PopupField<string>(
+                contentLanguages,
+                contentLanguageIndex)
+            {
+                name = "content-language-field",
+                tooltip = DialogueEditorLocalization.Text("Content Language")
+            };
+            contentLanguageField.RegisterValueChangedCallback(evt =>
+            {
+                DialogueContentLanguageSettings.CurrentLanguageCode = evt.newValue;
+            });
+            AttachGraphBlurOnInteraction(contentLanguageField);
+            utilityActions.Add(contentLanguageField);
 
             var languageField = new PopupField<string>(
                 new List<string> { "EN", "RU" },
@@ -226,6 +260,36 @@ namespace NewDial.DialogueEditor
 
             toolbar.Add(utilityActions);
             return toolbar;
+        }
+
+        private List<string> GetAvailableContentLanguages()
+        {
+            var languages = new SortedSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                DialogueTextLocalizationUtility.DefaultLanguageCode
+            };
+
+            foreach (var node in _database?.Npcs?
+                         .Where(npc => npc != null)
+                         .SelectMany(npc => npc.Dialogues ?? Enumerable.Empty<DialogueEntry>())
+                         .Where(dialogue => dialogue?.Graph?.Nodes != null)
+                         .SelectMany(dialogue => dialogue.Graph.Nodes)
+                         .OfType<DialogueTextNodeData>() ?? Enumerable.Empty<DialogueTextNodeData>())
+            {
+                foreach (var entry in node.LocalizedBodyText ?? Enumerable.Empty<DialogueLocalizedTextEntry>())
+                {
+                    var normalized = DialogueTextLocalizationUtility.NormalizeLanguageCode(entry?.LanguageCode);
+                    if (!string.IsNullOrWhiteSpace(normalized))
+                    {
+                        languages.Add(normalized);
+                    }
+                }
+            }
+
+            return languages
+                .OrderBy(language => language == DialogueTextLocalizationUtility.DefaultLanguageCode ? 0 : 1)
+                .ThenBy(language => language, StringComparer.OrdinalIgnoreCase)
+                .ToList();
         }
 
         private VisualElement BuildLeftDock()
@@ -768,10 +832,23 @@ namespace NewDial.DialogueEditor
 
             BuildTextNodeSpeakerField(node);
 
-            var bodyPreview = CreateRichTextPreview(node.BodyText);
+            var activeContentLanguage = DialogueContentLanguageSettings.CurrentLanguageCode;
+            var bodyText = DialogueTextLocalizationUtility.GetBodyText(node, activeContentLanguage);
+            var localizationKeyField = new TextField(DialogueEditorLocalization.Text("Localization Key"))
+            {
+                value = node.LocalizationKey,
+                name = "node-localization-key-field"
+            };
+            localizationKeyField.RegisterValueChangedCallback(evt =>
+            {
+                PerformNodeScopedChange("Edit Node Localization Key", () => node.LocalizationKey = evt.newValue, refreshNodeVisuals: true);
+            });
+            _inspectorView.Add(localizationKeyField);
+
+            var bodyPreview = CreateRichTextPreview(bodyText);
             var bodyField = new TextField(DialogueEditorLocalization.Text("Body Text"))
             {
-                value = node.BodyText,
+                value = bodyText,
                 multiline = true,
                 name = "node-body-field"
             };
@@ -784,7 +861,8 @@ namespace NewDial.DialogueEditor
             bodyField.style.whiteSpace = WhiteSpace.Normal;
             bodyField.RegisterValueChangedCallback(evt =>
             {
-                PerformNodeScopedChange("Edit Node Body", () => node.BodyText = evt.newValue, refreshNodeVisuals: true);
+                PerformNodeScopedChange("Edit Node Body", () =>
+                    DialogueTextLocalizationUtility.SetBodyText(node, activeContentLanguage, evt.newValue), refreshNodeVisuals: true);
                 bodySelectionState.Capture(bodyField);
                 UpdateRichTextPreview(bodyPreview, evt.newValue);
                 DialoguePreviewWindow.RefreshOpenWindows(this);
@@ -1305,7 +1383,9 @@ namespace NewDial.DialogueEditor
             int cursorIndex,
             string actionName)
         {
-            PerformNodeScopedChange(actionName, () => node.BodyText = updatedText, refreshNodeVisuals: true);
+            var activeContentLanguage = DialogueContentLanguageSettings.CurrentLanguageCode;
+            PerformNodeScopedChange(actionName, () =>
+                DialogueTextLocalizationUtility.SetBodyText(node, activeContentLanguage, updatedText), refreshNodeVisuals: true);
             bodyField.SetValueWithoutNotify(updatedText);
             UpdateRichTextPreview(bodyPreview, updatedText);
             DialoguePreviewWindow.RefreshOpenWindows(this);
@@ -2492,6 +2572,20 @@ namespace NewDial.DialogueEditor
             }
 
             DialoguePreviewWindow.ShowWindow(_selectedDialogue, this);
+        }
+
+        private void OpenLocalizationWindow()
+        {
+            DialogueLocalizationWindow.Open(this, _database, _selectedNpc, _selectedDialogue);
+        }
+
+        public void RefreshAfterLocalizationImport(NpcEntry npc, DialogueEntry dialogue)
+        {
+            _selectedNpc = npc;
+            _selectedDialogue = dialogue;
+            _selectedNode = null;
+            MarkChanged();
+            RefreshAll();
         }
 
         public bool FocusDialogueNode(DialogueEntry dialogue, string nodeId)

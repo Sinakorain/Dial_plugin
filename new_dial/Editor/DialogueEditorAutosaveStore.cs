@@ -285,6 +285,8 @@ namespace NewDial.DialogueEditor
             public Vector2 Position;
             public ConditionData Condition;
             public string BodyText;
+            public string LocalizationKey;
+            public List<DialogueLocalizedTextEntry> LocalizedBodyText = new();
             public string VoiceKey;
             public string SpeakerId;
             public bool IsStartNode;
@@ -321,6 +323,8 @@ namespace NewDial.DialogueEditor
                     case DialogueTextNodeData textNode:
                         snapshot.NodeType = nameof(DialogueTextNodeData);
                         snapshot.BodyText = textNode.BodyText;
+                        snapshot.LocalizationKey = textNode.LocalizationKey;
+                        snapshot.LocalizedBodyText = CloneLocalizedText(textNode.LocalizedBodyText);
                         snapshot.VoiceKey = textNode.VoiceKey;
                         snapshot.SpeakerId = textNode.SpeakerId;
                         snapshot.IsStartNode = textNode.IsStartNode;
@@ -436,6 +440,8 @@ namespace NewDial.DialogueEditor
                     Position = Position,
                     Condition = Condition?.Clone() ?? new ConditionData(),
                     BodyText = BodyText,
+                    LocalizationKey = LocalizationKey,
+                    LocalizedBodyText = CloneLocalizedText(LocalizedBodyText),
                     VoiceKey = VoiceKey,
                     SpeakerId = SpeakerId,
                     IsStartNode = IsStartNode,
@@ -449,6 +455,14 @@ namespace NewDial.DialogueEditor
                     .Where(argument => argument != null)
                     .Select(argument => argument.Clone())
                     .ToList() ?? new List<DialogueArgumentEntry>();
+            }
+
+            private static List<DialogueLocalizedTextEntry> CloneLocalizedText(IEnumerable<DialogueLocalizedTextEntry> entries)
+            {
+                return entries?
+                    .Where(entry => entry != null)
+                    .Select(entry => entry.Clone())
+                    .ToList() ?? new List<DialogueLocalizedTextEntry>();
             }
         }
     }

@@ -12,6 +12,7 @@
 - Added optional `VoiceKey` metadata on text nodes for future project-side voiceover/audio lookup.
 - Added per-dialogue speaker rosters, text-node speaker binding, current-speaker runtime resolution, and speaker labels in graph and preview UI.
 - Added a text-node rich-text toolbar, user-editable color/highlight lists saved in `EditorPrefs`, sanitized graph/preview rendering, and runtime helpers for supported dialogue body markup.
+- Added text-node localization keys, per-language body text storage, content-language switching, and TSV/CSV dialogue localization import/export tooling.
 
 ### Changed
 
@@ -36,6 +37,7 @@
 - Text-node body fields now visually wrap long raw lines in the inspector.
 - Rich-text toolbar formatting now preserves selected text ranges when applying bold, italic, color, or highlight.
 - Saved rich-text color slots now display as color icons; one click selects the color, `Apply` formats the current selection, and double click returns that slot to hex edit mode.
+- Localization imports update existing text-node data by `LocalizationKey` without rebuilding graph links, positions, executable nodes, conditions, speakers, or choice flags.
 
 ### Tests
 
@@ -48,6 +50,7 @@
 - Added coverage for editor language switching, localized node summaries, and full-node runtime selection.
 - Added coverage for speaker cloning, runtime speaker fallback, speaker inspector editing, roster removal, and autosave restore.
 - Added coverage for rich-text wrapping, sanitizing, stripping, parsing, user color-list persistence, strict color validation, inspector preview refresh, toolbar selection formatting, and graph preview rendering.
+- Added coverage for localization table parsing, first-import linear node creation, repeat-import data-only updates, TSV export, and content-language editing.
 
 ### Docs
 

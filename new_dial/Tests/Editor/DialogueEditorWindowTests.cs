@@ -577,6 +577,8 @@ namespace NewDial.DialogueEditor.Tests
             var node = (DialogueTextNodeData)dialogue.Graph.Nodes[0];
             node.SpeakerId = "hero";
             node.VoiceKey = "hero.line";
+            node.LocalizationKey = "Conversation/Farm.Plot.Dialogue_0001/Entry/1/Dialogue Text";
+            DialogueTextLocalizationUtility.SetBodyText(node, "en", "Hello");
             var restored = ScriptableObject.CreateInstance<DialogueDatabaseAsset>();
             var tempRoot = Path.Combine(Path.GetTempPath(), $"NewDialSpeakerAutosave-{Guid.NewGuid():N}");
 
@@ -591,6 +593,8 @@ namespace NewDial.DialogueEditor.Tests
                 Assert.That(restoredDialogue.Speakers.Select(speaker => speaker.Name), Is.EqualTo(new[] { "NPC", "Hero" }));
                 Assert.That(restoredNode.SpeakerId, Is.EqualTo("hero"));
                 Assert.That(restoredNode.VoiceKey, Is.EqualTo("hero.line"));
+                Assert.That(restoredNode.LocalizationKey, Is.EqualTo("Conversation/Farm.Plot.Dialogue_0001/Entry/1/Dialogue Text"));
+                Assert.That(DialogueTextLocalizationUtility.GetBodyText(restoredNode, "en"), Is.EqualTo("Hello"));
             }
             finally
             {

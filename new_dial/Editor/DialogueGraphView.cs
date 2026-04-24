@@ -2086,9 +2086,10 @@ namespace NewDial.DialogueEditor
             title = string.IsNullOrWhiteSpace(Data.Title) ? DialogueEditorLocalization.Text("Untitled") : Data.Title;
             _startBadge.text = DialogueEditorLocalization.Text("START");
             _startBadge.style.display = Data.IsStartNode ? DisplayStyle.Flex : DisplayStyle.None;
+            var bodyText = DialogueTextLocalizationUtility.GetBodyText(Data, DialogueContentLanguageSettings.CurrentLanguageCode);
             DialogueRichTextRenderer.SetText(
                 _bodyPreviewLabel,
-                BuildPreviewSource(Data.BodyText),
+                BuildPreviewSource(bodyText),
                 DialogueEditorLocalization.Text("Empty node text"),
                 120);
             var speakerName = _graphView.ResolveSpeakerName(Data);

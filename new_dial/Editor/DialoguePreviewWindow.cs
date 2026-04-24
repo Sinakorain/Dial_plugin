@@ -377,7 +377,7 @@ namespace NewDial.DialogueEditor
                     : _session.CurrentSpeakerName;
                 DialogueRichTextRenderer.SetText(
                     _bodyLabel,
-                    _session.CurrentNode.BodyText,
+                    DialogueTextLocalizationUtility.GetBodyText(_session.CurrentNode, DialogueContentLanguageSettings.CurrentLanguageCode),
                     DialogueEditorLocalization.Text("This node has no dialogue text yet."));
                 _bodyLabel.style.display = DisplayStyle.Flex;
                 _sceneEmptyLabel.style.display = DisplayStyle.None;
