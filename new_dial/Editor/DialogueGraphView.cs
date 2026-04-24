@@ -2014,7 +2014,7 @@ namespace NewDial.DialogueEditor
         private const float LinkAnchorInset = 18f;
 
         private readonly DialogueGraphView _graphView;
-        private readonly Label _bodyPreviewLabel;
+        private readonly VisualElement _bodyPreviewLabel;
         private readonly Label _metaLabel;
         private readonly Label _startBadge;
 
@@ -2044,9 +2044,7 @@ namespace NewDial.DialogueEditor
             deleteButton.AddToClassList("dialogue-node__delete-button");
             titleButtonContainer.Add(deleteButton);
 
-            _bodyPreviewLabel = new Label();
-            _bodyPreviewLabel.AddToClassList("dialogue-node__body-preview");
-            _bodyPreviewLabel.style.whiteSpace = WhiteSpace.Normal;
+            _bodyPreviewLabel = DialogueRichTextRenderer.Create(string.Empty, "dialogue-node__body-preview");
             extensionContainer.Add(_bodyPreviewLabel);
 
             _metaLabel = new Label();
@@ -2088,7 +2086,11 @@ namespace NewDial.DialogueEditor
             title = string.IsNullOrWhiteSpace(Data.Title) ? DialogueEditorLocalization.Text("Untitled") : Data.Title;
             _startBadge.text = DialogueEditorLocalization.Text("START");
             _startBadge.style.display = Data.IsStartNode ? DisplayStyle.Flex : DisplayStyle.None;
-            _bodyPreviewLabel.text = BuildPreviewText(Data.BodyText);
+            DialogueRichTextRenderer.SetText(
+                _bodyPreviewLabel,
+                BuildPreviewSource(Data.BodyText),
+                DialogueEditorLocalization.Text("Empty node text"),
+                120);
             var speakerName = _graphView.ResolveSpeakerName(Data);
             var linkSummary = outgoingCount == 0
                 ? DialogueEditorLocalization.Text("Drag from the lower half to create a connection.")
@@ -2160,15 +2162,14 @@ namespace NewDial.DialogueEditor
             return this.WorldToLocal(worldPointerPosition);
         }
 
-        private static string BuildPreviewText(string bodyText)
+        private static string BuildPreviewSource(string bodyText)
         {
             if (string.IsNullOrWhiteSpace(bodyText))
             {
-                return DialogueEditorLocalization.Text("Empty node text");
+                return string.Empty;
             }
 
-            var normalized = bodyText.Replace("\r", " ").Replace("\n", " ").Trim();
-            return normalized.Length <= 120 ? normalized : $"{normalized.Substring(0, 117)}...";
+            return bodyText.Replace("\r", " ").Replace("\n", " ").Trim();
         }
 
         private static bool IsInsideButton(VisualElement element)

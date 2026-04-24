@@ -23,6 +23,7 @@ This file describes the current working-tree behavior of `new_dial`, including c
 - `DialogueSpeakerEntry` stores a stable `Id` and display `Name` for a speaker available inside one dialogue.
 - `DialogueGraphData` stores `Nodes` through `SerializeReference` plus ordered `Links`.
 - `DialogueTextNodeData` is the main playable text node type. It carries `BodyText`, optional `SpeakerId` and `VoiceKey` metadata, `IsStartNode`, and `UseOutputsAsChoices`.
+- `DialogueRichTextUtility` defines the supported `BodyText` rich-text subset, strips supported tags for plain text, wraps selection ranges, validates strict custom color codes, sanitizes preview strings, and parses sanitized text into styled runs for editor rendering.
 - `FunctionNodeData`, `SceneNodeData`, and `DebugNodeData` are executable runtime node types.
 - `DialogueArgumentEntry` and `DialogueArgumentValue` store primitive executable parameters: string, int, float, and bool.
 - `CommentNodeData` stores editor-only grouping information: `Area`, `Comment`, and `Tint`.
@@ -54,6 +55,8 @@ This file describes the current working-tree behavior of `new_dial`, including c
 - `DialogueEditorWindow` is the main authoring surface. Its toolbar exposes `New`, `Load`, `Save`, `Preview`, `Delete`, `Dialogue Settings`, and a per-user `EN/RU` language switcher backed by `EditorPrefs`.
 - The palette supports `Text Node`, `Comment`, `Function`, `Scene`, and `Debug`.
 - Dialogue settings expose a speaker roster editor. Text node inspectors can bind a line to a speaker from that dialogue.
+- Text node inspectors expose a rich-text toolbar for bold, italic, user-editable text color/highlight lists, clear formatting, a wrapping raw `BodyText` field, and a sanitized formatted live preview.
+- Rich-text color and highlight lists are editor-only user preferences saved in `EditorPrefs`; `+` adds an empty hex slot, valid values collapse into color icons, one click selects a color, `Apply` formats the current selection, and double click reopens hex editing.
 - `DialoguePreviewWindow` opens from the main editor toolbar for the currently selected dialogue and supports speaker labels, transcript history, advancing, choosing branches, going back, restarting, and jumping to the active node.
 - The main editor, graph hints/summaries, preview window, start window, prompts, diagnostics, and inspector labels are localized for English and Russian. Authored dialogue content, serialized field names, ids, and public APIs remain unchanged.
 - `DialogueEditorAutosaveStore` serializes snapshots as JSON into the consuming Unity project's `Library/DialogueEditorAutosaves` folder.
@@ -71,6 +74,8 @@ This file describes the current working-tree behavior of `new_dial`, including c
 - Changing a node `Id` updates internal graph links that referenced the old node `Id`; NPC and dialogue `Id` changes warn about possible external references but do not resolve them yet.
 - Text node inspectors expose optional `VoiceKey` metadata for future project-side voiceover, audio, or localization lookup; the package does not resolve or play audio assets itself.
 - Text node inspectors expose speaker selection. Empty or missing text-node speaker references fall back to the first speaker in the dialogue roster.
+- Text node `BodyText` supports `<b>`, `<i>`, `<color=#RRGGBB>`, and `<mark=#RRGGBBAA>` markup. Unknown or malformed tags remain in raw `BodyText` and render as plain text in editor previews.
+- Inspector, graph, current-line preview, and transcript surfaces render supported rich text through a shared segmented UI Toolkit renderer for bold, italic, color, and highlight.
 - Choice-mode text nodes show editor diagnostics for missing outgoing links, broken targets, empty/fallback choice labels, conflicting link order, negative link order, and unreachable choice targets.
 - Condition editing is guided by `ConditionType`: irrelevant fields are hidden, operators come from built-in metadata, hints explain expected values, and projects can register key suggestions.
 - The preview window includes a bool/number/string test-variable sandbox and explains blocked dialogue starts, unavailable choices, missing targets, branch ends, and generic fallback labels.
@@ -104,6 +109,7 @@ The sample also includes:
 - `DialogueSpeakerEntry`: serializable per-dialogue speaker record.
 - `DialogueGraphData`: serializable graph container for node and link data.
 - `DialogueTextNodeData`: playable dialogue node model with optional speaker and voice-key metadata.
+- `DialogueRichTextUtility`: helper for supported dialogue body rich text.
 - `FunctionNodeData`: executable project function node model.
 - `SceneNodeData`: executable scene request node model.
 - `DebugNodeData`: executable diagnostic log node model.

@@ -18,7 +18,7 @@ namespace NewDial.DialogueEditor
         private Label _statusLabel;
         private Label _historyHintLabel;
         private Label _currentNodeLabel;
-        private Label _bodyLabel;
+        private VisualElement _bodyLabel;
         private Label _choicesTitleLabel;
         private Label _sceneEmptyLabel;
         private Label _reasonLabel;
@@ -192,8 +192,7 @@ namespace NewDial.DialogueEditor
             _currentNodeLabel.AddToClassList("dialogue-preview__scene-title");
             _sceneContent.Add(_currentNodeLabel);
 
-            _bodyLabel = new Label();
-            _bodyLabel.AddToClassList("dialogue-preview__scene-body");
+            _bodyLabel = DialogueRichTextRenderer.Create("dialogue-preview-scene-body", "dialogue-preview__scene-body");
             _sceneContent.Add(_bodyLabel);
 
             _sceneEmptyLabel = new Label();
@@ -322,7 +321,7 @@ namespace NewDial.DialogueEditor
                 _statusLabel.text = DialogueEditorLocalization.Text("Open a dialogue in the editor to preview it.");
                 _historyHintLabel.text = DialogueEditorLocalization.Text("The full run will appear here after a dialogue starts.");
                 _currentNodeLabel.text = DialogueEditorLocalization.Text("No active scene");
-                _bodyLabel.text = string.Empty;
+                DialogueRichTextRenderer.SetText(_bodyLabel, string.Empty);
                 _sceneEmptyLabel.text = DialogueEditorLocalization.Text("Select a dialogue in the editor to begin previewing it here.");
                 _sceneEmptyLabel.style.display = DisplayStyle.Flex;
                 _reasonLabel.style.display = DisplayStyle.None;
@@ -352,7 +351,7 @@ namespace NewDial.DialogueEditor
                     : DialogueEditorLocalization.Text("Unable to start this dialogue with the current test variables.");
                 _historyHintLabel.text = DialogueEditorLocalization.Text("Scroll through the full run history above.");
                 _currentNodeLabel.text = _session.IsEnded ? DialogueEditorLocalization.Text("Dialogue Complete") : DialogueEditorLocalization.Text("No active scene");
-                _bodyLabel.text = string.Empty;
+                DialogueRichTextRenderer.SetText(_bodyLabel, string.Empty);
                 _bodyLabel.style.display = DisplayStyle.None;
                 _sceneEmptyLabel.text = _session.IsEnded
                     ? DialogueEditorLocalization.Text("This preview reached its end. Use Back to revisit the previous step or Restart to run it again.")
@@ -376,9 +375,10 @@ namespace NewDial.DialogueEditor
                         ? DialogueEditorLocalization.Text("Untitled Node")
                         : _session.CurrentNode.Title
                     : _session.CurrentSpeakerName;
-                _bodyLabel.text = string.IsNullOrWhiteSpace(_session.CurrentNode.BodyText)
-                    ? DialogueEditorLocalization.Text("This node has no dialogue text yet.")
-                    : _session.CurrentNode.BodyText;
+                DialogueRichTextRenderer.SetText(
+                    _bodyLabel,
+                    _session.CurrentNode.BodyText,
+                    DialogueEditorLocalization.Text("This node has no dialogue text yet."));
                 _bodyLabel.style.display = DisplayStyle.Flex;
                 _sceneEmptyLabel.style.display = DisplayStyle.None;
                 _reasonLabel.text = _session.CurrentReason;
@@ -414,8 +414,8 @@ namespace NewDial.DialogueEditor
                 divider.AddToClassList("dialogue-preview__transcript-divider");
                 card.Add(divider);
 
-                var body = new Label(entry.Body);
-                body.AddToClassList("dialogue-preview__transcript-body");
+                var body = DialogueRichTextRenderer.Create(string.Empty, "dialogue-preview__transcript-body");
+                DialogueRichTextRenderer.SetText(body, entry.Body);
                 card.Add(body);
 
                 _transcriptContainer.Add(card);

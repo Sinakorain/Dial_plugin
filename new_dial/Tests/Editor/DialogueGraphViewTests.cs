@@ -253,6 +253,29 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
+        public void TextNodeVisuals_SanitizeRichTextBodyPreview()
+        {
+            var graph = new DialogueGraphData();
+            var node = new DialogueTextNodeData
+            {
+                Title = "Rich",
+                BodyText = "Hello <b>friend</b> <unknown>tag</unknown>"
+            };
+            graph.Nodes.Add(node);
+
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+            var nodeView = view.graphElements.OfType<DialogueTextNodeView>().Single();
+
+            var preview = nodeView.Q<VisualElement>(className: "dialogue-node__body-preview");
+            Assert.That(preview, Is.Not.Null);
+            Assert.That(string.Concat(preview.Query<Label>(className: "dialogue-rich-text-run").ToList().Select(label => label.text)),
+                Is.EqualTo("Hello friend <unknown>tag</unknown>"));
+            Assert.That(preview.Query<Label>(className: "dialogue-rich-text-run").ToList()
+                .Any(label => label.text == "friend" && label.style.unityFontStyleAndWeight.value == FontStyle.Bold), Is.True);
+        }
+
+        [Test]
         public void DeleteLastNode_ShowsEmptyStateWarningAgain()
         {
             var graph = new DialogueGraphData();

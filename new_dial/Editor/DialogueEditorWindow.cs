@@ -11,6 +11,9 @@ namespace NewDial.DialogueEditor
     public class DialogueEditorWindow : EditorWindow
     {
         private const string EditorStyleSheetSearchQuery = "DialogueEditorStyles t:StyleSheet";
+        private const string RichTextTextColorsPrefsKey = "NewDial.DialogueEditor.RichText.TextColors";
+        private const string RichTextHighlightColorsPrefsKey = "NewDial.DialogueEditor.RichText.HighlightColors";
+        private delegate bool TryNormalizeRichTextColor(string color, out string normalized);
 
         private DialogueDatabaseAsset _database;
         private NpcEntry _selectedNpc;
@@ -765,18 +768,29 @@ namespace NewDial.DialogueEditor
 
             BuildTextNodeSpeakerField(node);
 
+            var bodyPreview = CreateRichTextPreview(node.BodyText);
             var bodyField = new TextField(DialogueEditorLocalization.Text("Body Text"))
             {
                 value = node.BodyText,
                 multiline = true,
                 name = "node-body-field"
             };
+            var bodySelectionState = new RichTextSelectionState();
+            RegisterRichTextSelectionTracking(bodyField, bodySelectionState);
+            _inspectorView.Add(BuildRichTextToolbar(bodyField, bodyPreview, node, bodySelectionState));
+
             bodyField.AddToClassList("dialogue-editor__multiline-field");
+            bodyField.AddToClassList("dialogue-editor__body-field");
+            bodyField.style.whiteSpace = WhiteSpace.Normal;
             bodyField.RegisterValueChangedCallback(evt =>
             {
                 PerformNodeScopedChange("Edit Node Body", () => node.BodyText = evt.newValue, refreshNodeVisuals: true);
+                bodySelectionState.Capture(bodyField);
+                UpdateRichTextPreview(bodyPreview, evt.newValue);
+                DialoguePreviewWindow.RefreshOpenWindows(this);
             });
             _inspectorView.Add(bodyField);
+            _inspectorView.Add(bodyPreview);
 
             var voiceKeyField = new TextField(DialogueEditorLocalization.Text("Voice Key"))
             {
@@ -851,6 +865,455 @@ namespace NewDial.DialogueEditor
                 DialoguePreviewWindow.RefreshOpenWindows(this);
             });
             _inspectorView.Add(speakerField);
+        }
+
+        private VisualElement BuildRichTextToolbar(
+            TextField bodyField,
+            VisualElement bodyPreview,
+            DialogueTextNodeData node,
+            RichTextSelectionState selectionState)
+        {
+            var toolbar = new VisualElement();
+            toolbar.AddToClassList("dialogue-editor__rich-text-toolbar");
+
+            var formatRow = new VisualElement();
+            formatRow.AddToClassList("dialogue-editor__rich-text-format-row");
+
+            var boldButton = CreateRichTextButton("B", "Bold", () =>
+                ApplyRichTextFormat(bodyField, bodyPreview, node, selectionState, DialogueRichTextFormat.Bold(), "Format Node Body Bold"), bodyField, selectionState);
+            boldButton.name = "rich-text-bold-button";
+            formatRow.Add(boldButton);
+
+            var italicButton = CreateRichTextButton("I", "Italic", () =>
+                ApplyRichTextFormat(bodyField, bodyPreview, node, selectionState, DialogueRichTextFormat.Italic(), "Format Node Body Italic"), bodyField, selectionState);
+            italicButton.name = "rich-text-italic-button";
+            formatRow.Add(italicButton);
+            toolbar.Add(formatRow);
+
+            var colorStack = new VisualElement();
+            colorStack.AddToClassList("dialogue-editor__rich-text-color-stack");
+            colorStack.Add(BuildRichTextColorList(
+                DialogueEditorLocalization.Text("Text Color"),
+                "rich-text-color-list",
+                "rich-text-color-add-button",
+                "rich-text-color-field",
+                "rich-text-color-apply",
+                "rich-text-color-remove",
+                RichTextTextColorsPrefsKey,
+                7,
+                "Format Node Body Color",
+                DialogueRichTextUtility.TryNormalizeTextColorCode,
+                normalized => DialogueRichTextFormat.TextColor(normalized),
+                bodyField,
+                bodyPreview,
+                node,
+                selectionState));
+
+            colorStack.Add(BuildRichTextColorList(
+                DialogueEditorLocalization.Text("Highlight"),
+                "rich-text-highlight-list",
+                "rich-text-highlight-add-button",
+                "rich-text-highlight-field",
+                "rich-text-highlight-apply",
+                "rich-text-highlight-remove",
+                RichTextHighlightColorsPrefsKey,
+                9,
+                "Format Node Body Highlight",
+                DialogueRichTextUtility.TryNormalizeHighlightColorCode,
+                normalized => DialogueRichTextFormat.Highlight(normalized),
+                bodyField,
+                bodyPreview,
+                node,
+                selectionState));
+            toolbar.Add(colorStack);
+
+            var clearButton = CreateRichTextButton(DialogueEditorLocalization.Text("Clear Formatting"), "Clear Formatting", () =>
+                ClearRichTextFormatting(bodyField, bodyPreview, node, selectionState), bodyField, selectionState);
+            clearButton.name = "rich-text-clear-button";
+            toolbar.Add(clearButton);
+            return toolbar;
+        }
+
+        private VisualElement BuildRichTextColorList(
+            string title,
+            string listName,
+            string addButtonName,
+            string fieldNamePrefix,
+            string applyButtonNamePrefix,
+            string removeButtonNamePrefix,
+            string prefsKey,
+            int maxLength,
+            string actionName,
+            TryNormalizeRichTextColor tryNormalize,
+            Func<string, DialogueRichTextFormat> createFormat,
+            TextField bodyField,
+            VisualElement bodyPreview,
+            DialogueTextNodeData node,
+            RichTextSelectionState selectionState)
+        {
+            var list = LoadRichTextColorList(prefsKey);
+            var group = new VisualElement
+            {
+                name = listName
+            };
+            group.AddToClassList("dialogue-editor__rich-text-color-list");
+
+            var header = new VisualElement();
+            header.AddToClassList("dialogue-editor__rich-text-color-list-header");
+            header.Add(new Label(title));
+            var rows = new VisualElement();
+            rows.AddToClassList("dialogue-editor__rich-text-color-list-rows");
+            var addButton = CreateRichTextButton("+", "Add Color", () =>
+            {
+                list.Colors.Add(string.Empty);
+                SaveRichTextColorList(prefsKey, list);
+                RebuildRichTextColorListRows(rows, list, prefsKey, fieldNamePrefix, applyButtonNamePrefix, removeButtonNamePrefix, maxLength, actionName, tryNormalize, createFormat, bodyField, bodyPreview, node, selectionState);
+            }, bodyField, selectionState);
+            addButton.name = addButtonName;
+            header.Add(addButton);
+            group.Add(header);
+            group.Add(rows);
+
+            RebuildRichTextColorListRows(rows, list, prefsKey, fieldNamePrefix, applyButtonNamePrefix, removeButtonNamePrefix, maxLength, actionName, tryNormalize, createFormat, bodyField, bodyPreview, node, selectionState);
+            return group;
+        }
+
+        private void RebuildRichTextColorListRows(
+            VisualElement rows,
+            RichTextColorList list,
+            string prefsKey,
+            string fieldNamePrefix,
+            string applyButtonNamePrefix,
+            string removeButtonNamePrefix,
+            int maxLength,
+            string actionName,
+            TryNormalizeRichTextColor tryNormalize,
+            Func<string, DialogueRichTextFormat> createFormat,
+            TextField bodyField,
+            VisualElement bodyPreview,
+            DialogueTextNodeData node,
+            RichTextSelectionState selectionState)
+        {
+            rows.Clear();
+            for (var index = 0; index < list.Colors.Count; index++)
+            {
+                rows.Add(CreateRichTextColorRow(index, list, prefsKey, fieldNamePrefix, applyButtonNamePrefix, removeButtonNamePrefix, maxLength, actionName, tryNormalize, createFormat, bodyField, bodyPreview, node, selectionState, rows));
+            }
+        }
+
+        private VisualElement CreateRichTextColorRow(
+            int index,
+            RichTextColorList list,
+            string prefsKey,
+            string fieldNamePrefix,
+            string applyButtonNamePrefix,
+            string removeButtonNamePrefix,
+            int maxLength,
+            string actionName,
+            TryNormalizeRichTextColor tryNormalize,
+            Func<string, DialogueRichTextFormat> createFormat,
+            TextField bodyField,
+            VisualElement bodyPreview,
+            DialogueTextNodeData node,
+            RichTextSelectionState selectionState,
+            VisualElement rows)
+        {
+            var row = new VisualElement();
+            row.AddToClassList("dialogue-editor__rich-text-color-row");
+
+            void AddRemoveButton()
+            {
+                var removeButton = CreateRichTextButton("X", "Remove", () =>
+                {
+                    if (index >= 0 && index < list.Colors.Count)
+                    {
+                        list.Colors.RemoveAt(index);
+                        SaveRichTextColorList(prefsKey, list);
+                        RebuildRichTextColorListRows(rows, list, prefsKey, fieldNamePrefix, applyButtonNamePrefix, removeButtonNamePrefix, maxLength, actionName, tryNormalize, createFormat, bodyField, bodyPreview, node, selectionState);
+                    }
+                }, bodyField, selectionState);
+                removeButton.name = $"{removeButtonNamePrefix}-{index}";
+                removeButton.AddToClassList("dialogue-editor__rich-text-remove-button");
+                row.Add(removeButton);
+            }
+
+            void ShowSwatch(string normalized)
+            {
+                row.Clear();
+                Button swatchButton = null;
+                swatchButton = CreateRichTextButton(string.Empty, "Select Color", () =>
+                    SelectRichTextColorIcon(rows, swatchButton), bodyField, selectionState);
+                swatchButton.name = $"{fieldNamePrefix}-swatch-{index}";
+                swatchButton.AddToClassList("dialogue-editor__rich-text-color-icon");
+                swatchButton.RegisterCallback<MouseDownEvent>(evt =>
+                {
+                    if (evt.clickCount < 2)
+                    {
+                        return;
+                    }
+
+                    ShowEditor();
+                    evt.StopImmediatePropagation();
+                }, TrickleDown.TrickleDown);
+                if (ColorUtility.TryParseHtmlString(normalized, out var color))
+                {
+                    swatchButton.style.backgroundColor = color;
+                }
+
+                row.Add(swatchButton);
+
+                var applyButton = CreateRichTextButton(DialogueEditorLocalization.Text("Apply"), "Apply", () =>
+                    ApplyRichTextFormat(bodyField, bodyPreview, node, selectionState, createFormat(normalized), actionName), bodyField, selectionState);
+                applyButton.name = $"{applyButtonNamePrefix}-{index}";
+                applyButton.AddToClassList("dialogue-editor__rich-text-apply-button");
+                row.Add(applyButton);
+                AddRemoveButton();
+            }
+
+            void ShowEditor()
+            {
+                row.Clear();
+                var field = new TextField
+                {
+                    name = $"{fieldNamePrefix}-{index}",
+                    value = list.Colors[index],
+                    maxLength = maxLength
+                };
+                field.AddToClassList("dialogue-editor__rich-text-color-field");
+                field.RegisterValueChangedCallback(evt =>
+                {
+                    var value = evt.newValue ?? string.Empty;
+                    if (string.IsNullOrWhiteSpace(value))
+                    {
+                        list.Colors[index] = string.Empty;
+                        SaveRichTextColorList(prefsKey, list);
+                        ClearCustomColorError(field);
+                        return;
+                    }
+
+                    if (!tryNormalize(value, out var normalized))
+                    {
+                        ShowCustomColorError(field);
+                        return;
+                    }
+
+                    list.Colors[index] = normalized;
+                    SaveRichTextColorList(prefsKey, list);
+                    ShowSwatch(normalized);
+                });
+                field.RegisterCallback<KeyDownEvent>(evt =>
+                {
+                    if (evt.keyCode != KeyCode.Return && evt.keyCode != KeyCode.KeypadEnter)
+                    {
+                        return;
+                    }
+
+                    ApplyCustomRichTextColor(field, bodyField, bodyPreview, node, selectionState, tryNormalize, createFormat, actionName);
+                    evt.StopPropagation();
+                });
+                row.Add(field);
+
+                var applyButton = CreateRichTextButton(DialogueEditorLocalization.Text("Apply"), "Apply", () =>
+                    ApplyCustomRichTextColor(field, bodyField, bodyPreview, node, selectionState, tryNormalize, createFormat, actionName), bodyField, selectionState);
+                applyButton.name = $"{applyButtonNamePrefix}-{index}";
+                applyButton.AddToClassList("dialogue-editor__rich-text-apply-button");
+                row.Add(applyButton);
+                AddRemoveButton();
+            }
+
+            if (tryNormalize(list.Colors[index], out var existingNormalized))
+            {
+                list.Colors[index] = existingNormalized;
+                ShowSwatch(existingNormalized);
+            }
+            else
+            {
+                ShowEditor();
+            }
+
+            return row;
+        }
+
+        private static void SelectRichTextColorIcon(VisualElement rows, Button selectedButton)
+        {
+            foreach (var button in rows.Query<Button>(className: "dialogue-editor__rich-text-color-icon").ToList())
+            {
+                button.RemoveFromClassList("dialogue-editor__rich-text-color-icon--selected");
+            }
+
+            selectedButton.AddToClassList("dialogue-editor__rich-text-color-icon--selected");
+        }
+
+        private void ApplyCustomRichTextColor(
+            TextField colorField,
+            TextField bodyField,
+            VisualElement bodyPreview,
+            DialogueTextNodeData node,
+            RichTextSelectionState selectionState,
+            TryNormalizeRichTextColor tryNormalize,
+            Func<string, DialogueRichTextFormat> createFormat,
+            string actionName)
+        {
+            if (!tryNormalize(colorField.value, out var normalized))
+            {
+                ShowCustomColorError(colorField);
+                return;
+            }
+
+            ClearCustomColorError(colorField);
+            ApplyRichTextFormat(bodyField, bodyPreview, node, selectionState, createFormat(normalized), actionName);
+        }
+
+        private static void ShowCustomColorError(TextField colorField)
+        {
+            colorField.AddToClassList("dialogue-editor__rich-text-color-field--invalid");
+            colorField.tooltip = DialogueEditorLocalization.Text("Use strict hex color code.");
+        }
+
+        private static void ClearCustomColorError(TextField colorField)
+        {
+            colorField.RemoveFromClassList("dialogue-editor__rich-text-color-field--invalid");
+            colorField.tooltip = DialogueEditorLocalization.Text("Use strict hex color code.");
+        }
+
+        private static RichTextColorList LoadRichTextColorList(string prefsKey)
+        {
+            var json = EditorPrefs.GetString(prefsKey, string.Empty);
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return new RichTextColorList();
+            }
+
+            try
+            {
+                var list = JsonUtility.FromJson<RichTextColorList>(json) ?? new RichTextColorList();
+                list.Colors ??= new List<string>();
+                for (var index = 0; index < list.Colors.Count; index++)
+                {
+                    list.Colors[index] ??= string.Empty;
+                }
+
+                return list;
+            }
+            catch (ArgumentException)
+            {
+                return new RichTextColorList();
+            }
+        }
+
+        private static void SaveRichTextColorList(string prefsKey, RichTextColorList list)
+        {
+            list ??= new RichTextColorList();
+            list.Colors ??= new List<string>();
+            EditorPrefs.SetString(prefsKey, JsonUtility.ToJson(list));
+        }
+
+        private Button CreateRichTextButton(
+            string text,
+            string tooltipKey,
+            Action onClick,
+            TextField bodyField = null,
+            RichTextSelectionState selectionState = null)
+        {
+            var button = new Button(onClick)
+            {
+                text = text,
+                tooltip = DialogueEditorLocalization.Text(tooltipKey),
+                focusable = false
+            };
+            button.AddToClassList("dialogue-editor__rich-text-button");
+            AttachRichTextSelectionCapture(button, bodyField, selectionState);
+            AttachGraphBlurOnInteraction(button);
+            return button;
+        }
+
+        private static void AttachRichTextSelectionCapture(
+            VisualElement element,
+            TextField bodyField,
+            RichTextSelectionState selectionState)
+        {
+            if (element == null || bodyField == null || selectionState == null)
+            {
+                return;
+            }
+
+            element.RegisterCallback<MouseDownEvent>(_ => selectionState.CaptureForToolbarAction(bodyField), TrickleDown.TrickleDown);
+            element.RegisterCallback<PointerDownEvent>(_ => selectionState.CaptureForToolbarAction(bodyField), TrickleDown.TrickleDown);
+        }
+
+        private static void RegisterRichTextSelectionTracking(TextField bodyField, RichTextSelectionState selectionState)
+        {
+            selectionState.Capture(bodyField);
+            bodyField.RegisterCallback<FocusInEvent>(_ => ScheduleRichTextSelectionCapture(bodyField, selectionState));
+            bodyField.RegisterCallback<KeyUpEvent>(_ => ScheduleRichTextSelectionCapture(bodyField, selectionState));
+            bodyField.RegisterCallback<MouseUpEvent>(_ => ScheduleRichTextSelectionCapture(bodyField, selectionState));
+            bodyField.RegisterCallback<PointerUpEvent>(_ => ScheduleRichTextSelectionCapture(bodyField, selectionState));
+        }
+
+        private static void ScheduleRichTextSelectionCapture(TextField bodyField, RichTextSelectionState selectionState)
+        {
+            bodyField.schedule.Execute(() => selectionState.Capture(bodyField));
+        }
+
+        private VisualElement CreateRichTextPreview(string text)
+        {
+            var preview = DialogueRichTextRenderer.Create("node-body-rich-preview", "dialogue-editor__rich-text-preview");
+            UpdateRichTextPreview(preview, text);
+            return preview;
+        }
+
+        private static void UpdateRichTextPreview(VisualElement preview, string text)
+        {
+            DialogueRichTextRenderer.SetText(preview, text, DialogueEditorLocalization.Text("This node has no dialogue text yet."));
+        }
+
+        private void ApplyRichTextFormat(
+            TextField bodyField,
+            VisualElement bodyPreview,
+            DialogueTextNodeData node,
+            RichTextSelectionState selectionState,
+            DialogueRichTextFormat format,
+            string actionName)
+        {
+            var rawText = bodyField.value ?? string.Empty;
+            selectionState.GetRange(bodyField, rawText.Length, out var start, out var end);
+            var updatedText = DialogueRichTextUtility.WrapSelection(rawText, start, end, format);
+            var cursorIndex = start == end
+                ? start + format.OpeningTag.Length
+                : end + format.OpeningTag.Length + format.ClosingTag.Length;
+            SetBodyTextFromRichTextTool(bodyField, bodyPreview, node, selectionState, updatedText, cursorIndex, actionName);
+        }
+
+        private void ClearRichTextFormatting(
+            TextField bodyField,
+            VisualElement bodyPreview,
+            DialogueTextNodeData node,
+            RichTextSelectionState selectionState)
+        {
+            var rawText = bodyField.value ?? string.Empty;
+            selectionState.GetRange(bodyField, rawText.Length, out var start, out var end);
+            var updatedText = DialogueRichTextUtility.StripSupportedRichText(rawText, start, end);
+            SetBodyTextFromRichTextTool(bodyField, bodyPreview, node, selectionState, updatedText, start, "Clear Node Body Formatting");
+        }
+
+        private void SetBodyTextFromRichTextTool(
+            TextField bodyField,
+            VisualElement bodyPreview,
+            DialogueTextNodeData node,
+            RichTextSelectionState selectionState,
+            string updatedText,
+            int cursorIndex,
+            string actionName)
+        {
+            PerformNodeScopedChange(actionName, () => node.BodyText = updatedText, refreshNodeVisuals: true);
+            bodyField.SetValueWithoutNotify(updatedText);
+            UpdateRichTextPreview(bodyPreview, updatedText);
+            DialoguePreviewWindow.RefreshOpenWindows(this);
+            bodyField.Focus();
+            var clampedCursor = Mathf.Clamp(cursorIndex, 0, updatedText.Length);
+            bodyField.cursorIndex = clampedCursor;
+            bodyField.selectIndex = clampedCursor;
+            selectionState.SetCollapsed(clampedCursor);
         }
 
         private void BuildCommentNodeInspector(CommentNodeData node)
@@ -1903,6 +2366,72 @@ namespace NewDial.DialogueEditor
                     return nameCounts[name] > 1 ? $"{name} ({index + 1})" : name;
                 })
                 .ToList();
+        }
+
+        [Serializable]
+        private sealed class RichTextColorList
+        {
+            public List<string> Colors = new();
+        }
+
+        private sealed class RichTextSelectionState
+        {
+            private int _start;
+            private int _end;
+
+            public void Capture(TextField field)
+            {
+                if (field == null)
+                {
+                    _start = 0;
+                    _end = 0;
+                    return;
+                }
+
+                var textLength = field.value?.Length ?? 0;
+                _start = Mathf.Clamp(Mathf.Min(field.cursorIndex, field.selectIndex), 0, textLength);
+                _end = Mathf.Clamp(Mathf.Max(field.cursorIndex, field.selectIndex), 0, textLength);
+            }
+
+            public void CaptureForToolbarAction(TextField field)
+            {
+                if (field == null)
+                {
+                    return;
+                }
+
+                var textLength = field.value?.Length ?? 0;
+                var start = Mathf.Clamp(Mathf.Min(field.cursorIndex, field.selectIndex), 0, textLength);
+                var end = Mathf.Clamp(Mathf.Max(field.cursorIndex, field.selectIndex), 0, textLength);
+                if (start != end || field.focusController?.focusedElement == field)
+                {
+                    _start = start;
+                    _end = end;
+                }
+            }
+
+            public void SetCollapsed(int cursorIndex)
+            {
+                _start = cursorIndex;
+                _end = cursorIndex;
+            }
+
+            public void GetRange(TextField field, int textLength, out int start, out int end)
+            {
+                if (field != null)
+                {
+                    var fieldStart = Mathf.Clamp(Mathf.Min(field.cursorIndex, field.selectIndex), 0, textLength);
+                    var fieldEnd = Mathf.Clamp(Mathf.Max(field.cursorIndex, field.selectIndex), 0, textLength);
+                    if (fieldStart != fieldEnd)
+                    {
+                        _start = fieldStart;
+                        _end = fieldEnd;
+                    }
+                }
+
+                start = Mathf.Clamp(Mathf.Min(_start, _end), 0, textLength);
+                end = Mathf.Clamp(Mathf.Max(_start, _end), 0, textLength);
+            }
         }
 
         private void AddNodeFromToolbar()

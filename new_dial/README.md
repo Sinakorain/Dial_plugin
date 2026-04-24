@@ -16,6 +16,7 @@ The package is intentionally scoped as an MVP. It already includes a reusable ru
 - choice-flow diagnostics for choice nodes, broken targets, fallback labels, and ordering issues
 - guided condition editing with type-specific operators, hints, and project-provided key suggestions
 - per-dialogue speaker rosters with text-node speaker binding and preview speaker labels
+- rich-text body authoring for text nodes with bold, italic, user-editable color/highlight lists, clear formatting, and formatted sanitized previews
 - preview test variables with blocked-state explanations for conditions and broken flow
 - Where Used blocks with internal references and a project-extensible external reference resolver
 - native Unity undo/redo for graph-node operations and node-inspector edits
@@ -61,7 +62,7 @@ The start window can create a new `DialogueDatabaseAsset` or load an existing on
 | Implemented | Runtime dialogue database model | `DialogueDatabaseAsset`, NPC/dialogue records, per-dialogue speakers, graph nodes and links |
 | Implemented | Traversal helper | `DialoguePlayer` supports start, linear advance, choice selection, executable node execution, and pending execution resume |
 | Implemented | Conditions | Lightweight start/node gating through `ConditionData` and evaluator interfaces |
-| Implemented | Graph authoring | Text nodes, speaker binding, comment nodes, ordered links, voice-key metadata, choice text, and details editing |
+| Implemented | Graph authoring | Text nodes, speaker binding, rich-text body markup, comment nodes, ordered links, voice-key metadata, choice text, and details editing |
 | Implemented | Executable nodes | Generic `Function`, `Scene`, and `Debug` nodes with primitive argument bags |
 | Implemented | Execution extension points | Project-provided registries and executors drive concrete function and scene behavior |
 | Implemented | Identifier management | NPC, dialogue, and node ids can be edited explicitly; node id changes update internal graph links |
@@ -87,6 +88,7 @@ The start window can create a new `DialogueDatabaseAsset` or load an existing on
 - `DialogueSpeakerEntry`: per-dialogue speaker id and display name
 - `DialogueGraphData`: graph container for nodes and links
 - `DialogueTextNodeData`: playable text node with body text, optional speaker and voice-key metadata, start-node, and choice-mode flags
+- `DialogueRichTextUtility`: supported rich-text sanitizer, plain-text stripper, and selection wrapper for dialogue body markup
 - `FunctionNodeData`: generic project-function node with primitive arguments and failure policy
 - `SceneNodeData`: generic scene request node with scene key, load mode, optional entry/transition ids, and parameters
 - `DebugNodeData`: lightweight logging node for diagnostics
@@ -120,6 +122,8 @@ These APIs are suitable for the current MVP package workflow, but they should no
 - The editor language is a per-user preference saved in `EditorPrefs`; English is the default and Russian can be selected from the graph toolbar without reopening Unity.
 - Text and executable nodes can be selected by clicking any non-button part of the node. Dragging from the lower half still starts link creation.
 - Each dialogue has a speaker roster. Text nodes can bind to a speaker, and empty or missing speaker references fall back to the first speaker in that dialogue.
+- Text node body text supports a small Unity/TMP-like rich-text subset: `<b>`, `<i>`, `<color=#RRGGBB>`, and `<mark=#RRGGBBAA>`. Unsupported tags are preserved in authored data and shown as plain text in editor previews.
+- Rich-text color lists are user editor preferences: `+` adds an empty slot, text colors use `#RRGGBB`, highlights use `#RRGGBBAA`, and saved slots display as color icons: click to select, `Apply` to format, double-click to edit.
 - Text node `VoiceKey` values are stable string metadata for project-side voiceover or localization lookup; the package does not play audio clips, call FMOD events, or resolve voice assets itself.
 - NPC, dialogue, and node identifiers are editable in the editor. Node identifier regeneration updates internal graph links; NPC and dialogue id changes warn about possible external references, but external reference lookup is not implemented yet.
 - Choice-mode node inspectors show authoring diagnostics for broken or unclear choice flows before entering play mode.

@@ -10,10 +10,15 @@ namespace NewDial.DialogueEditor.Tests
 {
     public class DialogueEditorWindowTests
     {
+        private const string RichTextTextColorsPrefsKey = "NewDial.DialogueEditor.RichText.TextColors";
+        private const string RichTextHighlightColorsPrefsKey = "NewDial.DialogueEditor.RichText.HighlightColors";
+
         [SetUp]
         public void SetUp()
         {
             DialogueEditorLanguageSettings.CurrentLanguage = DialogueEditorLanguage.English;
+            EditorPrefs.DeleteKey(RichTextTextColorsPrefsKey);
+            EditorPrefs.DeleteKey(RichTextHighlightColorsPrefsKey);
         }
 
         [Test]
@@ -312,6 +317,184 @@ namespace NewDial.DialogueEditor.Tests
             {
                 DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
                 window.Close();
+            }
+        }
+
+        [Test]
+        public void NodeInspector_UpdatesRichTextPreviewWhenBodyChanges()
+        {
+            var database = CreateDatabase("RichTextPreview");
+            var dialogue = database.Npcs[0].Dialogues[0];
+            var node = (DialogueTextNodeData)dialogue.Graph.Nodes[0];
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                window.SaveBaselineForTests();
+                Assert.That(window.FocusDialogueNode(dialogue, node.Id), Is.True);
+
+                var bodyField = window.rootVisualElement.Q<TextField>("node-body-field");
+                var preview = window.rootVisualElement.Q<VisualElement>("node-body-rich-preview");
+                Assert.That(bodyField, Is.Not.Null);
+                Assert.That(preview, Is.Not.Null);
+
+                bodyField.value = "Hello <b>friend</b> <unknown>tag</unknown>";
+
+                Assert.That(node.BodyText, Is.EqualTo("Hello <b>friend</b> <unknown>tag</unknown>"));
+                Assert.That(GetRichTextPreviewText(preview), Is.EqualTo("Hello friend <unknown>tag</unknown>"));
+                Assert.That(preview.Query<Label>(className: "dialogue-rich-text-run").ToList()
+                    .Any(label => label.text == "friend" && label.style.unityFontStyleAndWeight.value == FontStyle.Bold), Is.True);
+                Assert.That(window.HasUnsavedChangesForTests, Is.True);
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void NodeInspector_RichTextToolbarWrapsSelectedText()
+        {
+            var database = CreateDatabase("RichTextToolbarSelection");
+            var dialogue = database.Npcs[0].Dialogues[0];
+            var node = (DialogueTextNodeData)dialogue.Graph.Nodes[0];
+            node.BodyText = "Hello world";
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                window.SaveBaselineForTests();
+                Assert.That(window.FocusDialogueNode(dialogue, node.Id), Is.True);
+
+                var bodyField = window.rootVisualElement.Q<TextField>("node-body-field");
+                var boldButton = window.rootVisualElement.Q<Button>("rich-text-bold-button");
+                Assert.That(bodyField, Is.Not.Null);
+                Assert.That(boldButton, Is.Not.Null);
+
+                bodyField.cursorIndex = 6;
+                bodyField.selectIndex = 11;
+                Click(boldButton);
+
+                Assert.That(node.BodyText, Is.EqualTo("Hello <b>world</b>"));
+                Assert.That(window.HasUnsavedChangesForTests, Is.True);
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void NodeInspector_RichTextToolbarInsertsTagsAtCursor()
+        {
+            var database = CreateDatabase("RichTextToolbarCursor");
+            var dialogue = database.Npcs[0].Dialogues[0];
+            var node = (DialogueTextNodeData)dialogue.Graph.Nodes[0];
+            node.BodyText = "Hello";
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                window.SaveBaselineForTests();
+                Assert.That(window.FocusDialogueNode(dialogue, node.Id), Is.True);
+
+                var bodyField = window.rootVisualElement.Q<TextField>("node-body-field");
+                var italicButton = window.rootVisualElement.Q<Button>("rich-text-italic-button");
+                Assert.That(bodyField, Is.Not.Null);
+                Assert.That(italicButton, Is.Not.Null);
+
+                bodyField.Focus();
+                bodyField.cursorIndex = 5;
+                bodyField.selectIndex = 5;
+                Click(italicButton);
+
+                Assert.That(node.BodyText, Is.EqualTo("Hello<i></i>"));
+                Assert.That(bodyField.cursorIndex, Is.EqualTo("Hello<i>".Length));
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void NodeInspector_RichTextColorListAddsPersistsAndAppliesStrictHexOnly()
+        {
+            var database = CreateDatabase("RichTextCustomColor");
+            var dialogue = database.Npcs[0].Dialogues[0];
+            var node = (DialogueTextNodeData)dialogue.Graph.Nodes[0];
+            node.BodyText = "Danger";
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                window.SaveBaselineForTests();
+                Assert.That(window.FocusDialogueNode(dialogue, node.Id), Is.True);
+
+                var bodyField = window.rootVisualElement.Q<TextField>("node-body-field");
+                var addButton = window.rootVisualElement.Q<Button>("rich-text-color-add-button");
+                Assert.That(bodyField, Is.Not.Null);
+                Assert.That(addButton, Is.Not.Null);
+
+                Click(addButton);
+                var customColorField = window.rootVisualElement.Q<TextField>("rich-text-color-field-0");
+                var applyButton = window.rootVisualElement.Q<Button>("rich-text-color-apply-0");
+                Assert.That(customColorField, Is.Not.Null);
+                Assert.That(applyButton, Is.Not.Null);
+
+                bodyField.cursorIndex = 0;
+                bodyField.selectIndex = 6;
+                customColorField.value = "ff6b6b";
+                Click(applyButton);
+
+                Assert.That(node.BodyText, Is.EqualTo("Danger"));
+                Assert.That(customColorField.ClassListContains("dialogue-editor__rich-text-color-field--invalid"), Is.True);
+
+                customColorField.value = "#ff6b6b";
+                var swatchButton = window.rootVisualElement.Q<Button>("rich-text-color-field-swatch-0");
+                applyButton = window.rootVisualElement.Q<Button>("rich-text-color-apply-0");
+                Assert.That(swatchButton, Is.Not.Null);
+                Assert.That(customColorField.panel, Is.Null);
+
+                Click(swatchButton);
+                Assert.That(node.BodyText, Is.EqualTo("Danger"));
+                Assert.That(swatchButton.ClassListContains("dialogue-editor__rich-text-color-icon--selected"), Is.True);
+
+                Click(applyButton);
+
+                Assert.That(node.BodyText, Is.EqualTo("<color=#FF6B6B>Danger</color>"));
+
+                Click(swatchButton);
+                Assert.That(window.rootVisualElement.Q<TextField>("rich-text-color-field-0"), Is.Null);
+
+                DoubleClick(swatchButton);
+                customColorField = window.rootVisualElement.Q<TextField>("rich-text-color-field-0");
+                Assert.That(customColorField, Is.Not.Null);
+                Assert.That(customColorField.value, Is.EqualTo("#FF6B6B"));
+
+                window.Close();
+                window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+                window.InitializeForTests(database);
+                Assert.That(window.FocusDialogueNode(dialogue, node.Id), Is.True);
+
+                Assert.That(window.rootVisualElement.Q<Button>("rich-text-color-field-swatch-0"), Is.Not.Null);
+            }
+            finally
+            {
+                EditorPrefs.DeleteKey(RichTextTextColorsPrefsKey);
+                EditorPrefs.DeleteKey(RichTextHighlightColorsPrefsKey);
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                if (window != null)
+                {
+                    window.Close();
+                }
             }
         }
 
@@ -878,6 +1061,41 @@ namespace NewDial.DialogueEditor.Tests
             return window.rootVisualElement.Query<Label>()
                 .ToList()
                 .Any(label => label.text == text);
+        }
+
+        private static string GetRichTextPreviewText(VisualElement element)
+        {
+            return string.Concat(element.Query<Label>(className: "dialogue-rich-text-run")
+                .ToList()
+                .Select(label => label.text));
+        }
+
+        private static void Click(Button button)
+        {
+            Click(button, 1);
+        }
+
+        private static void DoubleClick(Button button)
+        {
+            Click(button, 2);
+        }
+
+        private static void Click(Button button, int clickCount)
+        {
+            var mouseDownEvent = new Event { type = EventType.MouseDown, button = 0 };
+            using (var mouseDown = MouseDownEvent.GetPooled(mouseDownEvent))
+            {
+                mouseDown.target = button;
+                mouseDown.clickCount = clickCount;
+                button.SendEvent(mouseDown);
+            }
+
+            var mouseUpEvent = new Event { type = EventType.MouseUp, button = 0 };
+            using (var mouseUp = MouseUpEvent.GetPooled(mouseUpEvent))
+            {
+                mouseUp.target = button;
+                button.SendEvent(mouseUp);
+            }
         }
 
         private sealed class TestConditionMetadataProvider : IDialogueConditionMetadataProvider
