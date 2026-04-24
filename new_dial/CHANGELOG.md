@@ -27,6 +27,7 @@
 - Prompt to save or discard unsaved changes before opening another dialogue database in the editor.
 - Graph empty-state visibility now updates when the first node is created and when the last node is removed.
 - Nested comment-group ownership and movement behavior now follow the most specific containing comment group.
+- Dragging a comment group now keeps its drag-start membership instead of attaching newly overlapped nodes mid-drag.
 - Cutting a selected root comment group removes the full nested hierarchy after copying it to the clipboard payload.
 - Native Unity undo/redo now covers node-scope graph edits, comment resize, link edits, and node inspector changes on both macOS (`Cmd+Z`) and Windows (`Ctrl+Z`).
 - Undo/redo now refreshes graph selection, preview sessions, and autosave dirty-state against the last saved database snapshot.
@@ -42,6 +43,7 @@
 - Localization imports now update existing dialogues by matching `Dialogue.Id` to the imported conversation id, creating only missing dialogues.
 - First-time localization imports now create a vertical top-to-bottom text-node chain instead of a horizontal row.
 - WASD graph panning now uses zoom-independent screen-space speed and clamps delayed editor ticks to avoid jumps on large graphs.
+- WASD graph panning now keeps a mouse-dragged selected node under the cursor instead of letting it drift during the drag.
 - Content-language choices now refresh after localization import, including when the editor UI language is Russian.
 - Where Used reference details are now collapsed by default in editor inspectors.
 

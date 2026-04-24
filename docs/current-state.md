@@ -88,10 +88,10 @@ This file describes the current working-tree behavior of `new_dial`, including c
 - Collapsible Where Used blocks show internal NPC/dialogue/node references and can include project-provided external references through an editor resolver registry.
 - Comment groups can own both text nodes and nested comment groups.
 - Nested ownership prefers the most specific containing comment group when several comment areas overlap.
-- Moving a parent comment group moves directly contained text nodes and nested comment groups with it.
+- Moving a parent comment group moves text nodes and nested comment groups that were directly contained when the drag started; nodes newly overlapped during the drag are not attached mid-drag.
 - Cutting a selected root comment group removes the full nested hierarchy from the graph after copying it to the clipboard payload.
 - Clipboard shortcuts for copy, cut, and paste are implemented in the graph view.
-- WASD pans only while the graph canvas is focused, uses screen-space speed independent of zoom, and clamps delayed editor ticks to avoid large jumps on big graphs.
+- WASD pans only while the graph canvas is focused, uses screen-space speed independent of zoom, keeps a mouse-dragged selected node under the cursor during pan, and clamps delayed editor ticks to avoid large jumps on big graphs.
 
 ### Sample content
 

@@ -334,6 +334,51 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
+        public void MovingCommentNode_DoesNotAttachNodesEnteredDuringDrag()
+        {
+            var graph = new DialogueGraphData();
+            var comment = new CommentNodeData
+            {
+                Title = "Group",
+                Position = new Vector2(100f, 100f),
+                Area = new Rect(100f, 100f, 420f, 260f)
+            };
+            var insideNode = new DialogueTextNodeData
+            {
+                Title = "Inside",
+                Position = new Vector2(130f, 130f)
+            };
+            var enteredDuringDragNode = new DialogueTextNodeData
+            {
+                Title = "Entered During Drag",
+                Position = new Vector2(470f, 130f)
+            };
+
+            graph.Nodes.Add(comment);
+            graph.Nodes.Add(insideNode);
+            graph.Nodes.Add(enteredDuringDragNode);
+
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+
+            var commentView = view.graphElements
+                .OfType<DialogueCommentNodeView>()
+                .Single(nodeView => nodeView.Data.Id == comment.Id);
+            var firstMoveDelta = new Vector2(120f, 0f);
+            var secondMoveDelta = new Vector2(50f, 0f);
+            var previousInsidePosition = insideNode.Position;
+            var previousEnteredDuringDragPosition = enteredDuringDragNode.Position;
+
+            view.BeginCommentDrag(comment);
+            commentView.SetPosition(new Rect(comment.Area.position + firstMoveDelta, comment.Area.size));
+            commentView.SetPosition(new Rect(comment.Area.position + secondMoveDelta, comment.Area.size));
+            view.EndCommentDrag(comment);
+
+            Assert.That(insideNode.Position, Is.EqualTo(previousInsidePosition + firstMoveDelta + secondMoveDelta));
+            Assert.That(enteredDuringDragNode.Position, Is.EqualTo(previousEnteredDuringDragPosition));
+        }
+
+        [Test]
         public void MovingCommentNode_UsesPreviousAreaToMoveNestedCommentGroups()
         {
             var graph = new DialogueGraphData();
@@ -773,6 +818,62 @@ namespace NewDial.DialogueEditor.Tests
             view.StepKeyboardPan(1f);
 
             Assert.That(view.viewTransform.position.y, Is.EqualTo(45f).Within(0.01f));
+        }
+
+        [Test]
+        public void StepKeyboardPan_CompensatesDraggedSelectedNode()
+        {
+            var graph = new DialogueGraphData();
+            var node = new DialogueTextNodeData
+            {
+                Title = "Dragged",
+                Position = new Vector2(100f, 100f)
+            };
+            graph.Nodes.Add(node);
+
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+            view.FocusCanvas();
+            view.UpdateViewTransform(Vector3.zero, Vector3.one * 0.5f);
+            var nodeView = view.graphElements
+                .OfType<DialogueTextNodeView>()
+                .Single(element => element.Data.Id == node.Id);
+            view.SelectRuntimeNode(nodeView);
+            view.BeginSelectionPointerDrag();
+            view.SetMovementKeyState(KeyCode.W, true);
+
+            view.StepKeyboardPan(1f);
+
+            Assert.That(view.viewTransform.position.y, Is.EqualTo(45f).Within(0.01f));
+            Assert.That(node.Position, Is.EqualTo(new Vector2(100f, 10f)));
+        }
+
+        [Test]
+        public void SetPosition_AfterKeyboardPanDuringDrag_KeepsPanCompensation()
+        {
+            var graph = new DialogueGraphData();
+            var node = new DialogueTextNodeData
+            {
+                Title = "Dragged",
+                Position = new Vector2(100f, 100f)
+            };
+            graph.Nodes.Add(node);
+
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+            view.FocusCanvas();
+            view.UpdateViewTransform(Vector3.zero, Vector3.one * 0.5f);
+            var nodeView = view.graphElements
+                .OfType<DialogueTextNodeView>()
+                .Single(element => element.Data.Id == node.Id);
+            view.SelectRuntimeNode(nodeView);
+            view.BeginSelectionPointerDrag();
+            view.SetMovementKeyState(KeyCode.W, true);
+
+            view.StepKeyboardPan(1f);
+            nodeView.SetPosition(new Rect(new Vector2(120f, 100f), DialogueGraphView.TextNodeInitialSize));
+
+            Assert.That(node.Position, Is.EqualTo(new Vector2(120f, 10f)));
         }
 
         [Test]

@@ -53,7 +53,11 @@ namespace NewDial.DialogueEditor
 
             RegisterCallback<MouseDownEvent>(OnMouseDown, TrickleDown.TrickleDown);
             RegisterCallback<MouseUpEvent>(OnMouseUp, TrickleDown.TrickleDown);
-            RegisterCallback<MouseCaptureOutEvent>(_ => _graphView.EndUndoGesture());
+            RegisterCallback<MouseCaptureOutEvent>(_ =>
+            {
+                _graphView.EndSelectionPointerDrag();
+                _graphView.EndUndoGesture();
+            });
             RefreshFromData();
         }
 
@@ -67,6 +71,7 @@ namespace NewDial.DialogueEditor
 
         public override void SetPosition(Rect newPos)
         {
+            newPos = _graphView.AdjustSelectionPointerDragPosition(this, newPos);
             if (Data.Position != newPos.position)
             {
                 _graphView.BeginUndoGesture("Move Node");
@@ -132,7 +137,10 @@ namespace NewDial.DialogueEditor
             {
                 _graphView.BeginLinkDrag(this, worldPointerPosition);
                 evt.StopImmediatePropagation();
+                return;
             }
+
+            _graphView.BeginSelectionPointerDrag();
         }
 
         private void OnMouseUp(MouseUpEvent evt)
@@ -142,6 +150,7 @@ namespace NewDial.DialogueEditor
                 return;
             }
 
+            _graphView.EndSelectionPointerDrag();
             _graphView.EndUndoGesture();
         }
 
