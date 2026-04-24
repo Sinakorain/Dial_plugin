@@ -12,6 +12,11 @@ The package is intentionally scoped as an MVP. It already includes a reusable ru
 
 - dialogue database asset model built around NPCs, dialogues, graphs, nodes, and links
 - graph editor for text nodes, comment groups, ordered links, conditions, and choice-style branches
+- explicit identifier editing for NPCs, dialogues, and nodes, including empty/duplicate warnings
+- choice-flow diagnostics for choice nodes, broken targets, fallback labels, and ordering issues
+- guided condition editing with type-specific operators, hints, and project-provided key suggestions
+- preview test variables with blocked-state explanations for conditions and broken flow
+- Where Used blocks with internal references and a project-extensible external reference resolver
 - native Unity undo/redo for graph-node operations and node-inspector edits
 - preview window with branching playback, transcript history, backtracking, restart, and active-node jump
 - autosave snapshots stored outside tracked assets
@@ -55,6 +60,11 @@ The start window can create a new `DialogueDatabaseAsset` or load an existing on
 | Implemented | Traversal helper | `DialoguePlayer` supports start, linear advance, and choice selection |
 | Implemented | Conditions | Lightweight start/node gating through `ConditionData` and evaluator interfaces |
 | Implemented | Graph authoring | Text nodes, comment nodes, ordered links, choice text, and details editing |
+| Implemented | Identifier management | NPC, dialogue, and node ids can be edited explicitly; node id changes update internal graph links |
+| Implemented | Choice-flow diagnostics | Choice-mode nodes warn about missing outputs, invalid targets, fallback labels, order conflicts, and unreachable targets |
+| Implemented | Guided conditions | Condition fields show relevant operators, hints, and optional project key suggestions |
+| Implemented | Preview test variables | Preview can simulate bool, number, and string values and show blocked-state explanations |
+| Implemented | Where Used | Editor shows internal references and can display project-provided external references |
 | Implemented | Undo/redo | Native Unity undo/redo for node creation, deletion, movement, resize, links, and node/link inspector edits |
 | Implemented | Preview workflow | Transcript history, `Next`, `Back`, `Restart`, and `Jump To Active Node` |
 | Implemented | Autosave | JSON snapshots stored under the consuming Unity project's `Library` folder |
@@ -97,4 +107,8 @@ These APIs are suitable for the current MVP package workflow, but they should no
 - The editor currently prompts to save or discard unsaved changes before opening another dialogue database.
 - `Cmd+Z` on macOS and `Ctrl+Z` on Windows restore node-scope graph and inspector changes through Unity's undo stack.
 - Empty-graph messaging, nested comment-group movement, and clipboard-based group cutting are part of the current editor behavior.
+- NPC, dialogue, and node identifiers are editable in the editor. Node identifier regeneration updates internal graph links; NPC and dialogue id changes warn about possible external references, but external reference lookup is not implemented yet.
+- Choice-mode node inspectors show authoring diagnostics for broken or unclear choice flows before entering play mode.
+- Projects can register `IDialogueConditionMetadataProvider` implementations for condition key suggestions and `IDialogueExternalReferenceResolver` implementations for external Where Used results.
+- The preview variable sandbox uses the built-in editor-side condition evaluator and is not intended to exactly reproduce project runtime logic.
 - For a fuller implementation snapshot, see [`../docs/current-state.md`](../docs/current-state.md).

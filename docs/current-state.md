@@ -54,6 +54,12 @@ This file describes the current working-tree behavior of `new_dial`, including c
 - Native Unity undo/redo now covers node-scope graph operations: create/delete, drag, comment resize, links, cut/paste, and node/link inspector edits.
 - Undo/redo refreshes graph selection, inspector state, preview sessions, and autosave dirty-state against the last saved database snapshot.
 - The graph empty-state warning is visible for an empty graph, hides as soon as the first text or comment node is created, and returns when the last node is deleted.
+- NPC, dialogue, and node `Id` values are explicitly editable in the editor, with generate and safe-regenerate actions plus immediate empty/duplicate warnings.
+- Changing a node `Id` updates internal graph links that referenced the old node `Id`; NPC and dialogue `Id` changes warn about possible external references but do not resolve them yet.
+- Choice-mode text nodes show editor diagnostics for missing outgoing links, broken targets, empty/fallback choice labels, conflicting link order, negative link order, and unreachable choice targets.
+- Condition editing is guided by `ConditionType`: irrelevant fields are hidden, operators come from built-in metadata, hints explain expected values, and projects can register key suggestions.
+- The preview window includes a bool/number/string test-variable sandbox and explains blocked dialogue starts, unavailable choices, missing targets, branch ends, and generic fallback labels.
+- Where Used blocks show internal NPC/dialogue/node references and can include project-provided external references through an editor resolver registry.
 - Comment groups can own both text nodes and nested comment groups.
 - Nested ownership prefers the most specific containing comment group when several comment areas overlap.
 - Moving a parent comment group moves directly contained text nodes and nested comment groups with it.
@@ -89,6 +95,8 @@ The sample also includes:
 - `IDialogueConditionEvaluator`: extension point for custom condition evaluation.
 - `IDialogueVariableStore`: extension point for variable lookup.
 - `DictionaryDialogueVariableStore`: minimal built-in variable store implementation.
+- `IDialogueConditionMetadataProvider`: editor extension point for project-specific condition key suggestions.
+- `IDialogueExternalReferenceResolver`: editor extension point for project-specific Where Used results.
 
 These types are intended for the current MVP package workflow. They are not yet documented as a long-term stable external schema.
 
@@ -114,3 +122,6 @@ EditMode coverage currently exists for:
 - preview session transcript, end-state, and backtracking behavior
 - graph rendering, link order normalization, empty-state behavior, comment-group movement, nested ownership resolution, clipboard cut behavior, and keyboard-pan focus rules
 - undo/redo for node creation, link edits, node movement, comment resize, selection restoration, and autosave dirty-state reset
+- identifier validation and node `Id` rename link preservation
+- choice-flow diagnostics for choice-mode nodes
+- guided condition editor behavior, preview blocked-state explanations, and Where Used resolver results

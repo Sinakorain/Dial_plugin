@@ -4,6 +4,12 @@
 
 ### Changed
 
+- NPC, dialogue, and node identifiers can now be edited explicitly in the editor, with guarded generation actions and immediate empty/duplicate warnings.
+- Node identifier changes now update internal graph links that reference the old node id.
+- Choice-mode nodes now surface authoring diagnostics for missing outputs, broken targets, fallback labels, order conflicts, and unreachable choice targets.
+- Condition editing now uses guided operator choices, type-specific hints, and optional project-provided key suggestions.
+- Dialogue preview now includes test variables and explains blocked starts, unavailable choices, missing targets, branch ends, and fallback labels.
+- Added Where Used sections with internal references and a project-extensible external reference resolver registry.
 - Prompt to save or discard unsaved changes before opening another dialogue database in the editor.
 - Graph empty-state visibility now updates when the first node is created and when the last node is removed.
 - Nested comment-group ownership and movement behavior now follow the most specific containing comment group.
@@ -16,6 +22,8 @@
 - Expanded `DialogueGraphViewTests` to cover empty-state visibility, nested comment ownership, direct parent resolution, nested group cutting, and focus-based keyboard pan behavior.
 - Added undo/redo coverage for node creation, link changes, node movement, comment-group movement, comment resize, and grouped cut behavior.
 - Added `DialogueEditorWindowTests` for selection restoration, inspector refresh, and dirty/autosave reset after undo.
+- Added choice-flow diagnostic coverage for choice nodes, fallback labels, broken targets, order conflicts, and inspector warnings.
+- Added coverage for guided condition fields, preview test-variable gating, blocked-state reasons, and Where Used external resolver results.
 
 ### Docs
 

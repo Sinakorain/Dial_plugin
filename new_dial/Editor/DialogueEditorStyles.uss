@@ -425,6 +425,124 @@
     overflow: hidden;
 }
 
+.dialogue-editor__id-card {
+    flex-direction: column;
+    margin-top: 6px;
+    margin-bottom: 8px;
+    max-width: 100%;
+    min-width: 0;
+    padding-left: 8px;
+    padding-right: 8px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    background-color: #1a2230;
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: #2c3950;
+    border-right-color: #2c3950;
+    border-bottom-color: #2c3950;
+    border-left-color: #2c3950;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+}
+
+.dialogue-editor__id-field {
+    max-width: 100%;
+    min-width: 0;
+}
+
+.dialogue-editor__id-field > .unity-base-field__label {
+    min-width: 82px;
+    color: #b6c5dd;
+    white-space: normal;
+}
+
+.dialogue-editor__id-field > .unity-base-field__input {
+    flex-grow: 1;
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.dialogue-editor__id-actions {
+    flex-direction: row;
+    margin-top: 6px;
+    min-width: 0;
+}
+
+.dialogue-editor__id-button {
+    flex-grow: 1;
+    min-height: 28px;
+    margin-right: 6px;
+}
+
+.dialogue-editor__id-issue {
+    margin-top: 6px;
+    color: #ffb8b8;
+    white-space: normal;
+}
+
+.dialogue-editor__choice-diagnostic {
+    margin-top: 6px;
+    white-space: normal;
+}
+
+.dialogue-editor__choice-diagnostic--warning {
+    color: #ffd98e;
+}
+
+.dialogue-editor__choice-diagnostic--error {
+    color: #ffb8b8;
+}
+
+.dialogue-editor__where-used-card {
+    flex-direction: column;
+    margin-top: 6px;
+    margin-bottom: 8px;
+    max-width: 100%;
+    min-width: 0;
+    padding-left: 8px;
+    padding-right: 8px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    background-color: #1a2230;
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: #2c3950;
+    border-right-color: #2c3950;
+    border-bottom-color: #2c3950;
+    border-left-color: #2c3950;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+}
+
+.dialogue-editor__where-used-title {
+    -unity-font-style: bold;
+    color: #f7fbff;
+    margin-bottom: 6px;
+}
+
+.dialogue-editor__where-used-group-title {
+    margin-top: 4px;
+    color: #b6c5dd;
+    -unity-font-style: bold;
+}
+
+.dialogue-editor__where-used-entry,
+.dialogue-editor__where-used-empty {
+    margin-top: 4px;
+    color: #a7b4c9;
+    white-space: normal;
+}
+
 .dialogue-editor__action-button {
     margin-right: 0;
     min-width: 0;
@@ -858,6 +976,46 @@
     overflow: hidden;
 }
 
+.dialogue-preview__variables-panel {
+    flex-shrink: 0;
+    margin-bottom: 14px;
+    overflow: hidden;
+}
+
+.dialogue-preview__variables-actions {
+    flex-direction: row;
+}
+
+.dialogue-preview__variables-list {
+    padding-left: 12px;
+    padding-right: 12px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+}
+
+.dialogue-preview__variables-empty {
+    color: #98a5bc;
+}
+
+.dialogue-preview__variable-row {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 8px;
+    min-width: 0;
+}
+
+.dialogue-preview__variable-key,
+.dialogue-preview__variable-value {
+    flex-grow: 1;
+    min-width: 0;
+    margin-right: 8px;
+}
+
+.dialogue-preview__variable-type {
+    width: 150px;
+    margin-right: 8px;
+}
+
 .dialogue-preview__panel-header {
     padding-left: 14px;
     padding-right: 14px;
@@ -1045,6 +1203,18 @@
     margin-bottom: 14px;
 }
 
+.dialogue-preview__reason,
+.dialogue-preview__choice-reason,
+.dialogue-preview__blocked-choice {
+    margin-top: 8px;
+    color: #ffd98e;
+    white-space: normal;
+}
+
+.dialogue-preview__blocked-choice {
+    color: #ffb8b8;
+}
+
 .dialogue-preview__choices-section {
     min-height: 0;
     min-width: 0;
@@ -1125,6 +1295,17 @@
 .dialogue-preview__controls-group--utility .dialogue-preview__button {
     margin-right: 0;
     margin-left: 8px;
+}
+
+.dialogue-preview__mini-button {
+    min-height: 26px;
+    margin-left: 6px;
+    background-color: #2c3954;
+    color: #edf2f8;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    border-bottom-left-radius: 6px;
+    border-bottom-right-radius: 6px;
 }
 
 .dialogue-preview__button--primary {

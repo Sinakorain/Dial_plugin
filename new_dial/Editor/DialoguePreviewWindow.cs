@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -20,16 +21,19 @@ namespace NewDial.DialogueEditor
         private Label _bodyLabel;
         private Label _choicesTitleLabel;
         private Label _sceneEmptyLabel;
+        private Label _reasonLabel;
         private ScrollView _transcriptScrollView;
         private ScrollView _sceneScrollView;
         private VisualElement _transcriptContainer;
         private VisualElement _sceneCard;
         private VisualElement _sceneContent;
         private VisualElement _choicesContainer;
+        private VisualElement _variablesContainer;
         private Button _nextButton;
         private Button _backButton;
         private Button _restartButton;
         private Button _jumpButton;
+        private readonly List<DialoguePreviewVariable> _testVariables = new();
 
         public static void ShowWindow(DialogueEntry dialogue, DialogueEditorWindow owner)
         {
@@ -68,7 +72,7 @@ namespace NewDial.DialogueEditor
         {
             _dialogue = dialogue;
             _ownerWindow = owner;
-            _session = dialogue == null ? null : new DialoguePreviewSession(dialogue);
+            _session = dialogue == null ? null : new DialoguePreviewSession(dialogue, BuildVariableMap());
             RefreshView();
         }
 
@@ -118,6 +122,8 @@ namespace NewDial.DialogueEditor
             _statusLabel = new Label("Preview uses the current dialogue asset state.");
             _statusLabel.AddToClassList("dialogue-preview__status");
             titleBlock.Add(_statusLabel);
+
+            shell.Add(BuildVariablesPanel());
 
             var historyPanel = new VisualElement();
             historyPanel.AddToClassList("dialogue-preview__panel");
@@ -176,6 +182,10 @@ namespace NewDial.DialogueEditor
             _sceneEmptyLabel = new Label();
             _sceneEmptyLabel.AddToClassList("dialogue-preview__scene-empty");
             _sceneContent.Add(_sceneEmptyLabel);
+
+            _reasonLabel = new Label();
+            _reasonLabel.AddToClassList("dialogue-preview__reason");
+            _sceneContent.Add(_reasonLabel);
 
             var choicesSection = new VisualElement();
             choicesSection.AddToClassList("dialogue-preview__choices-section");
@@ -249,6 +259,38 @@ namespace NewDial.DialogueEditor
             utilityGroup.Add(_jumpButton);
         }
 
+        private VisualElement BuildVariablesPanel()
+        {
+            var panel = new VisualElement();
+            panel.AddToClassList("dialogue-preview__panel");
+            panel.AddToClassList("dialogue-preview__variables-panel");
+
+            var header = new VisualElement();
+            header.AddToClassList("dialogue-preview__panel-header");
+            panel.Add(header);
+
+            var title = new Label("Test Variables");
+            title.AddToClassList("dialogue-preview__panel-title");
+            header.Add(title);
+
+            var actions = new VisualElement();
+            actions.AddToClassList("dialogue-preview__variables-actions");
+            header.Add(actions);
+
+            var addButton = new Button(AddTestVariable) { text = "Add" };
+            addButton.AddToClassList("dialogue-preview__mini-button");
+            actions.Add(addButton);
+
+            var resetButton = new Button(ResetTestVariables) { text = "Reset" };
+            resetButton.AddToClassList("dialogue-preview__mini-button");
+            actions.Add(resetButton);
+
+            _variablesContainer = new VisualElement();
+            _variablesContainer.AddToClassList("dialogue-preview__variables-list");
+            panel.Add(_variablesContainer);
+            return panel;
+        }
+
         private void RefreshView()
         {
             if (_titleLabel == null)
@@ -258,6 +300,7 @@ namespace NewDial.DialogueEditor
 
             if (_session == null || _dialogue == null)
             {
+                RebuildVariables();
                 _titleLabel.text = "No dialogue selected";
                 _statusLabel.text = "Open a dialogue in the editor to preview it.";
                 _historyHintLabel.text = "The full run will appear here after a dialogue starts.";
@@ -265,6 +308,7 @@ namespace NewDial.DialogueEditor
                 _bodyLabel.text = string.Empty;
                 _sceneEmptyLabel.text = "Select a dialogue in the editor to begin previewing it here.";
                 _sceneEmptyLabel.style.display = DisplayStyle.Flex;
+                _reasonLabel.style.display = DisplayStyle.None;
                 _bodyLabel.style.display = DisplayStyle.None;
                 _choicesTitleLabel.style.display = DisplayStyle.None;
                 _choicesContainer.style.display = DisplayStyle.None;
@@ -277,6 +321,7 @@ namespace NewDial.DialogueEditor
                 return;
             }
 
+            RebuildVariables();
             _titleLabel.text = _dialogue.Name;
             _restartButton.SetEnabled(true);
             _backButton.SetEnabled(_session.CanGoBack);
@@ -287,7 +332,7 @@ namespace NewDial.DialogueEditor
             {
                 _statusLabel.text = _session.IsEnded
                     ? "Run complete. History remains above, and Back can rewind the latest action."
-                    : "Unable to start this dialogue with the current conditions.";
+                    : "Unable to start this dialogue with the current test variables.";
                 _historyHintLabel.text = "Scroll through the full run history above.";
                 _currentNodeLabel.text = _session.IsEnded ? "Dialogue Complete" : "No active scene";
                 _bodyLabel.text = string.Empty;
@@ -296,6 +341,10 @@ namespace NewDial.DialogueEditor
                     ? "This preview reached its end. Use Back to revisit the previous step or Restart to run it again."
                     : "No valid start node could be activated for the current dialogue.";
                 _sceneEmptyLabel.style.display = DisplayStyle.Flex;
+                _reasonLabel.text = _session.CurrentReason;
+                _reasonLabel.style.display = string.IsNullOrWhiteSpace(_session.CurrentReason)
+                    ? DisplayStyle.None
+                    : DisplayStyle.Flex;
                 _choicesTitleLabel.style.display = DisplayStyle.None;
                 _choicesContainer.style.display = DisplayStyle.None;
             }
@@ -313,8 +362,13 @@ namespace NewDial.DialogueEditor
                     : _session.CurrentNode.BodyText;
                 _bodyLabel.style.display = DisplayStyle.Flex;
                 _sceneEmptyLabel.style.display = DisplayStyle.None;
-                _choicesTitleLabel.style.display = _session.CanChoose ? DisplayStyle.Flex : DisplayStyle.None;
-                _choicesContainer.style.display = _session.CanChoose ? DisplayStyle.Flex : DisplayStyle.None;
+                _reasonLabel.text = _session.CurrentReason;
+                _reasonLabel.style.display = string.IsNullOrWhiteSpace(_session.CurrentReason)
+                    ? DisplayStyle.None
+                    : DisplayStyle.Flex;
+                var hasChoiceRows = _session.CanChoose || _session.BlockedChoices.Count > 0;
+                _choicesTitleLabel.style.display = hasChoiceRows ? DisplayStyle.Flex : DisplayStyle.None;
+                _choicesContainer.style.display = hasChoiceRows ? DisplayStyle.Flex : DisplayStyle.None;
             }
 
             RebuildTranscript();
@@ -358,7 +412,7 @@ namespace NewDial.DialogueEditor
         {
             _choicesContainer.Clear();
 
-            if (!_session.CanChoose)
+            if (!_session.CanChoose && _session.BlockedChoices.Count == 0)
             {
                 return;
             }
@@ -378,7 +432,146 @@ namespace NewDial.DialogueEditor
 
                 choiceButton.AddToClassList("dialogue-preview__choice-button");
                 _choicesContainer.Add(choiceButton);
+
+                var explanation = _session.GetChoiceExplanation(choice);
+                if (!string.IsNullOrWhiteSpace(explanation))
+                {
+                    var explanationLabel = new Label(explanation);
+                    explanationLabel.AddToClassList("dialogue-preview__choice-reason");
+                    _choicesContainer.Add(explanationLabel);
+                }
             }
+
+            foreach (var blockedChoice in _session.BlockedChoices)
+            {
+                var blocked = new Label($"{blockedChoice.Label}: {blockedChoice.Reason}");
+                blocked.AddToClassList("dialogue-preview__blocked-choice");
+                _choicesContainer.Add(blocked);
+            }
+        }
+
+        private void RebuildVariables()
+        {
+            if (_variablesContainer == null)
+            {
+                return;
+            }
+
+            _variablesContainer.Clear();
+            if (_testVariables.Count == 0)
+            {
+                var empty = new Label("No test variables.");
+                empty.AddToClassList("dialogue-preview__variables-empty");
+                _variablesContainer.Add(empty);
+                return;
+            }
+
+            for (var index = 0; index < _testVariables.Count; index++)
+            {
+                var variable = _testVariables[index];
+                var variableIndex = index;
+                var row = new VisualElement();
+                row.AddToClassList("dialogue-preview__variable-row");
+
+                var keyField = new TextField("Key") { value = variable.Key };
+                keyField.AddToClassList("dialogue-preview__variable-key");
+                keyField.RegisterValueChangedCallback(evt =>
+                {
+                    variable.Key = evt.newValue;
+                    RestartPreviewWithVariables();
+                });
+                row.Add(keyField);
+
+                var typeField = new EnumField("Type", variable.Type);
+                typeField.AddToClassList("dialogue-preview__variable-type");
+                typeField.RegisterValueChangedCallback(evt =>
+                {
+                    variable.Type = (DialoguePreviewVariableType)evt.newValue;
+                    if (variable.Type == DialoguePreviewVariableType.Bool &&
+                        !bool.TryParse(variable.Value, out _))
+                    {
+                        variable.Value = "false";
+                    }
+
+                    RestartPreviewWithVariables();
+                });
+                row.Add(typeField);
+
+                if (variable.Type == DialoguePreviewVariableType.Bool)
+                {
+                    var boolField = new Toggle("Value")
+                    {
+                        value = bool.TryParse(variable.Value, out var boolValue) && boolValue
+                    };
+                    boolField.RegisterValueChangedCallback(evt =>
+                    {
+                        variable.Value = evt.newValue ? "true" : "false";
+                        RestartPreviewWithVariables();
+                    });
+                    row.Add(boolField);
+                }
+                else
+                {
+                    var valueField = new TextField("Value") { value = variable.Value };
+                    valueField.AddToClassList("dialogue-preview__variable-value");
+                    valueField.RegisterValueChangedCallback(evt =>
+                    {
+                        variable.Value = evt.newValue;
+                        RestartPreviewWithVariables();
+                    });
+                    row.Add(valueField);
+                }
+
+                var removeButton = new Button(() =>
+                {
+                    _testVariables.RemoveAt(variableIndex);
+                    RestartPreviewWithVariables();
+                })
+                {
+                    text = "Remove"
+                };
+                removeButton.AddToClassList("dialogue-preview__mini-button");
+                row.Add(removeButton);
+
+                _variablesContainer.Add(row);
+            }
+        }
+
+        private void AddTestVariable()
+        {
+            _testVariables.Add(new DialoguePreviewVariable
+            {
+                Key = $"variable_{_testVariables.Count + 1}",
+                Type = DialoguePreviewVariableType.String,
+                Value = string.Empty
+            });
+            RestartPreviewWithVariables();
+        }
+
+        private void ResetTestVariables()
+        {
+            _testVariables.Clear();
+            RestartPreviewWithVariables();
+        }
+
+        private void RestartPreviewWithVariables()
+        {
+            _session = _dialogue == null ? null : new DialoguePreviewSession(_dialogue, BuildVariableMap());
+            RefreshView();
+        }
+
+        private Dictionary<string, string> BuildVariableMap()
+        {
+            var map = new Dictionary<string, string>();
+            foreach (var variable in _testVariables)
+            {
+                if (!string.IsNullOrWhiteSpace(variable.Key))
+                {
+                    map[variable.Key] = variable.Value ?? string.Empty;
+                }
+            }
+
+            return map;
         }
 
         private void JumpToActiveNode()
@@ -421,5 +614,19 @@ namespace NewDial.DialogueEditor
 
             return null;
         }
+    }
+
+    internal enum DialoguePreviewVariableType
+    {
+        Bool,
+        Number,
+        String
+    }
+
+    internal sealed class DialoguePreviewVariable
+    {
+        public string Key;
+        public DialoguePreviewVariableType Type;
+        public string Value;
     }
 }

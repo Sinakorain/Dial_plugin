@@ -171,6 +171,311 @@ namespace NewDial.DialogueEditor.Tests
             }
         }
 
+        [Test]
+        public void NodeInspector_ShowsEditableIdField()
+        {
+            var database = CreateDatabase("NodeIdInspector");
+            var dialogue = database.Npcs[0].Dialogues[0];
+            var node = (DialogueTextNodeData)dialogue.Graph.Nodes[0];
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                Assert.That(window.FocusDialogueNode(dialogue, node.Id), Is.True);
+
+                var idField = window.rootVisualElement.Q<TextField>("node-id-field");
+                Assert.That(idField, Is.Not.Null);
+                Assert.That(idField.value, Is.EqualTo(node.Id));
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void EditingNodeId_UpdatesLinksAndKeepsSelection()
+        {
+            var database = CreateDatabaseWithLinks("NodeIdRename");
+            var dialogue = database.Npcs[0].Dialogues[0];
+            var startNode = (DialogueTextNodeData)dialogue.Graph.Nodes[0];
+            var leftNode = (DialogueTextNodeData)dialogue.Graph.Nodes[1];
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.SuppressIdentifierWarningsForTests = true;
+                window.InitializeForTests(database);
+                Assert.That(window.FocusDialogueNode(dialogue, leftNode.Id), Is.True);
+
+                var idField = window.rootVisualElement.Q<TextField>("node-id-field");
+                idField.value = "renamed-left";
+
+                Assert.That(leftNode.Id, Is.EqualTo("renamed-left"));
+                Assert.That(window.SelectedNodeIdForTests, Is.EqualTo("renamed-left"));
+                Assert.That(DialogueGraphUtility.GetOutgoingLinks(dialogue.Graph, startNode.Id)[0].ToNodeId, Is.EqualTo("renamed-left"));
+                Assert.That(window.rootVisualElement.Q<TextField>("node-id-field")?.value, Is.EqualTo("renamed-left"));
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void UndoRedo_RestoresNodeIdAndLinks()
+        {
+            var database = CreateDatabaseWithLinks("NodeIdUndo");
+            var dialogue = database.Npcs[0].Dialogues[0];
+            var startNode = (DialogueTextNodeData)dialogue.Graph.Nodes[0];
+            var leftNode = (DialogueTextNodeData)dialogue.Graph.Nodes[1];
+            var originalId = leftNode.Id;
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.SuppressIdentifierWarningsForTests = true;
+                window.InitializeForTests(database);
+                window.SaveBaselineForTests();
+                Assert.That(window.FocusDialogueNode(dialogue, leftNode.Id), Is.True);
+
+                var idField = window.rootVisualElement.Q<TextField>("node-id-field");
+                idField.value = "renamed-left";
+
+                Assert.That(leftNode.Id, Is.EqualTo("renamed-left"));
+                Assert.That(DialogueGraphUtility.GetOutgoingLinks(dialogue.Graph, startNode.Id)[0].ToNodeId, Is.EqualTo("renamed-left"));
+
+                Undo.PerformUndo();
+
+                leftNode = (DialogueTextNodeData)dialogue.Graph.Nodes[1];
+                Assert.That(leftNode.Id, Is.EqualTo(originalId));
+                Assert.That(DialogueGraphUtility.GetOutgoingLinks(dialogue.Graph, startNode.Id)[0].ToNodeId, Is.EqualTo(originalId));
+                Assert.That(window.rootVisualElement.Q<TextField>("node-id-field")?.value, Is.EqualTo(originalId));
+
+                Undo.PerformRedo();
+
+                leftNode = (DialogueTextNodeData)dialogue.Graph.Nodes[1];
+                Assert.That(leftNode.Id, Is.EqualTo("renamed-left"));
+                Assert.That(DialogueGraphUtility.GetOutgoingLinks(dialogue.Graph, startNode.Id)[0].ToNodeId, Is.EqualTo("renamed-left"));
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void ProjectPanel_ShowsEditableNpcAndDialogueIdFields()
+        {
+            var database = CreateDatabase("ProjectIdFields");
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+
+                var npcIdField = window.rootVisualElement.Q<TextField>("npc-id-field");
+                var dialogueIdField = window.rootVisualElement.Q<TextField>("dialogue-id-field");
+
+                Assert.That(npcIdField, Is.Not.Null);
+                Assert.That(dialogueIdField, Is.Not.Null);
+                Assert.That(npcIdField.value, Is.EqualTo(database.Npcs[0].Id));
+                Assert.That(dialogueIdField.value, Is.EqualTo(database.Npcs[0].Dialogues[0].Id));
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void ProjectPanel_ShowsDuplicateNpcAndDialogueWarnings()
+        {
+            var database = CreateDatabase("ProjectIdWarnings");
+            var firstNpc = database.Npcs[0];
+            var secondNpc = new NpcEntry { Name = "Second NPC" };
+            secondNpc.Dialogues.Add(new DialogueEntry { Name = "Second Dialogue" });
+            database.Npcs.Add(secondNpc);
+            firstNpc.Dialogues.Add(new DialogueEntry { Name = "Duplicate Dialogue Candidate" });
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.SuppressIdentifierWarningsForTests = true;
+                window.InitializeForTests(database);
+
+                var npcFields = window.rootVisualElement.Query<TextField>("npc-id-field").ToList();
+                Assert.That(npcFields, Has.Count.EqualTo(2));
+                npcFields[1].value = firstNpc.Id;
+
+                Assert.That(HasIdentifierIssue(window, "Duplicate NPC Id"), Is.True);
+
+                var dialogueFields = window.rootVisualElement.Query<TextField>("dialogue-id-field").ToList();
+                Assert.That(dialogueFields, Has.Count.GreaterThanOrEqualTo(2));
+                dialogueFields[1].value = firstNpc.Dialogues[0].Id;
+
+                Assert.That(HasIdentifierIssue(window, "Duplicate Dialogue Id"), Is.True);
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void NodeInspector_ShowsEmptyAndDuplicateIdWarnings()
+        {
+            var database = CreateDatabase("NodeIdWarnings");
+            var dialogue = database.Npcs[0].Dialogues[0];
+            var firstNode = (DialogueTextNodeData)dialogue.Graph.Nodes[0];
+            var secondNode = new DialogueTextNodeData
+            {
+                Title = "Second",
+                Position = new Vector2(360f, 120f)
+            };
+            dialogue.Graph.Nodes.Add(secondNode);
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.SuppressIdentifierWarningsForTests = true;
+                window.InitializeForTests(database);
+                Assert.That(window.FocusDialogueNode(dialogue, secondNode.Id), Is.True);
+
+                var idField = window.rootVisualElement.Q<TextField>("node-id-field");
+                idField.value = string.Empty;
+                Assert.That(HasIdentifierIssue(window, "Id is empty"), Is.True);
+
+                idField = window.rootVisualElement.Q<TextField>("node-id-field");
+                idField.value = firstNode.Id;
+                Assert.That(HasIdentifierIssue(window, "Duplicate Node Id"), Is.True);
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void NodeInspector_ShowsChoiceFlowDiagnostics()
+        {
+            var database = CreateDatabase("ChoiceFlowWarnings");
+            var dialogue = database.Npcs[0].Dialogues[0];
+            var choiceNode = (DialogueTextNodeData)dialogue.Graph.Nodes[0];
+            choiceNode.UseOutputsAsChoices = true;
+            var untitledTarget = new DialogueTextNodeData
+            {
+                Title = string.Empty,
+                Position = new Vector2(360f, 120f)
+            };
+            dialogue.Graph.Nodes.Add(untitledTarget);
+            dialogue.Graph.Links.Add(new NodeLinkData
+            {
+                FromNodeId = choiceNode.Id,
+                ToNodeId = untitledTarget.Id,
+                Order = 0,
+                ChoiceText = string.Empty
+            });
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                Assert.That(window.FocusDialogueNode(dialogue, choiceNode.Id), Is.True);
+
+                Assert.That(HasChoiceDiagnostic(window, "Choice text and target title are both empty."), Is.True);
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void ConditionEditor_HidesIrrelevantFieldsForNone()
+        {
+            var database = CreateDatabase("ConditionNone");
+            var dialogue = database.Npcs[0].Dialogues[0];
+            var node = (DialogueTextNodeData)dialogue.Graph.Nodes[0];
+            node.Condition.Type = ConditionType.None;
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                Assert.That(window.FocusDialogueNode(dialogue, node.Id), Is.True);
+
+                Assert.That(window.rootVisualElement.Q<TextField>("condition-key-field"), Is.Null);
+                Assert.That(window.rootVisualElement.Q<PopupField<string>>("condition-operator-field"), Is.Null);
+                Assert.That(window.rootVisualElement.Q<TextField>("condition-value-field"), Is.Null);
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void ConditionEditor_ShowsGuidedFieldsForVariableCondition()
+        {
+            var database = CreateDatabase("ConditionGuided");
+            var dialogue = database.Npcs[0].Dialogues[0];
+            var node = (DialogueTextNodeData)dialogue.Graph.Nodes[0];
+            node.Condition.Type = ConditionType.VariableCheck;
+            node.Condition.Operator = "==";
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                Assert.That(window.FocusDialogueNode(dialogue, node.Id), Is.True);
+
+                Assert.That(window.rootVisualElement.Q<TextField>("condition-key-field"), Is.Not.Null);
+                Assert.That(window.rootVisualElement.Q<PopupField<string>>("condition-operator-field"), Is.Not.Null);
+                Assert.That(window.rootVisualElement.Q<TextField>("condition-value-field"), Is.Not.Null);
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void ConditionEditor_ShowsProviderKeySuggestions()
+        {
+            var provider = new TestConditionMetadataProvider();
+            DialogueConditionMetadataRegistry.RegisterProvider(provider);
+            var database = CreateDatabase("ConditionSuggestions");
+            var dialogue = database.Npcs[0].Dialogues[0];
+            var node = (DialogueTextNodeData)dialogue.Graph.Nodes[0];
+            node.Condition.Type = ConditionType.VariableCheck;
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                Assert.That(window.FocusDialogueNode(dialogue, node.Id), Is.True);
+
+                Assert.That(window.rootVisualElement.Q<PopupField<string>>("condition-key-suggestion-field"), Is.Not.Null);
+            }
+            finally
+            {
+                DialogueConditionMetadataRegistry.UnregisterProvider(provider);
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
         private static DialogueDatabaseAsset CreateDatabase(string prefix)
         {
             var database = ScriptableObject.CreateInstance<DialogueDatabaseAsset>();
@@ -233,6 +538,31 @@ namespace NewDial.DialogueEditor.Tests
             });
 
             return database;
+        }
+
+        private static bool HasIdentifierIssue(DialogueEditorWindow window, string issueText)
+        {
+            return window.rootVisualElement.Query<Label>(className: "dialogue-editor__id-issue")
+                .ToList()
+                .Any(label => label.text == issueText);
+        }
+
+        private static bool HasChoiceDiagnostic(DialogueEditorWindow window, string diagnosticText)
+        {
+            return window.rootVisualElement.Query<Label>(className: "dialogue-editor__choice-diagnostic")
+                .ToList()
+                .Any(label => label.text == diagnosticText);
+        }
+
+        private sealed class TestConditionMetadataProvider : IDialogueConditionMetadataProvider
+        {
+            public System.Collections.Generic.IEnumerable<DialogueConditionKeySuggestion> GetKeySuggestions(ConditionType type)
+            {
+                if (type == ConditionType.VariableCheck)
+                {
+                    yield return new DialogueConditionKeySuggestion("door_open", "Door Open", "Flags");
+                }
+            }
         }
     }
 }

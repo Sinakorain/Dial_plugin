@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
 using UnityEditor.UIElements;
@@ -45,6 +46,7 @@ namespace NewDial.DialogueEditor
         internal DialogueGraphView GraphViewForTests => _graphView;
         internal bool HasUnsavedChangesForTests => _hasUnsavedChanges;
         internal string SelectedNodeIdForTests => _selectedNode?.Id;
+        internal bool SuppressIdentifierWarningsForTests { get; set; }
 
         internal void InitializeForTests(DialogueDatabaseAsset asset)
         {
@@ -514,6 +516,11 @@ namespace NewDial.DialogueEditor
                 });
                 npcName.AddToClassList("dialogue-editor__project-name-field");
                 npcCard.Add(npcName);
+                npcCard.Add(BuildNpcIdEditor(npc));
+                if (_selectedNpc == npc)
+                {
+                    npcCard.Add(BuildWhereUsedSection(DialogueWhereUsedUtility.GetWhereUsed(_database, npc)));
+                }
 
                 if (npc.Dialogues.Count == 0)
                 {
@@ -554,6 +561,11 @@ namespace NewDial.DialogueEditor
                     });
                     nameField.AddToClassList("dialogue-editor__project-name-field");
                     dialogueCard.Add(nameField);
+                    dialogueCard.Add(BuildDialogueIdEditor(dialogue));
+                    if (_selectedDialogue == dialogue)
+                    {
+                        dialogueCard.Add(BuildWhereUsedSection(DialogueWhereUsedUtility.GetWhereUsed(_database, npc, dialogue)));
+                    }
 
                     npcCard.Add(dialogueCard);
                 }
@@ -618,11 +630,12 @@ namespace NewDial.DialogueEditor
 
             var summaryCard = new Box();
             summaryCard.AddToClassList("dialogue-editor__inspector-card");
-            summaryCard.Add(new Label($"Id: {dialogue.Id}"));
             summaryCard.Add(new Label($"Nodes: {dialogue.Graph.Nodes.Count}"));
             summaryCard.Add(new Label($"Start node: {DialogueGraphUtility.FindStartNode(dialogue)?.Title ?? "None"}"));
             _inspectorView.Add(summaryCard);
 
+            _inspectorView.Add(BuildDialogueIdEditor(dialogue));
+            _inspectorView.Add(BuildWhereUsedSection(DialogueWhereUsedUtility.GetWhereUsed(_database, _selectedNpc, dialogue)));
             BuildConditionEditor(dialogue.StartCondition, "Start Condition");
             _inspectorView.Add(CreateInlineHelp("Click empty graph space to return here after editing a node."));
         }
@@ -637,6 +650,9 @@ namespace NewDial.DialogueEditor
                 PerformNodeScopedChange("Edit Node Title", () => node.Title = evt.newValue, refreshNodeVisuals: true);
             });
             _inspectorView.Add(titleField);
+
+            _inspectorView.Add(BuildNodeIdEditor(node));
+            _inspectorView.Add(BuildWhereUsedSection(DialogueWhereUsedUtility.GetWhereUsed(_database, _selectedNpc, _selectedDialogue, node)));
 
             var bodyField = new TextField("Body Text")
             {
@@ -675,6 +691,7 @@ namespace NewDial.DialogueEditor
             });
             _inspectorView.Add(choiceToggle);
 
+            BuildChoiceFlowDiagnostics(node);
             BuildConditionEditor(node.Condition, "Condition", "Edit Node Condition");
             BuildLinksInspector(node);
 
@@ -758,6 +775,8 @@ namespace NewDial.DialogueEditor
 
                 var target = DialogueGraphUtility.GetTextNode(_selectedDialogue.Graph, link.ToNodeId);
                 box.Add(new Label($"Target: {target?.Title ?? "Unconnected"}"));
+                AddChoiceFlowDiagnostics(box, DialogueChoiceFlowDiagnostics.Analyze(_selectedDialogue, node)
+                    .Where(diagnostic => diagnostic.Link == link));
 
                 var orderField = new IntegerField("Order") { value = link.Order, name = "link-order-field" };
                 orderField.RegisterValueChangedCallback(evt =>
@@ -792,32 +811,294 @@ namespace NewDial.DialogueEditor
             }
         }
 
+        private void BuildChoiceFlowDiagnostics(DialogueTextNodeData node)
+        {
+            var diagnostics = DialogueChoiceFlowDiagnostics.Analyze(_selectedDialogue, node);
+            if (diagnostics.Count == 0)
+            {
+                return;
+            }
+
+            _inspectorView.Add(CreateSectionTitle("Choice Flow Diagnostics"));
+            var box = new Box();
+            box.AddToClassList("dialogue-editor__inspector-card");
+            AddChoiceFlowDiagnostics(box, diagnostics);
+            _inspectorView.Add(box);
+        }
+
+        private void AddChoiceFlowDiagnostics(
+            VisualElement container,
+            IEnumerable<DialogueChoiceFlowDiagnostic> diagnostics)
+        {
+            if (container == null || diagnostics == null)
+            {
+                return;
+            }
+
+            foreach (var diagnostic in diagnostics)
+            {
+                var label = new Label(diagnostic.Message);
+                label.AddToClassList("dialogue-editor__choice-diagnostic");
+                label.AddToClassList(diagnostic.Severity == DialogueChoiceFlowSeverity.Error
+                    ? "dialogue-editor__choice-diagnostic--error"
+                    : "dialogue-editor__choice-diagnostic--warning");
+                container.Add(label);
+            }
+        }
+
+        private VisualElement BuildNpcIdEditor(NpcEntry npc)
+        {
+            return BuildIdEditor(
+                "NPC Id",
+                "npc-id-field",
+                npc?.Id,
+                DialogueIdentifierUtility.GetIssues(_database, npc),
+                () => ChangeNpcId(npc, GuidUtility.NewGuid()),
+                () => ChangeNpcId(npc, GuidUtility.NewGuid()),
+                newValue => ChangeNpcId(npc, newValue));
+        }
+
+        private VisualElement BuildDialogueIdEditor(DialogueEntry dialogue)
+        {
+            return BuildIdEditor(
+                "Dialogue Id",
+                "dialogue-id-field",
+                dialogue?.Id,
+                DialogueIdentifierUtility.GetIssues(_database, dialogue),
+                () => ChangeDialogueId(dialogue, GuidUtility.NewGuid()),
+                () => ChangeDialogueId(dialogue, GuidUtility.NewGuid()),
+                newValue => ChangeDialogueId(dialogue, newValue));
+        }
+
+        private VisualElement BuildNodeIdEditor(BaseNodeData node)
+        {
+            return BuildIdEditor(
+                "Node Id",
+                "node-id-field",
+                node?.Id,
+                DialogueIdentifierUtility.GetIssues(_selectedDialogue?.Graph, node),
+                () => ChangeNodeId(node, GuidUtility.NewGuid()),
+                () => ChangeNodeId(node, GuidUtility.NewGuid()),
+                newValue => ChangeNodeId(node, newValue));
+        }
+
+        private VisualElement BuildIdEditor(
+            string label,
+            string fieldName,
+            string value,
+            IReadOnlyList<string> issues,
+            Action generate,
+            Action safeRegenerate,
+            Action<string> commit)
+        {
+            var box = new Box();
+            box.AddToClassList("dialogue-editor__id-card");
+
+            var field = new TextField(label)
+            {
+                value = value ?? string.Empty,
+                isDelayed = true,
+                name = fieldName
+            };
+            field.AddToClassList("dialogue-editor__id-field");
+            AttachGraphBlurOnInteraction(field);
+            field.RegisterValueChangedCallback(evt =>
+            {
+                if (evt.newValue == evt.previousValue)
+                {
+                    return;
+                }
+
+                commit?.Invoke(evt.newValue);
+            });
+            box.Add(field);
+
+            var actionRow = new VisualElement();
+            actionRow.AddToClassList("dialogue-editor__id-actions");
+
+            var generateButton = CreateActionButton("Generate", generate);
+            generateButton.AddToClassList("dialogue-editor__id-button");
+            actionRow.Add(generateButton);
+
+            var safeButton = CreateActionButton("Safe Regenerate", safeRegenerate);
+            safeButton.AddToClassList("dialogue-editor__id-button");
+            actionRow.Add(safeButton);
+
+            box.Add(actionRow);
+            AddIdentifierIssues(box, issues);
+            return box;
+        }
+
+        private void AddIdentifierIssues(VisualElement container, IReadOnlyList<string> issues)
+        {
+            if (container == null || issues == null)
+            {
+                return;
+            }
+
+            foreach (var issue in issues)
+            {
+                var label = new Label(issue);
+                label.AddToClassList("dialogue-editor__id-issue");
+                container.Add(label);
+            }
+        }
+
+        private VisualElement BuildWhereUsedSection(IReadOnlyList<DialogueWhereUsedResult> results)
+        {
+            var box = new Box();
+            box.AddToClassList("dialogue-editor__where-used-card");
+
+            var title = new Label("Where Used");
+            title.AddToClassList("dialogue-editor__where-used-title");
+            box.Add(title);
+
+            var internalResults = results?
+                .Where(result => result.Kind == DialogueReferenceKind.Internal)
+                .ToList() ?? new List<DialogueWhereUsedResult>();
+            var externalResults = results?
+                .Where(result => result.Kind == DialogueReferenceKind.External)
+                .ToList() ?? new List<DialogueWhereUsedResult>();
+
+            AddWhereUsedGroup(box, "Internal References", internalResults);
+            AddWhereUsedGroup(box, "External References", externalResults, "No external references reported.");
+            return box;
+        }
+
+        private void AddWhereUsedGroup(
+            VisualElement container,
+            string title,
+            IReadOnlyList<DialogueWhereUsedResult> results,
+            string emptyText = "No internal references.")
+        {
+            var groupTitle = new Label(title);
+            groupTitle.AddToClassList("dialogue-editor__where-used-group-title");
+            container.Add(groupTitle);
+
+            if (results == null || results.Count == 0)
+            {
+                var empty = new Label(emptyText);
+                empty.AddToClassList("dialogue-editor__where-used-empty");
+                container.Add(empty);
+                return;
+            }
+
+            foreach (var result in results)
+            {
+                var label = new Label(string.IsNullOrWhiteSpace(result.Detail)
+                    ? result.Label
+                    : $"{result.Label}: {result.Detail}");
+                label.AddToClassList("dialogue-editor__where-used-entry");
+                container.Add(label);
+            }
+        }
+
         private void BuildConditionEditor(ConditionData condition, string title, string undoActionPrefix = null)
         {
             _inspectorView.Add(CreateSectionTitle(title));
+            if (condition == null)
+            {
+                _inspectorView.Add(CreateInlineHelp("No condition data is available."));
+                return;
+            }
 
-            var typeField = new EnumField("Type", condition.Type);
+            var metadata = DialogueConditionMetadataRegistry.GetMetadata(condition.Type);
+            var typeField = new EnumField("Type", condition.Type) { name = "condition-type-field" };
             typeField.RegisterValueChangedCallback(evt =>
             {
-                ApplyConditionChange(undoActionPrefix, "Type", () => condition.Type = (ConditionType)evt.newValue);
+                ApplyConditionChange(undoActionPrefix, "Type", () =>
+                {
+                    condition.Type = (ConditionType)evt.newValue;
+                    var nextMetadata = DialogueConditionMetadataRegistry.GetMetadata(condition.Type);
+                    if (nextMetadata.Operators.Count > 0 &&
+                        !nextMetadata.Operators.Contains(condition.Operator))
+                    {
+                        condition.Operator = nextMetadata.DefaultOperator;
+                    }
+
+                    if (condition.Type == ConditionType.None)
+                    {
+                        condition.Key = string.Empty;
+                        condition.Value = string.Empty;
+                    }
+                });
+                RefreshInspector();
             });
             _inspectorView.Add(typeField);
 
-            var keyField = new TextField("Key") { value = condition.Key };
+            _inspectorView.Add(CreateInlineHelp(metadata.ValueHint));
+            if (!metadata.ShowKey)
+            {
+                return;
+            }
+
+            var keySuggestions = DialogueConditionMetadataRegistry.GetKeySuggestions(condition.Type);
+            if (keySuggestions.Count > 0)
+            {
+                var suggestionLabels = keySuggestions
+                    .Select(suggestion => string.IsNullOrWhiteSpace(suggestion.Category)
+                        ? suggestion.Label
+                        : $"{suggestion.Category}: {suggestion.Label}")
+                    .ToList();
+                var currentSuggestionIndex = keySuggestions
+                    .Select((suggestion, index) => new { suggestion, index })
+                    .FirstOrDefault(item => item.suggestion.Key == condition.Key)?.index ?? 0;
+                var suggestionField = new PopupField<string>(
+                    "Known Key",
+                    suggestionLabels,
+                    Mathf.Max(0, currentSuggestionIndex))
+                {
+                    name = "condition-key-suggestion-field"
+                };
+                suggestionField.RegisterValueChangedCallback(evt =>
+                {
+                    var selectedIndex = suggestionLabels.IndexOf(evt.newValue);
+                    if (selectedIndex < 0 || selectedIndex >= keySuggestions.Count)
+                    {
+                        return;
+                    }
+
+                    ApplyConditionChange(undoActionPrefix, "Key", () => condition.Key = keySuggestions[selectedIndex].Key);
+                    RefreshInspector();
+                });
+                _inspectorView.Add(suggestionField);
+            }
+
+            var keyField = new TextField("Key") { value = condition.Key, name = "condition-key-field" };
             keyField.RegisterValueChangedCallback(evt =>
             {
                 ApplyConditionChange(undoActionPrefix, "Key", () => condition.Key = evt.newValue);
             });
             _inspectorView.Add(keyField);
 
-            var operatorField = new TextField("Operator") { value = condition.Operator };
-            operatorField.RegisterValueChangedCallback(evt =>
+            if (metadata.ShowOperator && metadata.Operators.Count > 0)
             {
-                ApplyConditionChange(undoActionPrefix, "Operator", () => condition.Operator = evt.newValue);
-            });
-            _inspectorView.Add(operatorField);
+                var operators = metadata.Operators.ToList();
+                var selectedOperator = operators.Contains(condition.Operator)
+                    ? condition.Operator
+                    : metadata.DefaultOperator;
+                var operatorField = new PopupField<string>(
+                    "Operator",
+                    operators,
+                    operators.IndexOf(selectedOperator))
+                {
+                    name = "condition-operator-field"
+                };
+                operatorField.RegisterValueChangedCallback(evt =>
+                {
+                    ApplyConditionChange(undoActionPrefix, "Operator", () => condition.Operator = evt.newValue);
+                    RefreshInspector();
+                });
+                _inspectorView.Add(operatorField);
+            }
 
-            var valueField = new TextField("Value") { value = condition.Value };
+            if (!metadata.ShowValue || string.Equals(condition.Operator, "Truthy", StringComparison.Ordinal))
+            {
+                _inspectorView.Add(CreateInlineHelp("The selected operator does not use an expected value."));
+                return;
+            }
+
+            var valueField = new TextField("Value") { value = condition.Value, name = "condition-value-field" };
             valueField.RegisterValueChangedCallback(evt =>
             {
                 ApplyConditionChange(undoActionPrefix, "Value", () => condition.Value = evt.newValue);
@@ -1376,6 +1657,95 @@ namespace NewDial.DialogueEditor
             }
 
             PerformNodeScopedChange($"{undoActionPrefix} {fieldName}", mutate);
+        }
+
+        private void ChangeNpcId(NpcEntry npc, string newId)
+        {
+            if (npc == null || string.Equals(npc.Id, newId ?? string.Empty, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            if (!ConfirmIdentifierChange("NPC"))
+            {
+                RefreshProjectPanel();
+                RefreshInspector();
+                return;
+            }
+
+            npc.Id = newId ?? string.Empty;
+            MarkChanged();
+            RefreshProjectPanel();
+            RefreshInspector();
+            DialoguePreviewWindow.RefreshOpenWindows(this);
+        }
+
+        private void ChangeDialogueId(DialogueEntry dialogue, string newId)
+        {
+            if (dialogue == null || string.Equals(dialogue.Id, newId ?? string.Empty, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            if (!ConfirmIdentifierChange("Dialogue"))
+            {
+                RefreshProjectPanel();
+                RefreshInspector();
+                return;
+            }
+
+            dialogue.Id = newId ?? string.Empty;
+            MarkChanged();
+            RefreshProjectPanel();
+            RefreshInspector();
+            DialoguePreviewWindow.RefreshOpenWindows(this);
+        }
+
+        private void ChangeNodeId(BaseNodeData node, string newId)
+        {
+            if (node == null || _selectedDialogue?.Graph == null ||
+                string.Equals(node.Id, newId ?? string.Empty, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            var oldId = node.Id;
+            if (!ConfirmIdentifierChange("Node", "Internal graph links that target this node will be updated automatically."))
+            {
+                RefreshInspector();
+                return;
+            }
+
+            PerformNodeScopedChange(
+                "Edit Node Id",
+                () => DialogueIdentifierUtility.RenameNodeId(_selectedDialogue.Graph, node, newId),
+                reloadGraph: true,
+                refreshInspector: true);
+
+            _graphView?.FrameAndSelectNode(node.Id);
+            DialoguePreviewWindow.RefreshOpenWindows(this);
+
+            if (string.IsNullOrWhiteSpace(oldId))
+            {
+                RefreshStatus();
+            }
+        }
+
+        private bool ConfirmIdentifierChange(string ownerLabel, string detail = null)
+        {
+            if (SuppressIdentifierWarningsForTests)
+            {
+                return true;
+            }
+
+            var message = $"{ownerLabel} Id values may be referenced outside this dialogue database.";
+            if (!string.IsNullOrWhiteSpace(detail))
+            {
+                message += $"\n\n{detail}";
+            }
+
+            message += "\n\nContinue changing this Id?";
+            return EditorUtility.DisplayDialog("Change Id", message, "Change Id", "Cancel");
         }
 
         private void BeginUndoGesture(string actionName)
