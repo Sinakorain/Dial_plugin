@@ -63,6 +63,42 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
+        public void LeftDock_UsesFixedProjectAreaAndUnscrolledCompactPalette()
+        {
+            DialogueEditorLanguageSettings.CurrentLanguage = DialogueEditorLanguage.Russian;
+            var database = CreateDatabase("LeftDockLayout");
+            var npc = database.Npcs[0];
+            for (var index = 0; index < 8; index++)
+            {
+                npc.Dialogues.Add(new DialogueEntry { Name = $"Dialogue {index + 2}" });
+            }
+
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+
+                Assert.That(window.rootVisualElement.Q<VisualElement>("project-panel"), Is.Not.Null);
+                Assert.That(window.rootVisualElement.Q<ScrollView>(className: "dialogue-editor__project-scroll"), Is.Not.Null);
+                Assert.That(window.rootVisualElement.Q<VisualElement>("palette-panel"), Is.Not.Null);
+                Assert.That(window.rootVisualElement.Q<ScrollView>(className: "dialogue-editor__palette-scroll"), Is.Null);
+                Assert.That(window.rootVisualElement.Query<VisualElement>(className: "dialogue-editor__palette-item").ToList(), Has.Count.EqualTo(5));
+                Assert.That(HasLabel(window, "Текстовый узел"), Is.True);
+                Assert.That(HasLabel(window, "Комментарий"), Is.True);
+                Assert.That(HasLabel(window, "Функция"), Is.True);
+                Assert.That(HasLabel(window, "Сцена"), Is.True);
+                Assert.That(HasLabel(window, "Отладка"), Is.True);
+            }
+            finally
+            {
+                DialogueEditorLanguageSettings.CurrentLanguage = DialogueEditorLanguage.English;
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
         public void UndoRedo_RestoresSelectedNodeAndInspectorState()
         {
             var database = CreateDatabase("SelectionUndo");
@@ -592,6 +628,38 @@ namespace NewDial.DialogueEditor.Tests
             }
         }
 
+        [Test]
+        public void SceneInspector_DefaultKnownSceneWritesSceneKey()
+        {
+            var registry = new TestExecutionRegistry();
+            DialogueExecutionRegistry.Register(registry);
+            var database = CreateDatabase("SceneDefaultSelection");
+            var dialogue = database.Npcs[0].Dialogues[0];
+            var sceneNode = new SceneNodeData
+            {
+                Title = "Scene",
+                Position = new Vector2(360f, 120f)
+            };
+            dialogue.Graph.Nodes.Add(sceneNode);
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                Assert.That(window.FocusDialogueNode(dialogue, sceneNode.Id), Is.True);
+
+                Assert.That(sceneNode.SceneKey, Is.EqualTo("Battle_Arena"));
+                Assert.That(window.rootVisualElement.Q<PopupField<string>>("scene-descriptor-field")?.value, Is.EqualTo("Combat: Battle Arena"));
+                Assert.That(window.rootVisualElement.Q<TextField>("scene-key-field")?.value, Is.EqualTo("Battle_Arena"));
+            }
+            finally
+            {
+                DialogueExecutionRegistry.Unregister(registry);
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
         private static DialogueDatabaseAsset CreateDatabase(string prefix)
         {
             var database = ScriptableObject.CreateInstance<DialogueDatabaseAsset>();
@@ -705,7 +773,7 @@ namespace NewDial.DialogueEditor.Tests
 
             public System.Collections.Generic.IEnumerable<DialogueSceneDescriptor> GetScenes()
             {
-                return Enumerable.Empty<DialogueSceneDescriptor>();
+                yield return new DialogueSceneDescriptor("Battle_Arena", "Battle Arena", "Combat");
             }
         }
     }

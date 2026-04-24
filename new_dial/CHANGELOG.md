@@ -25,6 +25,8 @@
 - Native Unity undo/redo now covers node-scope graph edits, comment resize, link edits, and node inspector changes on both macOS (`Cmd+Z`) and Windows (`Ctrl+Z`).
 - Undo/redo now refreshes graph selection, preview sessions, and autosave dirty-state against the last saved database snapshot.
 - Text and executable nodes now select from any non-button part of the node while preserving lower-half link dragging.
+- Scene node inspectors now write the first available Known Scene into an empty `SceneKey` instead of only showing it as the dropdown default.
+- The editor left dock now keeps the NPC/dialogue project area at a fixed height and shows the full compact node palette without palette scrolling.
 
 ### Tests
 

@@ -232,6 +232,8 @@ namespace NewDial.DialogueEditor
 
             var projectSection = new VisualElement();
             projectSection.AddToClassList("dialogue-editor__panel");
+            projectSection.AddToClassList("dialogue-editor__project-panel");
+            projectSection.name = "project-panel";
             projectSection.Add(BuildPanelHeader(DialogueEditorLocalization.Text("Project")));
             projectSection.Add(BuildProjectActionsRow());
 
@@ -251,14 +253,13 @@ namespace NewDial.DialogueEditor
         {
             var panel = new VisualElement();
             panel.AddToClassList("dialogue-editor__panel");
+            panel.AddToClassList("dialogue-editor__palette-panel");
+            panel.name = "palette-panel";
             panel.Add(BuildPanelHeader(DialogueEditorLocalization.Text("Palette")));
-
-            var scroll = new ScrollView();
-            scroll.AddToClassList("dialogue-editor__palette-scroll");
-            scroll.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
 
             var content = new VisualElement();
             content.AddToClassList("dialogue-editor__palette");
+            content.name = "palette-content";
 
             content.Add(new PaletteItem(this, DialoguePaletteItemType.TextNode, DialogueEditorLocalization.Text("Text Node"), DialogueEditorLocalization.Text("Click to add at center. Drag onto the graph to place.")));
             content.Add(new PaletteItem(this, DialoguePaletteItemType.Comment, DialogueEditorLocalization.Text("Comment"), DialogueEditorLocalization.Text("Click to add at center. Drag onto the graph to place.")));
@@ -266,8 +267,7 @@ namespace NewDial.DialogueEditor
             content.Add(new PaletteItem(this, DialoguePaletteItemType.Scene, DialogueEditorLocalization.Text("Scene"), DialogueEditorLocalization.Text("Request project scene loading and continue.")));
             content.Add(new PaletteItem(this, DialoguePaletteItemType.Debug, DialogueEditorLocalization.Text("Debug"), DialogueEditorLocalization.Text("Write a diagnostic log entry and continue.")));
 
-            scroll.Add(content);
-            panel.Add(scroll);
+            panel.Add(content);
             return panel;
         }
 
@@ -894,6 +894,16 @@ namespace NewDial.DialogueEditor
             BuildExecutableCommonFields(node, DialogueEditorLocalization.Text("Scene"));
 
             var scenes = DialogueExecutionRegistry.GetScenes();
+            if (scenes.Count > 0 && string.IsNullOrWhiteSpace(node.SceneKey))
+            {
+                var defaultScene = scenes[0];
+                PerformNodeScopedChange("Select Scene", () =>
+                {
+                    node.SceneKey = defaultScene.SceneKey;
+                    EnsureDescriptorArguments(node.Parameters, defaultScene.Parameters);
+                }, refreshNodeVisuals: true);
+            }
+
             var descriptor = scenes.FirstOrDefault(scene => scene.SceneKey == node.SceneKey);
             if (scenes.Count > 0)
             {
@@ -2391,16 +2401,13 @@ namespace NewDial.DialogueEditor
             {
                 _owner = owner;
                 _itemType = itemType;
+                tooltip = hint;
 
                 AddToClassList("dialogue-editor__palette-item");
 
                 var titleLabel = new Label(title);
                 titleLabel.AddToClassList("dialogue-editor__palette-item-title");
                 Add(titleLabel);
-
-                var hintLabel = new Label(hint);
-                hintLabel.AddToClassList("dialogue-editor__palette-item-hint");
-                Add(hintLabel);
 
                 RegisterCallback<MouseDownEvent>(OnMouseDown, TrickleDown.TrickleDown);
                 RegisterCallback<MouseMoveEvent>(OnMouseMove, TrickleDown.TrickleDown);

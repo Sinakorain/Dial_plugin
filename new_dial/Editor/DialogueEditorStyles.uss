@@ -84,6 +84,7 @@
 
 .dialogue-editor__left-dock {
     flex-grow: 1;
+    min-height: 0;
     padding-left: 10px;
     padding-right: 10px;
     padding-top: 10px;
@@ -112,6 +113,18 @@
     border-bottom-left-radius: 10px;
     border-bottom-right-radius: 10px;
     overflow: hidden;
+}
+
+.dialogue-editor__project-panel {
+    flex-grow: 0;
+    flex-shrink: 0;
+    height: 360px;
+}
+
+.dialogue-editor__palette-panel {
+    flex-grow: 0;
+    flex-shrink: 0;
+    margin-bottom: 0;
 }
 
 .dialogue-editor__panel-header {
@@ -180,44 +193,27 @@
 
 .dialogue-editor__palette {
     flex-direction: column;
+    flex-shrink: 0;
     min-width: 0;
-    padding-left: 10px;
-    padding-right: 10px;
-    padding-top: 10px;
-    padding-bottom: 10px;
+    padding-left: 8px;
+    padding-right: 8px;
+    padding-top: 8px;
+    padding-bottom: 8px;
     width: 100%;
-}
-
-.dialogue-editor__palette-scroll {
-    flex-grow: 1;
-    min-height: 0;
-    min-width: 0;
-    overflow: hidden;
-}
-
-.dialogue-editor__palette-scroll .unity-scroll-view__content-container {
-    flex-direction: column;
-    max-width: 100%;
-    min-width: 0;
-    width: 100%;
-}
-
-.dialogue-editor__palette-scroll .unity-scroller--horizontal {
-    display: none;
 }
 
 .dialogue-editor__palette-item {
-    align-items: flex-start;
-    flex-direction: column;
-    justify-content: flex-start;
-    margin-bottom: 8px;
+    align-items: center;
+    flex-direction: row;
+    justify-content: center;
+    margin-bottom: 6px;
     max-width: 100%;
-    min-height: 66px;
+    min-height: 34px;
     min-width: 0;
-    padding-left: 10px;
-    padding-right: 10px;
-    padding-top: 10px;
-    padding-bottom: 10px;
+    padding-left: 8px;
+    padding-right: 8px;
+    padding-top: 5px;
+    padding-bottom: 5px;
     background-color: #28344b;
     border-top-width: 1px;
     border-right-width: 1px;
@@ -227,10 +223,10 @@
     border-right-color: #344564;
     border-bottom-color: #344564;
     border-left-color: #344564;
-    border-top-left-radius: 10px;
-    border-top-right-radius: 10px;
-    border-bottom-left-radius: 10px;
-    border-bottom-right-radius: 10px;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
     overflow: hidden;
 }
 
@@ -245,19 +241,10 @@
 .dialogue-editor__palette-item-title {
     -unity-font-style: bold;
     color: #f8fbff;
-    margin-bottom: 4px;
     max-width: 100%;
     min-width: 0;
+    -unity-text-align: middle-center;
     white-space: normal;
-}
-
-.dialogue-editor__palette-item-hint {
-    white-space: normal;
-    color: #b2c1d8;
-    font-size: 11px;
-    max-width: 100%;
-    min-width: 0;
-    overflow: hidden;
 }
 
 .dialogue-editor__palette-button {
