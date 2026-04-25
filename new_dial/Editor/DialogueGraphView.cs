@@ -36,6 +36,13 @@ namespace NewDial.DialogueEditor
         Debug
     }
 
+    internal enum DialogueCommentDeleteChoice
+    {
+        DeleteCommentOnly,
+        DeleteCommentWithContents,
+        Cancel
+    }
+
     internal sealed class CommentDragSnapshot
     {
         public CommentDragSnapshot(
@@ -209,6 +216,9 @@ namespace NewDial.DialogueEditor
         public Action<string> BeginUndoGestureAction { get; set; }
         public Action EndUndoGestureAction { get; set; }
         public Func<DialogueTextNodeData, string> SpeakerNameResolver { get; set; }
+        internal Func<DialoguePaletteShortcut, DialoguePaletteItemType?> PaletteShortcutResolver { get; set; }
+        internal Action<DialoguePaletteItemType> PaletteShortcutAction { get; set; }
+        internal Func<CommentNodeData, DialogueCommentDeleteChoice> CommentDeletePrompt { get; set; }
 
         public DialogueGraphData Graph => _graph;
         public bool HasCanvasFocus => _hasCanvasFocus;
@@ -400,6 +410,17 @@ namespace NewDial.DialogueEditor
             });
         }
 
+        internal void CreateNodeFromPaletteShortcut(DialoguePaletteItemType itemType)
+        {
+            if (_graph == null)
+            {
+                return;
+            }
+
+            var position = GetPaletteShortcutPlacementPosition(itemType);
+            CreatePaletteNodeAtPosition(itemType, position);
+        }
+
         internal bool BeginNodePlacement(DialoguePaletteItemType itemType, Vector2 worldPointerPosition)
         {
             if (_graph == null)
@@ -472,6 +493,79 @@ namespace NewDial.DialogueEditor
 
             FocusCanvas();
             return true;
+        }
+
+        private void CreatePaletteNodeAtPosition(DialoguePaletteItemType itemType, Vector2 position)
+        {
+            switch (itemType)
+            {
+                case DialoguePaletteItemType.TextNode:
+                    CreateTextNode(position);
+                    break;
+                case DialoguePaletteItemType.Comment:
+                    CreateCommentNode(position);
+                    break;
+                case DialoguePaletteItemType.Function:
+                    CreateFunctionNode(position);
+                    break;
+                case DialoguePaletteItemType.Scene:
+                    CreateSceneNode(position);
+                    break;
+                case DialoguePaletteItemType.Debug:
+                    CreateDebugNode(position);
+                    break;
+            }
+        }
+
+        internal Vector2 GetPaletteShortcutPlacementPosition(DialoguePaletteItemType itemType)
+        {
+            var pointerCanvasPosition = worldBound.Contains(_lastPointerPosition)
+                ? WorldToCanvasPosition(_lastPointerPosition)
+                : GetCanvasCenter();
+            var preferredTopLeft = GetPlacementTopLeft(itemType, pointerCanvasPosition);
+            return ClampPaletteShortcutPlacementToViewport(
+                preferredTopLeft,
+                GetPlacementSize(itemType),
+                GetVisibleCanvasRect());
+        }
+
+        internal static Vector2 ClampPaletteShortcutPlacementToViewport(Vector2 preferredTopLeft, Vector2 size, Rect viewport)
+        {
+            if (viewport.width <= 0f || viewport.height <= 0f)
+            {
+                return preferredTopLeft;
+            }
+
+            var x = viewport.width <= size.x
+                ? viewport.center.x - (size.x * 0.5f)
+                : Mathf.Clamp(preferredTopLeft.x, viewport.xMin, viewport.xMax - size.x);
+            var y = viewport.height <= size.y
+                ? viewport.center.y - (size.y * 0.5f)
+                : Mathf.Clamp(preferredTopLeft.y, viewport.yMin, viewport.yMax - size.y);
+            return new Vector2(x, y);
+        }
+
+        private Rect GetVisibleCanvasRect()
+        {
+            var viewportSize = layout.size;
+            if (viewportSize.x <= 0f || viewportSize.y <= 0f)
+            {
+                viewportSize = new Vector2(resolvedStyle.width, resolvedStyle.height);
+            }
+
+            if (float.IsNaN(viewportSize.x) || float.IsNaN(viewportSize.y) ||
+                viewportSize.x <= 0f || viewportSize.y <= 0f)
+            {
+                return new Rect(GetCanvasCenter(), Vector2.zero);
+            }
+
+            var scale = GetCurrentGraphScale();
+            var pan = GetCurrentGraphPan();
+            return new Rect(
+                -pan.x / scale,
+                -pan.y / scale,
+                viewportSize.x / scale,
+                viewportSize.y / scale);
         }
 
         private static Vector2 GetPlacementSize(DialoguePaletteItemType itemType)
@@ -2088,6 +2182,16 @@ namespace NewDial.DialogueEditor
                 return;
             }
 
+            if (!evt.actionKey && (evt.keyCode == KeyCode.Delete || evt.keyCode == KeyCode.Backspace))
+            {
+                if (DeleteSelectionFromHotkey())
+                {
+                    evt.StopImmediatePropagation();
+                }
+
+                return;
+            }
+
             if (evt.actionKey)
             {
                 var handled = evt.keyCode switch
@@ -2103,8 +2207,18 @@ namespace NewDial.DialogueEditor
                 if (handled)
                 {
                     evt.StopImmediatePropagation();
+                    return;
                 }
+            }
 
+            if (TryHandlePaletteShortcut(DialoguePaletteShortcut.FromEvent(evt)))
+            {
+                evt.StopImmediatePropagation();
+                return;
+            }
+
+            if (evt.actionKey || evt.altKey || evt.shiftKey)
+            {
                 return;
             }
 
@@ -2115,6 +2229,23 @@ namespace NewDial.DialogueEditor
 
             SetMovementKeyState(evt.keyCode, true);
             evt.StopImmediatePropagation();
+        }
+
+        internal bool TryHandlePaletteShortcut(DialoguePaletteShortcut shortcut)
+        {
+            if (!_hasCanvasFocus)
+            {
+                return false;
+            }
+
+            var itemType = PaletteShortcutResolver?.Invoke(shortcut);
+            if (itemType == null)
+            {
+                return false;
+            }
+
+            PaletteShortcutAction?.Invoke(itemType.Value);
+            return true;
         }
 
         private void OnKeyUp(KeyUpEvent evt)
@@ -2218,6 +2349,94 @@ namespace NewDial.DialogueEditor
                 SelectionChangedAction?.Invoke(null);
                 MarkChanged();
             });
+        }
+
+        internal bool DeleteSelectionFromHotkey()
+        {
+            var selectedNodes = selection.OfType<Node>().ToList();
+            if (selectedNodes.Count == 0)
+            {
+                return false;
+            }
+
+            if (TryGetSingleSelectedCommentGroup(selectedNodes, out var rootComment, out var groupedNodeIds))
+            {
+                if (groupedNodeIds.Count <= 1)
+                {
+                    DeleteCommentOnly(rootComment);
+                    return true;
+                }
+
+                var choice = (CommentDeletePrompt ?? ShowDefaultCommentDeletePrompt).Invoke(rootComment);
+                switch (choice)
+                {
+                    case DialogueCommentDeleteChoice.DeleteCommentOnly:
+                        DeleteCommentOnly(rootComment);
+                        return true;
+                    case DialogueCommentDeleteChoice.DeleteCommentWithContents:
+                        DeleteCommentGroup(rootComment);
+                        return true;
+                    case DialogueCommentDeleteChoice.Cancel:
+                        return true;
+                }
+            }
+
+            DeleteSelectedNodes();
+            return true;
+        }
+
+        private bool TryGetSingleSelectedCommentGroup(
+            IReadOnlyList<Node> selectedNodes,
+            out CommentNodeData rootComment,
+            out HashSet<string> groupedNodeIds)
+        {
+            rootComment = null;
+            groupedNodeIds = null;
+
+            var selectedNodeIds = new HashSet<string>(selectedNodes
+                .Select(GetNodeId)
+                .Where(id => !string.IsNullOrWhiteSpace(id)));
+            var selectedCommentViews = selectedNodes
+                .OfType<DialogueCommentNodeView>()
+                .ToList();
+            var selectedCommentIds = new HashSet<string>(selectedCommentViews.Select(commentView => commentView.Data.Id));
+            var rootCommentViews = selectedCommentViews
+                .Where(commentView =>
+                {
+                    var parentComment = GetParentCommentNode(commentView.Data);
+                    return parentComment == null || !selectedCommentIds.Contains(parentComment.Id);
+                })
+                .ToList();
+
+            if (rootCommentViews.Count != 1)
+            {
+                return false;
+            }
+
+            rootComment = rootCommentViews[0].Data;
+            groupedNodeIds = new HashSet<string>(GetCommentGroupElements(rootComment)
+                .OfType<Node>()
+                .Select(GetNodeId)
+                .Where(id => !string.IsNullOrWhiteSpace(id)));
+
+            return selectedNodeIds.SetEquals(groupedNodeIds);
+        }
+
+        private static DialogueCommentDeleteChoice ShowDefaultCommentDeletePrompt(CommentNodeData commentNode)
+        {
+            var result = EditorUtility.DisplayDialogComplex(
+                DialogueEditorLocalization.Text("Delete Comment"),
+                DialogueEditorLocalization.Text("This comment contains nodes. What do you want to delete?"),
+                DialogueEditorLocalization.Text("Comment Only"),
+                DialogueEditorLocalization.Text("Comment With Contents"),
+                DialogueEditorLocalization.Text("Cancel"));
+
+            return result switch
+            {
+                0 => DialogueCommentDeleteChoice.DeleteCommentOnly,
+                1 => DialogueCommentDeleteChoice.DeleteCommentWithContents,
+                _ => DialogueCommentDeleteChoice.Cancel
+            };
         }
 
         private List<BaseNodeData> GetExpandedSelectedNodeData()
@@ -2604,7 +2823,40 @@ namespace NewDial.DialogueEditor
                 return string.Empty;
             }
 
-            return bodyText.Replace("\r", " ").Replace("\n", " ").Trim();
+            return InsertSoftBreaks(bodyText.Replace("\r", " ").Replace("\n", " ").Trim(), 24);
+        }
+
+        private static string InsertSoftBreaks(string text, int maxRunLength)
+        {
+            if (string.IsNullOrEmpty(text) || maxRunLength <= 0)
+            {
+                return text;
+            }
+
+            var builder = new System.Text.StringBuilder(text.Length);
+            var runLength = 0;
+            foreach (var character in text)
+            {
+                builder.Append(character);
+                if (char.IsWhiteSpace(character) ||
+                    character == '-' ||
+                    character == '_' ||
+                    character == '/' ||
+                    character == '\\')
+                {
+                    runLength = 0;
+                    continue;
+                }
+
+                runLength++;
+                if (runLength >= maxRunLength)
+                {
+                    builder.Append('\u200B');
+                    runLength = 0;
+                }
+            }
+
+            return builder.ToString();
         }
 
         private static bool IsInsideButton(VisualElement element)

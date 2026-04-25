@@ -385,12 +385,13 @@ namespace NewDial.DialogueEditor
 
     internal readonly struct DialoguePreviewTranscriptEntry
     {
-        private DialoguePreviewTranscriptEntry(DialoguePreviewTranscriptEntryKind kind, string title, string body, string nodeId)
+        private DialoguePreviewTranscriptEntry(DialoguePreviewTranscriptEntryKind kind, string title, string body, string nodeId, string choiceText = null)
         {
             Kind = kind;
             Title = title;
             Body = body;
             NodeId = nodeId;
+            ChoiceText = choiceText ?? string.Empty;
         }
 
         public DialoguePreviewTranscriptEntryKind Kind { get; }
@@ -400,6 +401,8 @@ namespace NewDial.DialogueEditor
         public string Body { get; }
 
         public string NodeId { get; }
+
+        public string ChoiceText { get; }
 
         public static DialoguePreviewTranscriptEntry Node(DialogueTextNodeData node, string speakerName)
         {
@@ -418,10 +421,6 @@ namespace NewDial.DialogueEditor
             var body = string.IsNullOrWhiteSpace(localizedBody)
                 ? DialogueEditorLocalization.Text("This choice has no dialogue text yet.")
                 : localizedBody;
-            if (!string.IsNullOrWhiteSpace(speakerName) && !string.IsNullOrWhiteSpace(choiceText))
-            {
-                body = $"{DialogueEditorLocalization.Text("Choice")}: {choiceText}\n{body}";
-            }
 
             return new DialoguePreviewTranscriptEntry(
                 DialoguePreviewTranscriptEntryKind.Choice,
@@ -429,7 +428,8 @@ namespace NewDial.DialogueEditor
                     ? string.IsNullOrWhiteSpace(choiceText) ? DialogueEditorLocalization.Text("Continue") : choiceText
                     : speakerName,
                 body,
-                node?.Id);
+                node?.Id,
+                choiceText);
         }
     }
 }

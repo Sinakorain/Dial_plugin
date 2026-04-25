@@ -52,15 +52,16 @@ This file describes the current working-tree behavior of `new_dial`, including c
 
 ### Editor surfaces
 
-- `DialogueStartWindow` opens from `Tools/New Dial/Dialogue Editor` and remains available from `Window/New Dial/Dialogue Editor`.
-- The start window can create a new `DialogueDatabaseAsset` or load an existing asset inside the current Unity project.
+- `DialogueStartWindow` opens as a compact floating launcher from `Tools/New Dial/Dialogue Editor` and remains available from `Window/New Dial/Dialogue Editor`.
+- The compact start launcher can create a new `DialogueDatabaseAsset`, load an existing asset, or reveal a collapsed advanced `Import / Export` section inside the same window; expanding the section grows the utility window downward from its current top-left position.
 - `DialogueEditorWindow` is the main authoring surface. Its toolbar exposes `New`, `Load`, `Save`, `Preview`, `Localization`, `Delete`, `Dialogue Settings`, a per-user content-language switcher for authored text, and a separate `EN/RU` editor UI language switcher backed by `EditorPrefs`.
-- The palette supports `Text Node`, `Comment`, `Function`, `Scene`, and `Debug`.
+- The palette supports `Text Node`, `Comment`, `Function`, `Scene`, and `Debug`; palette items show saved editor shortcuts, double-click starts shortcut rebinding, and shortcuts create nodes only while the graph canvas is focused. Shortcut-created nodes appear at the cursor when it is over the canvas, otherwise near the current viewport center, and are clamped into the visible viewport even if they overlap existing nodes.
 - Dialogue settings expose a speaker roster editor. Text node inspectors can bind a line to a speaker from that dialogue.
-- Text node inspectors prioritize speaker and body editing, with `LocalizationKey` kept near the bottom as lower-priority localization metadata.
-- `DialogueLocalizationWindow` imports and exports Google Sheets `.tsv`/`.csv` exports for dialogue rows shaped like `Conversation/<conversationId>/Entry/<n>/Dialogue Text`, with selected or all-conversation batch import.
+- Text node inspectors prioritize speaker and body editing, align checkbox toggles with fixed-width wrapping labels, show the body text label above the full-width multiline editor, and keep `LocalizationKey` near the bottom as lower-priority localization metadata.
+- The launcher's advanced import/export section handles Google Sheets `.tsv`/`.csv` exports for dialogue rows shaped like `Conversation/<conversationId>/Entry/<n>/Dialogue Text`, with selected or all-conversation batch import.
 - Rich-text color and highlight lists are editor-only user preferences saved in `EditorPrefs`; `+` adds an empty hex slot, valid values collapse into color icons, one click selects a color, `Apply` formats the current selection, and double click reopens hex editing.
 - `DialoguePreviewWindow` opens from the main editor toolbar for the currently selected dialogue and supports speaker labels, transcript history, advancing, choosing branches, going back, restarting, and jumping to the active node.
+- Preview transcript choice entries render the selected choice as an outlined button-like chip followed by a colon and the target node text on the next line.
 - The main editor, graph hints/summaries, preview window, start window, prompts, diagnostics, and inspector labels are localized for English and Russian. Authored dialogue content, serialized field names, ids, and public APIs remain unchanged.
 - `DialogueEditorAutosaveStore` serializes snapshots as JSON into the consuming Unity project's `Library/DialogueEditorAutosaves` folder.
 - Executable node inspectors support registry-backed metadata when available and free-form editing when no registry is registered.
@@ -75,7 +76,7 @@ This file describes the current working-tree behavior of `new_dial`, including c
 - The graph empty-state warning is visible for an empty graph, hides as soon as the first text or comment node is created, and returns when the last node is deleted.
 - Selected NPC and dialogue metadata in the project panel uses compact inline ID and Where Used rows instead of nested cards.
 - Dialogue settings speaker roster rows keep the speaker name field and remove action on one line.
-- Text and executable nodes select from any non-button body area; lower-half drags still begin link creation and top-half targeting still accepts link drops.
+- Text and executable nodes select from any non-button body area; lower-half drags still begin link creation and top-half targeting still accepts link drops. Text node graph previews keep the initial node width and wrap long uninterrupted text downward.
 - NPC, dialogue, and node `Id` values are explicitly editable in the editor, with generate and safe-regenerate actions plus immediate empty/duplicate warnings.
 - Changing a node `Id` updates internal graph links that referenced the old node `Id`; NPC and dialogue `Id` changes warn about possible external references but do not resolve them yet.
 - Text node inspectors expose optional `VoiceKey` metadata for future project-side voiceover, audio, or localization lookup; the package does not resolve or play audio assets itself.
@@ -86,12 +87,14 @@ This file describes the current working-tree behavior of `new_dial`, including c
 - Localization table export writes `Keys` plus only the language columns that exist in the selected dialogue data. Empty cells and `Loading...` are treated as missing translations on import.
 - Text node `BodyText` supports `<b>`, `<i>`, `<color=#RRGGBB>`, and `<mark=#RRGGBBAA>` markup. Unknown or malformed tags remain in raw `BodyText` and render as plain text in editor previews.
 - Inspector, graph, current-line preview, and transcript surfaces render supported rich text through a shared segmented UI Toolkit renderer for bold, italic, color, and highlight.
+- Link `ChoiceText` editing is shown only for text nodes with `UseOutputsAsChoices` enabled.
 - Choice-mode text nodes show editor diagnostics for missing outgoing links, broken targets, empty/fallback choice labels, conflicting link order, negative link order, and unreachable choice targets.
 - Condition editing uses generic `None`, `VariableCheck`, and `Custom` types; irrelevant fields are hidden, operators come from built-in metadata, hints explain expected values, and projects can register key suggestions.
 - The preview window includes a bool/number/string test-variable sandbox and explains blocked dialogue starts, unavailable choices, missing targets, branch ends, and generic fallback labels.
 - Collapsible Where Used blocks show internal NPC/dialogue/node references and can include project-provided external references through an editor resolver registry.
 - Comment groups can own both text nodes and nested comment groups.
 - Comment inspectors expose separate delete actions for removing only the comment node or removing the whole comment group with its contained nodes.
+- Hotkey-delete for a single selected comment removes empty comments immediately and prompts between comment-only and group deletion when the comment contains nodes.
 - Nested ownership prefers the most specific containing comment group when several comment areas overlap.
 - Moving a parent comment group moves text nodes and nested comment groups that were directly contained when the drag started; nodes newly overlapped during the drag are not attached mid-drag.
 - Cutting a selected root comment group removes the full nested hierarchy from the graph after copying it to the clipboard payload.

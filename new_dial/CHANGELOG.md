@@ -14,6 +14,7 @@
 - Added a text-node rich-text toolbar, user-editable color/highlight lists saved in `EditorPrefs`, sanitized graph/preview rendering, and runtime helpers for supported dialogue body markup.
 - Added text-node localization keys, per-language body text storage, content-language switching, and TSV/CSV dialogue localization import/export tooling.
 - Added batch TSV/CSV localization import for selected conversations or all conversations in a loaded table.
+- Added saved, customizable palette shortcuts for creating graph nodes from the focused canvas.
 
 ### Changed
 
@@ -21,9 +22,11 @@
 - NPC, dialogue, and node identifiers can now be edited explicitly in the editor, with guarded generation actions and immediate empty/duplicate warnings.
 - Node identifier changes now update internal graph links that reference the old node id.
 - Choice-mode nodes now surface authoring diagnostics for missing outputs, broken targets, fallback labels, order conflicts, and unreachable choice targets.
+- Link `ChoiceText` fields now appear only when a text node uses outputs as choices.
 - Condition editing now uses guided operator choices, generic variable-check hints, and optional project-provided key suggestions.
 - Removed game-specific condition types (`QuestState`, `TrustLevel`, `Fact`, and `GlobalVariableCheck`); conditions now use generic `VariableCheck` or project-defined `Custom`.
 - Dialogue preview now includes test variables and explains blocked starts, unavailable choices, missing targets, branch ends, and fallback labels.
+- Dialogue preview transcript choice entries now render the selected choice as an outlined chip before the target node text.
 - Added Where Used sections with internal references and a project-extensible external reference resolver registry.
 - Prompt to save or discard unsaved changes before opening another dialogue database in the editor.
 - Graph empty-state visibility now updates when the first node is created and when the last node is removed.
@@ -33,16 +36,26 @@
 - Nested comment-group ownership and movement behavior now follow the most specific containing comment group.
 - Dragging a comment group now keeps its drag-start membership instead of attaching newly overlapped nodes mid-drag.
 - Comment inspectors now separate deleting only the comment node from deleting the whole comment group with contained nodes.
+- Hotkey-delete for a single selected comment now removes empty comments immediately and prompts between comment-only and group deletion when the comment contains nodes.
 - Cutting a selected root comment group removes the full nested hierarchy after copying it to the clipboard payload.
 - Native Unity undo/redo now covers node-scope graph edits, comment resize, link edits, and node inspector changes on both macOS (`Cmd+Z`) and Windows (`Ctrl+Z`).
 - Undo/redo now refreshes graph selection, preview sessions, and autosave dirty-state against the last saved database snapshot.
 - Text and executable nodes now select from any non-button part of the node while preserving lower-half link dragging.
+- Text node graph previews now keep the initial node width and wrap long uninterrupted text downward instead of expanding sideways.
 - Scene node inspectors now write the first available Known Scene into an empty `SceneKey` instead of only showing it as the dropdown default.
 - The editor left dock now keeps the NPC/dialogue project area at a fixed height and shows the full compact node palette without palette scrolling.
 - Existing dialogues without speakers now receive a default speaker from their owning NPC when opened in the editor.
 - Rich-text previews now use segmented UI Toolkit rendering for bold, italic, color, and highlight instead of relying only on `Label.enableRichText`.
 - Text-node body fields now visually wrap long raw lines in the inspector.
 - Text-node inspectors now keep the localization key near the bottom so core authoring fields stay prominent.
+- Text-node body fields now place the label above the multiline editor so the text box uses the full inspector width.
+- Text-node inspector checkboxes now align by using fixed-width wrapping labels.
+- Palette shortcuts now create nodes at the cursor when it is over the canvas or near the current viewport center otherwise, clamping them into view even if they overlap existing nodes.
+- The start window is now a compact floating launcher and no longer mentions cutscenes.
+- Localization import/export now lives in a collapsed advanced section of the unified dialogue launcher instead of a separate menu item.
+- Fixed the start launcher opening path so it centers new windows after Unity creates them and keeps the current top-left position when the import/export section is toggled.
+- The collapsed import/export entry is now visible in the launcher's initial compact size.
+- The expanded import/export launcher size is now tighter and no longer leaves a large empty area below the advanced controls.
 - Dialogue settings speaker rows now keep speaker name editing and removal controls on one line.
 - Rich-text toolbar formatting now preserves selected text ranges when applying bold, italic, color, or highlight.
 - Saved rich-text color slots now display as color icons; one click selects the color, `Apply` formats the current selection, and double click returns that slot to hex edit mode.

@@ -10,33 +10,38 @@ namespace NewDial.DialogueEditor
 {
     public class DialogueLocalizationWindow : EditorWindow
     {
-        private DialogueEditorWindow _owner;
-        private DialogueDatabaseAsset _database;
-        private NpcEntry _selectedNpc;
-        private DialogueEntry _selectedDialogue;
-        private DialogueLocalizationTable _table;
-        private readonly Dictionary<string, bool> _conversationSelections = new(StringComparer.OrdinalIgnoreCase);
-        private Label _summaryLabel;
-        private TextField _exportPrefixField;
-
-        [MenuItem("Tools/New Dial/Localization Import Export")]
-        public static void ShowWindow()
-        {
-            Open(null, null, null, null);
-        }
-
         public static void Open(
             DialogueEditorWindow owner,
             DialogueDatabaseAsset database,
             NpcEntry selectedNpc,
             DialogueEntry selectedDialogue)
         {
-            var window = GetWindow<DialogueLocalizationWindow>(DialogueEditorLocalization.Text("Localization Import/Export"));
-            window.minSize = new Vector2(520f, 420f);
-            window.Initialize(owner, database, selectedNpc, selectedDialogue);
+            DialogueStartWindow.OpenLocalization(owner, database, selectedNpc, selectedDialogue);
+        }
+    }
+
+    internal sealed class DialogueLocalizationPanel : VisualElement
+    {
+        private DialogueEditorWindow _owner;
+        private DialogueDatabaseAsset _database;
+        private NpcEntry _selectedNpc;
+        private DialogueEntry _selectedDialogue;
+        private DialogueLocalizationTable _table;
+        private readonly Dictionary<string, bool> _conversationSelections = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Action<string> _notify;
+        private Label _summaryLabel;
+        private TextField _exportPrefixField;
+
+        public DialogueLocalizationPanel(Action<string> notify = null)
+        {
+            _notify = notify;
+            AddToClassList("dialogue-localization-panel");
         }
 
-        private void Initialize(
+        public DialogueDatabaseAsset Database => _database;
+        public DialogueEntry SelectedDialogue => _selectedDialogue;
+
+        public void Initialize(
             DialogueEditorWindow owner,
             DialogueDatabaseAsset database,
             NpcEntry selectedNpc,
@@ -46,36 +51,13 @@ namespace NewDial.DialogueEditor
             _database = database;
             _selectedNpc = selectedNpc;
             _selectedDialogue = selectedDialogue;
-            BuildLayout();
-        }
-
-        private void CreateGUI()
-        {
+            SyncConversationSelections();
             BuildLayout();
         }
 
         private void BuildLayout()
         {
-            if (rootVisualElement == null)
-            {
-                return;
-            }
-
-            rootVisualElement.Clear();
-            rootVisualElement.style.paddingLeft = 12f;
-            rootVisualElement.style.paddingRight = 12f;
-            rootVisualElement.style.paddingTop = 12f;
-            rootVisualElement.style.paddingBottom = 12f;
-
-            rootVisualElement.Add(new Label(DialogueEditorLocalization.Text("Localization Import/Export"))
-            {
-                style =
-                {
-                    unityFontStyleAndWeight = FontStyle.Bold,
-                    fontSize = 16f,
-                    marginBottom = 8f
-                }
-            });
+            Clear();
 
             var databaseField = new IMGUIContainer(() =>
             {
@@ -96,14 +78,14 @@ namespace NewDial.DialogueEditor
                 BuildLayout();
             });
             databaseField.name = "localization-database-field";
-            rootVisualElement.Add(databaseField);
+            Add(databaseField);
 
             _summaryLabel = new Label(BuildContextSummary());
-            _summaryLabel.style.whiteSpace = WhiteSpace.Normal;
-            rootVisualElement.Add(_summaryLabel);
+            _summaryLabel.AddToClassList("dialogue-localization-panel__summary");
+            Add(_summaryLabel);
 
-            rootVisualElement.Add(CreateSectionTitle(DialogueEditorLocalization.Text("Import")));
-            rootVisualElement.Add(new Button(LoadTableFromFile)
+            Add(CreateSectionTitle(DialogueEditorLocalization.Text("Import")));
+            Add(new Button(LoadTableFromFile)
             {
                 text = DialogueEditorLocalization.Text("Load TSV/CSV"),
                 name = "localization-load-table-button"
@@ -111,14 +93,14 @@ namespace NewDial.DialogueEditor
 
             AddConversationSelectionUi();
 
-            rootVisualElement.Add(CreateSectionTitle(DialogueEditorLocalization.Text("Export")));
+            Add(CreateSectionTitle(DialogueEditorLocalization.Text("Export")));
             _exportPrefixField = new TextField(DialogueEditorLocalization.Text("Conversation Prefix"))
             {
                 value = _selectedDialogue?.Id ?? string.Empty,
                 name = "localization-export-prefix-field"
             };
-            rootVisualElement.Add(_exportPrefixField);
-            rootVisualElement.Add(new Button(ExportDialogue)
+            Add(_exportPrefixField);
+            Add(new Button(ExportDialogue)
             {
                 text = DialogueEditorLocalization.Text("Export TSV"),
                 name = "localization-export-button"
@@ -137,7 +119,7 @@ namespace NewDial.DialogueEditor
             _conversationSelections.Clear();
             SyncConversationSelections(selectAllNewConversations: true);
             BuildLayout();
-            ShowNotification(new GUIContent(DialogueEditorLocalization.Format("Loaded {0} dialogue row(s).", _table.Rows.Count)));
+            Notify(DialogueEditorLocalization.Format("Loaded {0} dialogue row(s).", _table.Rows.Count));
         }
 
         private void ApplySelectedImport()
@@ -187,14 +169,14 @@ namespace NewDial.DialogueEditor
             _owner?.RefreshAfterLocalizationImport(targetNpc, targetDialogue);
             SyncConversationSelections();
             BuildLayout();
-            ShowNotification(new GUIContent(DialogueEditorLocalization.Format(
+            Notify(DialogueEditorLocalization.Format(
                 "Import: {0} conversation(s), {1} dialogue(s) created, {2} dialogue(s) updated, {3} node(s) created, {4} updated, {5} missing.",
                 report.ConversationsImported,
                 report.DialoguesCreated,
                 report.DialoguesUpdated,
                 report.Created,
                 report.Updated,
-                report.Missing)));
+                report.Missing));
         }
 
         private void ExportDialogue()
@@ -223,10 +205,10 @@ namespace NewDial.DialogueEditor
                 _exportPrefixField?.value,
                 out var tsv);
             File.WriteAllText(path, tsv);
-            ShowNotification(new GUIContent(DialogueEditorLocalization.Format(
+            Notify(DialogueEditorLocalization.Format(
                 "Export: {0} row(s), {1} skipped.",
                 report.Exported,
-                report.SkippedMissingKey)));
+                report.SkippedMissingKey));
         }
 
         private void AddConversationSelectionUi()
@@ -234,7 +216,7 @@ namespace NewDial.DialogueEditor
             var conversations = _table?.GetConversations() ?? new List<DialogueLocalizationConversation>();
             if (conversations.Count == 0)
             {
-                rootVisualElement.Add(new Label(DialogueEditorLocalization.Text("No conversations loaded"))
+                Add(new Label(DialogueEditorLocalization.Text("No conversations loaded"))
                 {
                     name = "localization-empty-conversation-label"
                 });
@@ -258,14 +240,13 @@ namespace NewDial.DialogueEditor
                 text = DialogueEditorLocalization.Text("Clear"),
                 name = "localization-clear-selection-button"
             });
-            rootVisualElement.Add(toolsRow);
+            Add(toolsRow);
 
             var scroll = new ScrollView
             {
                 name = "localization-conversation-list"
             };
-            scroll.style.maxHeight = 180f;
-            scroll.style.marginBottom = 6f;
+            scroll.AddToClassList("dialogue-localization-panel__conversation-list");
             foreach (var conversation in conversations)
             {
                 var toggle = new Toggle($"{conversation.Id} ({conversation.Rows.Count})")
@@ -280,7 +261,7 @@ namespace NewDial.DialogueEditor
                 scroll.Add(toggle);
             }
 
-            rootVisualElement.Add(scroll);
+            Add(scroll);
 
             var importRow = new VisualElement
             {
@@ -298,7 +279,7 @@ namespace NewDial.DialogueEditor
                 text = DialogueEditorLocalization.Text("Import All"),
                 name = "localization-import-all-button"
             });
-            rootVisualElement.Add(importRow);
+            Add(importRow);
         }
 
         private bool CanImport()
@@ -374,15 +355,14 @@ namespace NewDial.DialogueEditor
 
         private static Label CreateSectionTitle(string text)
         {
-            return new Label(text)
-            {
-                style =
-                {
-                    unityFontStyleAndWeight = FontStyle.Bold,
-                    marginTop = 12f,
-                    marginBottom = 4f
-                }
-            };
+            var label = new Label(text);
+            label.AddToClassList("dialogue-localization-panel__section-title");
+            return label;
+        }
+
+        private void Notify(string message)
+        {
+            _notify?.Invoke(message);
         }
     }
 }

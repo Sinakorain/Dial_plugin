@@ -68,12 +68,54 @@ namespace NewDial.DialogueEditor.Tests
             Assert.That(session.Transcript[1].Kind, Is.EqualTo(DialoguePreviewTranscriptEntryKind.Choice));
             Assert.That(session.Transcript[1].Title, Is.EqualTo("Go right"));
             Assert.That(session.Transcript[1].Body, Is.EqualTo("We went right."));
+            Assert.That(session.Transcript[1].ChoiceText, Is.EqualTo("Go right"));
             Assert.That(session.Transcript[1].NodeId, Is.EqualTo(right.Id));
 
             Assert.That(session.Back(), Is.True);
             Assert.That(session.CurrentNode, Is.EqualTo(start));
             Assert.That(session.CurrentChoices.Count, Is.EqualTo(2));
             Assert.That(session.Transcript.Count, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void Choose_WithSpeaker_KeepsChoiceTextSeparateFromNodeBody()
+        {
+            var dialogue = new DialogueEntry
+            {
+                Name = "Speaker Choice",
+                Speakers = new List<DialogueSpeakerEntry>
+                {
+                    new() { Id = "liar", Name = "Liar" }
+                }
+            };
+
+            var start = new DialogueTextNodeData
+            {
+                BodyText = "Question",
+                IsStartNode = true,
+                UseOutputsAsChoices = true
+            };
+            var answer = new DialogueTextNodeData
+            {
+                BodyText = "No, thanks.",
+                SpeakerId = "liar"
+            };
+            dialogue.Graph.Nodes.Add(start);
+            dialogue.Graph.Nodes.Add(answer);
+            dialogue.Graph.Links.Add(new NodeLinkData
+            {
+                FromNodeId = start.Id,
+                ToNodeId = answer.Id,
+                Order = 0,
+                ChoiceText = "No, thanks"
+            });
+
+            var session = new DialoguePreviewSession(dialogue);
+
+            Assert.That(session.Choose(0), Is.True);
+            Assert.That(session.Transcript[1].Title, Is.EqualTo("Liar"));
+            Assert.That(session.Transcript[1].ChoiceText, Is.EqualTo("No, thanks"));
+            Assert.That(session.Transcript[1].Body, Is.EqualTo("No, thanks."));
         }
 
         [Test]

@@ -4,6 +4,145 @@
     color: #edf2f8;
 }
 
+.dialogue-start {
+    flex-grow: 1;
+    min-width: 0;
+    min-height: 0;
+    padding-left: 16px;
+    padding-right: 16px;
+    padding-top: 16px;
+    padding-bottom: 16px;
+    background-color: #131823;
+    color: #edf2f8;
+}
+
+.dialogue-start__card {
+    flex-grow: 1;
+    flex-shrink: 1;
+    justify-content: flex-start;
+    min-width: 0;
+    max-width: 100%;
+    padding-left: 18px;
+    padding-right: 18px;
+    padding-top: 18px;
+    padding-bottom: 18px;
+    background-color: #20283a;
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: #33415d;
+    border-right-color: #33415d;
+    border-bottom-color: #33415d;
+    border-left-color: #33415d;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+}
+
+.dialogue-start__title {
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+    font-size: 20px;
+    color: #f7fbff;
+    margin-bottom: 6px;
+    white-space: normal;
+}
+
+.dialogue-start__subtitle {
+    -unity-text-align: middle-center;
+    color: #b8c6d9;
+    margin-bottom: 18px;
+    white-space: normal;
+}
+
+.dialogue-start__button {
+    min-height: 34px;
+    margin-bottom: 8px;
+    color: #edf4ff;
+    border-top-left-radius: 7px;
+    border-top-right-radius: 7px;
+    border-bottom-left-radius: 7px;
+    border-bottom-right-radius: 7px;
+    -unity-font-style: bold;
+}
+
+.dialogue-start__button--primary {
+    background-color: #365a86;
+    border-top-color: #5182bd;
+    border-right-color: #5182bd;
+    border-bottom-color: #5182bd;
+    border-left-color: #5182bd;
+}
+
+.dialogue-start__button--neutral {
+    background-color: #2b3851;
+    border-top-color: #445573;
+    border-right-color: #445573;
+    border-bottom-color: #445573;
+    border-left-color: #445573;
+}
+
+.dialogue-start__button--exit {
+    background-color: #4a2c37;
+    border-top-color: #704252;
+    border-right-color: #704252;
+    border-bottom-color: #704252;
+    border-left-color: #704252;
+}
+
+.dialogue-start__divider {
+    height: 1px;
+    margin-top: 8px;
+    margin-bottom: 8px;
+    background-color: #33415d;
+}
+
+.dialogue-start__import-export-foldout {
+    color: #d8e2f0;
+    margin-top: 2px;
+}
+
+.dialogue-localization-panel {
+    margin-top: 8px;
+    padding-left: 10px;
+    padding-right: 10px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+    background-color: #192131;
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: #2a3750;
+    border-right-color: #2a3750;
+    border-bottom-color: #2a3750;
+    border-left-color: #2a3750;
+    border-top-left-radius: 7px;
+    border-top-right-radius: 7px;
+    border-bottom-left-radius: 7px;
+    border-bottom-right-radius: 7px;
+}
+
+.dialogue-localization-panel__summary {
+    white-space: normal;
+    color: #b8c6d9;
+    margin-bottom: 4px;
+}
+
+.dialogue-localization-panel__section-title {
+    -unity-font-style: bold;
+    margin-top: 12px;
+    margin-bottom: 4px;
+    color: #f0f5fc;
+}
+
+.dialogue-localization-panel__conversation-list {
+    max-height: 180px;
+    margin-bottom: 6px;
+}
+
 .dialogue-editor__toolbar {
     min-height: 44px;
     padding-left: 10px;
@@ -205,7 +344,7 @@
 .dialogue-editor__palette-item {
     align-items: center;
     flex-direction: row;
-    justify-content: center;
+    justify-content: space-between;
     margin-bottom: 6px;
     max-width: 100%;
     min-height: 34px;
@@ -238,13 +377,70 @@
     background-color: #314563;
 }
 
+.dialogue-editor__palette-item.is-rebinding {
+    border-top-color: #f4b866;
+    border-right-color: #f4b866;
+    border-bottom-color: #f4b866;
+    border-left-color: #f4b866;
+    background-color: #34405a;
+}
+
 .dialogue-editor__palette-item-title {
     -unity-font-style: bold;
     color: #f8fbff;
     max-width: 100%;
     min-width: 0;
+    flex-grow: 1;
+    flex-shrink: 1;
     -unity-text-align: middle-center;
     white-space: normal;
+}
+
+.dialogue-editor__palette-shortcut {
+    flex-grow: 0;
+    flex-shrink: 0;
+    width: 68px;
+    min-width: 68px;
+    max-width: 68px;
+    margin-right: 8px;
+    padding-left: 7px;
+    padding-right: 7px;
+    padding-top: 2px;
+    padding-bottom: 2px;
+    color: #dce7f6;
+    background-color: #1e2738;
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: #445573;
+    border-right-color: #445573;
+    border-bottom-color: #445573;
+    border-left-color: #445573;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    border-bottom-left-radius: 6px;
+    border-bottom-right-radius: 6px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+    white-space: nowrap;
+}
+
+.dialogue-editor__palette-shortcut-spacer {
+    flex-grow: 0;
+    flex-shrink: 0;
+    width: 68px;
+    min-width: 68px;
+    max-width: 68px;
+    margin-left: 8px;
+}
+
+.dialogue-editor__palette-item.is-rebinding .dialogue-editor__palette-shortcut {
+    color: #fff2d7;
+    border-top-color: #f4b866;
+    border-right-color: #f4b866;
+    border-bottom-color: #f4b866;
+    border-left-color: #f4b866;
 }
 
 .dialogue-editor__palette-button {
@@ -446,6 +642,25 @@
     min-height: 28px;
     margin-top: 0;
     margin-left: 8px;
+}
+
+.dialogue-editor__node-toggle {
+    align-items: center;
+    max-width: 100%;
+    min-width: 0;
+}
+
+.dialogue-editor__node-toggle > .unity-base-field__label {
+    width: 210px;
+    min-width: 210px;
+    max-width: 210px;
+    color: #b6c5dd;
+    white-space: normal;
+}
+
+.dialogue-editor__node-toggle > .unity-base-field__input {
+    flex-grow: 0;
+    flex-shrink: 0;
 }
 
 .dialogue-editor__id-card {
@@ -698,6 +913,22 @@
 }
 
 .dialogue-editor__body-field {
+    flex-direction: column;
+    align-items: stretch;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.dialogue-editor__body-field > .unity-base-field__label {
+    min-width: 0;
+    margin-bottom: 4px;
+    margin-right: 0;
+    color: #c6d1e2;
+    white-space: normal;
+}
+
+.dialogue-editor__body-field > .unity-base-field__input {
+    flex-grow: 1;
     min-width: 0;
     max-width: 100%;
 }
@@ -1030,17 +1261,31 @@
     padding-right: 12px;
     padding-top: 8px;
     padding-bottom: 12px;
-    min-width: 250px;
+    width: 280px;
+    min-width: 280px;
+    max-width: 280px;
+    flex-grow: 0;
+    flex-shrink: 0;
+    overflow: hidden;
 }
 
 .dialogue-node__body-preview {
     color: #eef3f8;
     white-space: normal;
     margin-bottom: 8px;
+    min-width: 0;
+    max-width: 100%;
+    flex-grow: 0;
+    flex-shrink: 1;
+    overflow: hidden;
 }
 
 .dialogue-node__body-preview .dialogue-rich-text-run {
     color: #eef3f8;
+    min-width: 0;
+    max-width: 100%;
+    flex-shrink: 1;
+    overflow: hidden;
 }
 
 .dialogue-node__meta {
@@ -1400,6 +1645,42 @@
 .dialogue-preview__transcript-body {
     white-space: normal;
     color: #d8e0eb;
+}
+
+.dialogue-preview__transcript-choice-row {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 5px;
+    min-width: 0;
+}
+
+.dialogue-preview__transcript-choice-chip {
+    padding-left: 7px;
+    padding-right: 7px;
+    padding-top: 2px;
+    padding-bottom: 2px;
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: #8fb79d;
+    border-right-color: #8fb79d;
+    border-bottom-color: #8fb79d;
+    border-left-color: #8fb79d;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    border-bottom-left-radius: 6px;
+    border-bottom-right-radius: 6px;
+    color: #e6f4e9;
+    background-color: rgba(93, 138, 113, 0.14);
+    -unity-font-style: bold;
+    white-space: normal;
+}
+
+.dialogue-preview__transcript-choice-colon {
+    margin-left: 4px;
+    color: #d8e0eb;
+    -unity-font-style: bold;
 }
 
 .dialogue-preview__transcript-body .dialogue-rich-text-run {

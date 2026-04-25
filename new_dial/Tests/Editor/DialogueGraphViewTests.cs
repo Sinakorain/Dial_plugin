@@ -161,6 +161,37 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
+        public void CreateNodeFromPaletteShortcut_AllowsOverlapAtFallbackPoint()
+        {
+            var graph = new DialogueGraphData();
+            var existingNode = new DialogueTextNodeData
+            {
+                Title = "Existing",
+                Position = new Vector2(-140f, -85f)
+            };
+            graph.Nodes.Add(existingNode);
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+
+            view.CreateNodeFromPaletteShortcut(DialoguePaletteItemType.TextNode);
+
+            var createdNode = graph.Nodes.OfType<DialogueTextNodeData>().Last();
+            Assert.That(createdNode.Id, Is.Not.EqualTo(existingNode.Id));
+            Assert.That(createdNode.Position, Is.EqualTo(existingNode.Position));
+        }
+
+        [Test]
+        public void PaletteShortcutPlacement_ClampsNodeIntoVisibleViewport()
+        {
+            var clamped = DialogueGraphView.ClampPaletteShortcutPlacementToViewport(
+                new Vector2(900f, 700f),
+                DialogueGraphView.TextNodeInitialSize,
+                new Rect(0f, 0f, 1000f, 800f));
+
+            Assert.That(clamped, Is.EqualTo(new Vector2(720f, 630f)));
+        }
+
+        [Test]
         public void LoadGraph_RendersLinksBetweenExecutableNodes()
         {
             var graph = new DialogueGraphData();
@@ -273,6 +304,30 @@ namespace NewDial.DialogueEditor.Tests
                 Is.EqualTo("Hello friend <unknown>tag</unknown>"));
             Assert.That(preview.Query<Label>(className: "dialogue-rich-text-run").ToList()
                 .Any(label => label.text == "friend" && label.style.unityFontStyleAndWeight.value == FontStyle.Bold), Is.True);
+        }
+
+        [Test]
+        public void TextNodeVisuals_InsertSoftBreaksForLongPreviewWords()
+        {
+            var graph = new DialogueGraphData();
+            var longWord = new string('a', 80);
+            var node = new DialogueTextNodeData
+            {
+                Title = "Long",
+                BodyText = longWord
+            };
+            graph.Nodes.Add(node);
+
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+            var nodeView = view.graphElements.OfType<DialogueTextNodeView>().Single();
+
+            var preview = nodeView.Q<VisualElement>(className: "dialogue-node__body-preview");
+            Assert.That(preview, Is.Not.Null);
+            var previewText = string.Concat(preview.Query<Label>(className: "dialogue-rich-text-run").ToList().Select(label => label.text));
+
+            Assert.That(previewText, Does.Contain("\u200B"));
+            Assert.That(node.BodyText, Is.EqualTo(longWord));
         }
 
         [Test]
@@ -442,6 +497,179 @@ namespace NewDial.DialogueEditor.Tests
             {
                 outsideNode.Id
             }));
+        }
+
+        [Test]
+        public void DeleteHotkey_EmptySingleComment_DeletesCommentOnlyWithoutPrompt()
+        {
+            var graph = new DialogueGraphData();
+            var comment = new CommentNodeData
+            {
+                Title = "Empty",
+                Position = new Vector2(100f, 100f),
+                Area = new Rect(100f, 100f, 420f, 260f)
+            };
+            graph.Nodes.Add(comment);
+
+            var promptCalls = 0;
+            var view = new DialogueGraphView
+            {
+                CommentDeletePrompt = _ =>
+                {
+                    promptCalls++;
+                    return DialogueCommentDeleteChoice.Cancel;
+                }
+            };
+            view.LoadGraph(graph);
+            view.SelectCommentGroup(comment);
+
+            Assert.That(view.DeleteSelectionFromHotkey(), Is.True);
+
+            Assert.That(promptCalls, Is.EqualTo(0));
+            Assert.That(graph.Nodes, Is.Empty);
+        }
+
+        [Test]
+        public void DeleteHotkey_CommentWithContents_CanDeleteCommentOnly()
+        {
+            var graph = new DialogueGraphData();
+            var comment = new CommentNodeData
+            {
+                Title = "Group",
+                Position = new Vector2(100f, 100f),
+                Area = new Rect(100f, 100f, 420f, 260f)
+            };
+            var textNode = new DialogueTextNodeData
+            {
+                Title = "Inside",
+                Position = new Vector2(130f, 130f)
+            };
+            graph.Nodes.Add(comment);
+            graph.Nodes.Add(textNode);
+
+            var view = new DialogueGraphView
+            {
+                CommentDeletePrompt = _ => DialogueCommentDeleteChoice.DeleteCommentOnly
+            };
+            view.LoadGraph(graph);
+            view.SelectCommentGroup(comment);
+
+            Assert.That(view.DeleteSelectionFromHotkey(), Is.True);
+
+            Assert.That(graph.Nodes.Select(node => node.Id), Is.EquivalentTo(new[]
+            {
+                textNode.Id
+            }));
+        }
+
+        [Test]
+        public void DeleteHotkey_CommentWithContents_CanDeleteGroup()
+        {
+            var graph = new DialogueGraphData();
+            var comment = new CommentNodeData
+            {
+                Title = "Group",
+                Position = new Vector2(100f, 100f),
+                Area = new Rect(100f, 100f, 420f, 260f)
+            };
+            var textNode = new DialogueTextNodeData
+            {
+                Title = "Inside",
+                Position = new Vector2(130f, 130f)
+            };
+            graph.Nodes.Add(comment);
+            graph.Nodes.Add(textNode);
+
+            var view = new DialogueGraphView
+            {
+                CommentDeletePrompt = _ => DialogueCommentDeleteChoice.DeleteCommentWithContents
+            };
+            view.LoadGraph(graph);
+            view.SelectCommentGroup(comment);
+
+            Assert.That(view.DeleteSelectionFromHotkey(), Is.True);
+
+            Assert.That(graph.Nodes, Is.Empty);
+        }
+
+        [Test]
+        public void DeleteHotkey_CommentWithContents_CancelKeepsGraph()
+        {
+            var graph = new DialogueGraphData();
+            var comment = new CommentNodeData
+            {
+                Title = "Group",
+                Position = new Vector2(100f, 100f),
+                Area = new Rect(100f, 100f, 420f, 260f)
+            };
+            var textNode = new DialogueTextNodeData
+            {
+                Title = "Inside",
+                Position = new Vector2(130f, 130f)
+            };
+            graph.Nodes.Add(comment);
+            graph.Nodes.Add(textNode);
+
+            var view = new DialogueGraphView
+            {
+                CommentDeletePrompt = _ => DialogueCommentDeleteChoice.Cancel
+            };
+            view.LoadGraph(graph);
+            view.SelectCommentGroup(comment);
+
+            Assert.That(view.DeleteSelectionFromHotkey(), Is.True);
+
+            Assert.That(graph.Nodes.Select(node => node.Id), Is.EquivalentTo(new[]
+            {
+                comment.Id,
+                textNode.Id
+            }));
+        }
+
+        [Test]
+        public void DeleteHotkey_MultiSelection_KeepsBulkDeleteBehavior()
+        {
+            var graph = new DialogueGraphData();
+            var comment = new CommentNodeData
+            {
+                Title = "Group",
+                Position = new Vector2(100f, 100f),
+                Area = new Rect(100f, 100f, 420f, 260f)
+            };
+            var textNode = new DialogueTextNodeData
+            {
+                Title = "Inside",
+                Position = new Vector2(130f, 130f)
+            };
+            var outsideNode = new DialogueTextNodeData
+            {
+                Title = "Outside",
+                Position = new Vector2(620f, 130f)
+            };
+            graph.Nodes.Add(comment);
+            graph.Nodes.Add(textNode);
+            graph.Nodes.Add(outsideNode);
+
+            var promptCalls = 0;
+            var view = new DialogueGraphView
+            {
+                CommentDeletePrompt = _ =>
+                {
+                    promptCalls++;
+                    return DialogueCommentDeleteChoice.Cancel;
+                }
+            };
+            view.LoadGraph(graph);
+            view.SelectCommentGroup(comment);
+            var outsideView = view.graphElements
+                .OfType<DialogueTextNodeView>()
+                .Single(nodeView => nodeView.Data.Id == outsideNode.Id);
+            view.AddToSelection(outsideView);
+
+            Assert.That(view.DeleteSelectionFromHotkey(), Is.True);
+
+            Assert.That(promptCalls, Is.EqualTo(0));
+            Assert.That(graph.Nodes, Is.Empty);
         }
 
         [Test]

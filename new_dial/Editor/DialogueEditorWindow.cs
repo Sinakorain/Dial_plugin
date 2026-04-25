@@ -38,6 +38,8 @@ namespace NewDial.DialogueEditor
         private Button _detailsToggleButton;
         private Button _focusStartButton;
         private VisualElement _graphHost;
+        private readonly Dictionary<DialoguePaletteItemType, PaletteItem> _paletteItems = new();
+        private DialoguePaletteItemType? _activePaletteShortcutRebind;
 
         public static void Open(DialogueDatabaseAsset asset)
         {
@@ -163,6 +165,8 @@ namespace NewDial.DialogueEditor
                 ApplyUndoableChangeAction = ApplyUndoableNodeChange,
                 BeginUndoGestureAction = BeginUndoGesture,
                 EndUndoGestureAction = EndUndoGesture,
+                PaletteShortcutResolver = DialoguePaletteShortcutSettings.FindMatchingItem,
+                PaletteShortcutAction = itemType => _graphView?.CreateNodeFromPaletteShortcut(itemType),
                 SpeakerNameResolver = node => DialogueSpeakerUtility.ResolveSpeakerName(_selectedDialogue, node)
             };
             _graphView.AddToClassList("dialogue-editor__graph-surface");
@@ -319,6 +323,9 @@ namespace NewDial.DialogueEditor
 
         private VisualElement BuildPalette()
         {
+            _paletteItems.Clear();
+            _activePaletteShortcutRebind = null;
+
             var panel = new VisualElement();
             panel.AddToClassList("dialogue-editor__panel");
             panel.AddToClassList("dialogue-editor__palette-panel");
@@ -329,14 +336,21 @@ namespace NewDial.DialogueEditor
             content.AddToClassList("dialogue-editor__palette");
             content.name = "palette-content";
 
-            content.Add(new PaletteItem(this, DialoguePaletteItemType.TextNode, DialogueEditorLocalization.Text("Text Node"), DialogueEditorLocalization.Text("Click to add at center. Drag onto the graph to place.")));
-            content.Add(new PaletteItem(this, DialoguePaletteItemType.Comment, DialogueEditorLocalization.Text("Comment"), DialogueEditorLocalization.Text("Click to add at center. Drag onto the graph to place.")));
-            content.Add(new PaletteItem(this, DialoguePaletteItemType.Function, DialogueEditorLocalization.Text("Function"), DialogueEditorLocalization.Text("Execute a project-provided function and continue.")));
-            content.Add(new PaletteItem(this, DialoguePaletteItemType.Scene, DialogueEditorLocalization.Text("Scene"), DialogueEditorLocalization.Text("Request project scene loading and continue.")));
-            content.Add(new PaletteItem(this, DialoguePaletteItemType.Debug, DialogueEditorLocalization.Text("Debug"), DialogueEditorLocalization.Text("Write a diagnostic log entry and continue.")));
+            AddPaletteItem(content, DialoguePaletteItemType.TextNode, DialogueEditorLocalization.Text("Text Node"), DialogueEditorLocalization.Text("Click to add at center. Drag onto the graph to place."));
+            AddPaletteItem(content, DialoguePaletteItemType.Comment, DialogueEditorLocalization.Text("Comment"), DialogueEditorLocalization.Text("Click to add at center. Drag onto the graph to place."));
+            AddPaletteItem(content, DialoguePaletteItemType.Function, DialogueEditorLocalization.Text("Function"), DialogueEditorLocalization.Text("Execute a project-provided function and continue."));
+            AddPaletteItem(content, DialoguePaletteItemType.Scene, DialogueEditorLocalization.Text("Scene"), DialogueEditorLocalization.Text("Request project scene loading and continue."));
+            AddPaletteItem(content, DialoguePaletteItemType.Debug, DialogueEditorLocalization.Text("Debug"), DialogueEditorLocalization.Text("Write a diagnostic log entry and continue."));
 
             panel.Add(content);
             return panel;
+        }
+
+        private void AddPaletteItem(VisualElement content, DialoguePaletteItemType itemType, string title, string hint)
+        {
+            var item = new PaletteItem(this, itemType, title, hint);
+            _paletteItems[itemType] = item;
+            content.Add(item);
         }
 
         private VisualElement BuildProjectActionsRow()
@@ -884,6 +898,7 @@ namespace NewDial.DialogueEditor
             _inspectorView.Add(voiceKeyField);
 
             var startToggle = new Toggle(DialogueEditorLocalization.Text("Is Start Node")) { value = node.IsStartNode, name = "node-start-toggle" };
+            startToggle.AddToClassList("dialogue-editor__node-toggle");
             startToggle.RegisterValueChangedCallback(evt =>
             {
                 PerformNodeScopedChange("Toggle Start Node", () =>
@@ -901,15 +916,16 @@ namespace NewDial.DialogueEditor
             _inspectorView.Add(startToggle);
 
             var choiceToggle = new Toggle(DialogueEditorLocalization.Text("Use Outputs As Choices")) { value = node.UseOutputsAsChoices, name = "node-choice-toggle" };
+            choiceToggle.AddToClassList("dialogue-editor__node-toggle");
             choiceToggle.RegisterValueChangedCallback(evt =>
             {
-                PerformNodeScopedChange("Toggle Node Choice Mode", () => node.UseOutputsAsChoices = evt.newValue, refreshNodeVisuals: true);
+                PerformNodeScopedChange("Toggle Node Choice Mode", () => node.UseOutputsAsChoices = evt.newValue, refreshNodeVisuals: true, refreshInspector: true);
             });
             _inspectorView.Add(choiceToggle);
 
             BuildChoiceFlowDiagnostics(node);
             BuildConditionEditor(node.Condition, DialogueEditorLocalization.Text("Condition"), "Edit Node Condition");
-            BuildLinksInspector(node);
+            BuildLinksInspector(node, node.UseOutputsAsChoices);
 
             _inspectorView.Add(localizationKeyField);
 
@@ -2602,7 +2618,7 @@ namespace NewDial.DialogueEditor
 
         private void OpenLocalizationWindow()
         {
-            DialogueLocalizationWindow.Open(this, _database, _selectedNpc, _selectedDialogue);
+            DialogueStartWindow.OpenLocalization(this, _database, _selectedNpc, _selectedDialogue);
         }
 
         public void RefreshAfterLocalizationImport(NpcEntry npc, DialogueEntry dialogue)
@@ -2771,6 +2787,76 @@ namespace NewDial.DialogueEditor
         private void CancelPalettePlacement()
         {
             _graphView?.CancelNodePlacement();
+        }
+
+        private void BeginPaletteShortcutRebind(DialoguePaletteItemType itemType)
+        {
+            _activePaletteShortcutRebind = itemType;
+            RefreshPaletteShortcutBadges();
+        }
+
+        private void CancelPaletteShortcutRebind()
+        {
+            _activePaletteShortcutRebind = null;
+            RefreshPaletteShortcutBadges();
+        }
+
+        private void ClearPaletteShortcut(DialoguePaletteItemType itemType)
+        {
+            DialoguePaletteShortcutSettings.ClearShortcut(itemType);
+            _activePaletteShortcutRebind = null;
+            RefreshPaletteShortcutBadges();
+        }
+
+        private void SetPaletteShortcut(DialoguePaletteItemType itemType, DialoguePaletteShortcut shortcut)
+        {
+            if (!DialoguePaletteShortcutSettings.IsBindable(shortcut))
+            {
+                return;
+            }
+
+            DialoguePaletteShortcutSettings.SetShortcut(itemType, shortcut);
+            _activePaletteShortcutRebind = null;
+            RefreshPaletteShortcutBadges();
+        }
+
+        private bool HandlePaletteShortcutRebindKey(DialoguePaletteItemType itemType, KeyDownEvent evt)
+        {
+            if (_activePaletteShortcutRebind != itemType)
+            {
+                return false;
+            }
+
+            if (evt.keyCode == KeyCode.Escape)
+            {
+                CancelPaletteShortcutRebind();
+                return true;
+            }
+
+            if (evt.keyCode == KeyCode.Delete || evt.keyCode == KeyCode.Backspace)
+            {
+                ClearPaletteShortcut(itemType);
+                return true;
+            }
+
+            var shortcut = DialoguePaletteShortcut.FromEvent(evt);
+            if (!DialoguePaletteShortcutSettings.IsBindable(shortcut))
+            {
+                return true;
+            }
+
+            SetPaletteShortcut(itemType, shortcut);
+            return true;
+        }
+
+        private void RefreshPaletteShortcutBadges()
+        {
+            foreach (var pair in _paletteItems)
+            {
+                var listening = _activePaletteShortcutRebind == pair.Key;
+                var shortcut = DialoguePaletteShortcutSettings.GetShortcut(pair.Key);
+                pair.Value.SetShortcutText(DialoguePaletteShortcutSettings.FormatShortcut(shortcut), listening);
+            }
         }
 
         private TextField CreateDelayedNameField(string label, string value, System.Action<string> onCommitted)
@@ -3280,35 +3366,76 @@ namespace NewDial.DialogueEditor
         private sealed class PaletteItem : VisualElement
         {
             private const float DragThreshold = 6f;
+            private const long SingleClickDelayMs = 180;
 
             private readonly DialogueEditorWindow _owner;
             private readonly DialoguePaletteItemType _itemType;
+            private readonly Label _shortcutLabel;
             private bool _pressed;
             private bool _placementStarted;
             private Vector2 _pressWorldPosition;
+            private IVisualElementScheduledItem _pendingClick;
 
             public PaletteItem(DialogueEditorWindow owner, DialoguePaletteItemType itemType, string title, string hint)
             {
                 _owner = owner;
                 _itemType = itemType;
-                tooltip = hint;
+                focusable = true;
+                tooltip = $"{hint}\n{DialogueEditorLocalization.Text("Double-click to rebind shortcut")}";
+                name = $"palette-item-{GetItemName(itemType)}";
 
                 AddToClassList("dialogue-editor__palette-item");
+
+                _shortcutLabel = new Label();
+                _shortcutLabel.AddToClassList("dialogue-editor__palette-shortcut");
+                _shortcutLabel.name = $"palette-shortcut-{GetItemName(itemType)}";
+                Add(_shortcutLabel);
+                SetShortcutText(DialoguePaletteShortcutSettings.FormatShortcut(DialoguePaletteShortcutSettings.GetShortcut(itemType)), false);
 
                 var titleLabel = new Label(title);
                 titleLabel.AddToClassList("dialogue-editor__palette-item-title");
                 Add(titleLabel);
 
+                var spacer = new VisualElement();
+                spacer.AddToClassList("dialogue-editor__palette-shortcut-spacer");
+                Add(spacer);
+
                 RegisterCallback<MouseDownEvent>(OnMouseDown, TrickleDown.TrickleDown);
                 RegisterCallback<MouseMoveEvent>(OnMouseMove, TrickleDown.TrickleDown);
                 RegisterCallback<MouseUpEvent>(OnMouseUp, TrickleDown.TrickleDown);
+                RegisterCallback<KeyDownEvent>(OnKeyDown, TrickleDown.TrickleDown);
                 RegisterCallback<MouseCaptureOutEvent>(_ => ResetDragState());
+            }
+
+            public void SetShortcutText(string shortcutText, bool listening)
+            {
+                _shortcutLabel.text = listening
+                    ? DialogueEditorLocalization.Text("Press shortcut...")
+                    : shortcutText;
+                _shortcutLabel.tooltip = listening
+                    ? DialogueEditorLocalization.Text("Esc to cancel, Delete to clear")
+                    : DialogueEditorLocalization.Text("Double-click to rebind shortcut");
+                EnableInClassList("is-rebinding", listening);
+                if (listening)
+                {
+                    Focus();
+                }
             }
 
             private void OnMouseDown(MouseDownEvent evt)
             {
                 if (evt.button != 0)
                 {
+                    return;
+                }
+
+                if (evt.clickCount >= 2)
+                {
+                    CancelPendingClick();
+                    ResetDragState();
+                    _owner.BeginPaletteShortcutRebind(_itemType);
+                    Focus();
+                    evt.StopImmediatePropagation();
                     return;
                 }
 
@@ -3355,13 +3482,43 @@ namespace NewDial.DialogueEditor
                 {
                     _owner.CommitPalettePlacement(worldPointerPosition);
                 }
+                else if (evt.clickCount <= 1)
+                {
+                    ScheduleSingleClick();
+                }
                 else
                 {
-                    _owner.CreateNodeFromPalette(_itemType);
+                    _owner.BeginPaletteShortcutRebind(_itemType);
+                    Focus();
                 }
 
                 ResetDragState();
                 evt.StopImmediatePropagation();
+            }
+
+            private void OnKeyDown(KeyDownEvent evt)
+            {
+                if (_owner.HandlePaletteShortcutRebindKey(_itemType, evt))
+                {
+                    evt.StopImmediatePropagation();
+                }
+            }
+
+            private void ScheduleSingleClick()
+            {
+                CancelPendingClick();
+                _pendingClick = schedule.Execute(() =>
+                {
+                    _pendingClick = null;
+                    _owner.CreateNodeFromPalette(_itemType);
+                });
+                _pendingClick.ExecuteLater(SingleClickDelayMs);
+            }
+
+            private void CancelPendingClick()
+            {
+                _pendingClick?.Pause();
+                _pendingClick = null;
             }
 
             private void ResetDragState()
@@ -3378,6 +3535,19 @@ namespace NewDial.DialogueEditor
                 {
                     this.ReleaseMouse();
                 }
+            }
+
+            private static string GetItemName(DialoguePaletteItemType itemType)
+            {
+                return itemType switch
+                {
+                    DialoguePaletteItemType.TextNode => "textnode",
+                    DialoguePaletteItemType.Comment => "comment",
+                    DialoguePaletteItemType.Function => "function",
+                    DialoguePaletteItemType.Scene => "scene",
+                    DialoguePaletteItemType.Debug => "debug",
+                    _ => "unknown"
+                };
             }
         }
     }

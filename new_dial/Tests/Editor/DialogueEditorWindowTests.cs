@@ -19,6 +19,7 @@ namespace NewDial.DialogueEditor.Tests
             DialogueEditorLanguageSettings.CurrentLanguage = DialogueEditorLanguage.English;
             EditorPrefs.DeleteKey(RichTextTextColorsPrefsKey);
             EditorPrefs.DeleteKey(RichTextHighlightColorsPrefsKey);
+            DialoguePaletteShortcutSettings.ResetForTests();
         }
 
         [Test]
@@ -28,6 +29,132 @@ namespace NewDial.DialogueEditor.Tests
 
             Assert.That(DialogueEditorLanguageSettings.CurrentLanguage, Is.EqualTo(DialogueEditorLanguage.English));
             Assert.That(DialogueEditorLocalization.Text("Palette"), Is.EqualTo("Palette"));
+        }
+
+        [Test]
+        public void StartWindow_UsesCompactDialogueOnlyLauncher()
+        {
+            var window = ScriptableObject.CreateInstance<DialogueStartWindow>();
+
+            try
+            {
+                window.InitializeForTests();
+
+                Assert.That(window.minSize, Is.EqualTo(DialogueStartWindow.CompactMinSize));
+                Assert.That(window.maxSize, Is.EqualTo(DialogueStartWindow.CompactMaxSize));
+                Assert.That(window.rootVisualElement.Q<VisualElement>("dialogue-start-card"), Is.Not.Null);
+                Assert.That(HasLabel(window.rootVisualElement, "Dialogue Editor"), Is.True);
+                Assert.That(HasLabel(window.rootVisualElement, "Create a dialogue database or open an existing one."), Is.True);
+                Assert.That(HasButton(window.rootVisualElement, "New File"), Is.True);
+                Assert.That(HasButton(window.rootVisualElement, "Load File"), Is.True);
+                Assert.That(HasButton(window.rootVisualElement, "Exit"), Is.True);
+                var importExportFoldout = window.rootVisualElement.Q<Foldout>("dialogue-start-import-export-foldout");
+                Assert.That(importExportFoldout, Is.Not.Null);
+                Assert.That(importExportFoldout.value, Is.False);
+                Assert.That(DialogueStartWindow.CompactMinSize.y, Is.GreaterThanOrEqualTo(340f));
+                Assert.That(window.rootVisualElement.Q<IMGUIContainer>("localization-database-field"), Is.Null);
+                Assert.That(window.rootVisualElement.Query<Label>().ToList()
+                    .Any(label => label.text.Contains("Cutscene", StringComparison.OrdinalIgnoreCase) ||
+                                  label.text.Contains("катсцен", StringComparison.OrdinalIgnoreCase)), Is.False);
+            }
+            finally
+            {
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void StartWindow_ResizeKeepsTopLeftWhenExpandingAndCollapsingImportExport()
+        {
+            var window = ScriptableObject.CreateInstance<DialogueStartWindow>();
+
+            try
+            {
+                var compactPosition = new Rect(123f, 234f, DialogueStartWindow.CompactMinSize.x, DialogueStartWindow.CompactMinSize.y);
+                var expandedPosition = window.CalculateWindowRectForTests(compactPosition, expanded: true);
+
+                Assert.That(expandedPosition.x, Is.EqualTo(compactPosition.x));
+                Assert.That(expandedPosition.y, Is.EqualTo(compactPosition.y));
+                Assert.That(expandedPosition.width, Is.EqualTo(DialogueStartWindow.ExpandedMinSize.x));
+                Assert.That(expandedPosition.height, Is.EqualTo(DialogueStartWindow.ExpandedMinSize.y));
+
+                var collapsedPosition = window.CalculateWindowRectForTests(expandedPosition, expanded: false);
+
+                Assert.That(collapsedPosition.x, Is.EqualTo(compactPosition.x));
+                Assert.That(collapsedPosition.y, Is.EqualTo(compactPosition.y));
+                Assert.That(collapsedPosition.width, Is.InRange(DialogueStartWindow.CompactMinSize.x, DialogueStartWindow.CompactMaxSize.x));
+                Assert.That(collapsedPosition.height, Is.InRange(DialogueStartWindow.CompactMinSize.y, DialogueStartWindow.CompactMaxSize.y));
+            }
+            finally
+            {
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void StartWindow_ResizeUsesLastValidRectWhenUnityReportsDefaultOrigin()
+        {
+            var window = ScriptableObject.CreateInstance<DialogueStartWindow>();
+
+            try
+            {
+                var lastValidPosition = new Rect(222f, 333f, DialogueStartWindow.CompactMinSize.x, DialogueStartWindow.CompactMinSize.y);
+                var unityDefaultPosition = new Rect(0f, 0f, DialogueStartWindow.CompactMinSize.x, DialogueStartWindow.CompactMinSize.y);
+                var expandedPosition = window.CalculateWindowRectForTests(
+                    unityDefaultPosition,
+                    expanded: true,
+                    lastValidPosition: lastValidPosition);
+
+                Assert.That(expandedPosition.x, Is.EqualTo(lastValidPosition.x));
+                Assert.That(expandedPosition.y, Is.EqualTo(lastValidPosition.y));
+                Assert.That(expandedPosition.width, Is.EqualTo(DialogueStartWindow.ExpandedMinSize.x));
+                Assert.That(expandedPosition.height, Is.EqualTo(DialogueStartWindow.ExpandedMinSize.y));
+            }
+            finally
+            {
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void StartWindow_LocalizationContextExpandsImportExportPanel()
+        {
+            var database = CreateDatabase("StartLocalizationContext");
+            var npc = database.Npcs[0];
+            var dialogue = npc.Dialogues[0];
+            var window = ScriptableObject.CreateInstance<DialogueStartWindow>();
+
+            try
+            {
+                window.InitializeForTests(database: database, selectedNpc: npc, selectedDialogue: dialogue, localizationExpanded: true);
+
+                Assert.That(window.minSize, Is.EqualTo(DialogueStartWindow.ExpandedMinSize));
+                Assert.That(window.maxSize, Is.EqualTo(DialogueStartWindow.ExpandedMaxSize));
+                Assert.That(window.maxSize.y, Is.EqualTo(560f));
+                Assert.That(window.rootVisualElement.Q<Foldout>("dialogue-start-import-export-foldout")?.value, Is.True);
+                Assert.That(window.rootVisualElement.Q<IMGUIContainer>("localization-database-field"), Is.Not.Null);
+                Assert.That(window.rootVisualElement.Q<TextField>("localization-export-prefix-field")?.value, Is.EqualTo(dialogue.Id));
+                Assert.That(window.rootVisualElement.Query<Label>().ToList()
+                    .Any(label => label.text.Contains(database.name, StringComparison.Ordinal)), Is.True);
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void LocalizationWindow_DoesNotExposeSeparateMenuItem()
+        {
+            var hasLocalizationMenu = typeof(DialogueLocalizationWindow)
+                .GetMethods(System.Reflection.BindingFlags.Public |
+                            System.Reflection.BindingFlags.NonPublic |
+                            System.Reflection.BindingFlags.Static)
+                .SelectMany(method => method.GetCustomAttributes(typeof(MenuItem), inherit: false).Cast<MenuItem>())
+                .Any(menuItem => menuItem.menuItem == "Tools/New Dial/Localization Import Export");
+
+            Assert.That(hasLocalizationMenu, Is.False);
         }
 
         [Test]
@@ -99,6 +226,187 @@ namespace NewDial.DialogueEditor.Tests
             finally
             {
                 DialogueEditorLanguageSettings.CurrentLanguage = DialogueEditorLanguage.English;
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void PaletteShortcuts_DefaultsRenderInPalette()
+        {
+            var database = CreateDatabase("PaletteShortcutDefaults");
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+
+                Assert.That(GetPaletteShortcutText(window, "textnode"), Is.EqualTo("Alt+1"));
+                Assert.That(GetPaletteShortcutText(window, "comment"), Is.EqualTo("Alt+2"));
+                Assert.That(GetPaletteShortcutText(window, "function"), Is.EqualTo("Alt+3"));
+                Assert.That(GetPaletteShortcutText(window, "scene"), Is.EqualTo("Alt+4"));
+                Assert.That(GetPaletteShortcutText(window, "debug"), Is.EqualTo("Alt+5"));
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void PaletteShortcut_WithCanvasFocus_CreatesNodeAtCanvasCenter()
+        {
+            var database = CreateDatabase("PaletteShortcutCreate");
+            var dialogue = database.Npcs[0].Dialogues[0];
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                var graphView = window.GraphViewForTests;
+                graphView.FocusCanvas();
+
+                var handled = graphView.TryHandlePaletteShortcut(new DialoguePaletteShortcut(KeyCode.Alpha1, alt: true));
+
+                Assert.That(handled, Is.True);
+                Assert.That(dialogue.Graph.Nodes.OfType<DialogueTextNodeData>(), Has.Count.EqualTo(2));
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void PaletteShortcut_WithoutCanvasFocus_DoesNotCreateNode()
+        {
+            var database = CreateDatabase("PaletteShortcutNoFocus");
+            var dialogue = database.Npcs[0].Dialogues[0];
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                var graphView = window.GraphViewForTests;
+                graphView.ReleaseCanvasFocus();
+
+                var handled = graphView.TryHandlePaletteShortcut(new DialoguePaletteShortcut(KeyCode.Alpha1, alt: true));
+
+                Assert.That(handled, Is.False);
+                Assert.That(dialogue.Graph.Nodes.OfType<DialogueTextNodeData>(), Has.Count.EqualTo(1));
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void PaletteShortcut_UnmatchedWKeyKeepsKeyboardPan()
+        {
+            var database = CreateDatabase("PaletteShortcutPan");
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                var graphView = window.GraphViewForTests;
+                graphView.FocusCanvas();
+
+                SendKeyDown(graphView, KeyCode.W);
+                graphView.StepKeyboardPan(1f);
+
+                Assert.That(graphView.viewTransform.position.y, Is.EqualTo(45f).Within(0.01f));
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void PaletteShortcut_RebindSavesAndRendersAfterWindowRebuild()
+        {
+            var database = CreateDatabase("PaletteShortcutPersist");
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                var functionItem = window.rootVisualElement.Q<VisualElement>("palette-item-function");
+                Assert.That(functionItem, Is.Not.Null);
+
+                DoubleClick(functionItem);
+                SendKeyDown(functionItem, KeyCode.F, EventModifiers.Alt | EventModifiers.Shift);
+
+                Assert.That(GetPaletteShortcutText(window, "function"), Is.EqualTo("Shift+Alt+F"));
+
+                window.Close();
+                window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+                window.InitializeForTests(database);
+
+                Assert.That(GetPaletteShortcutText(window, "function"), Is.EqualTo("Shift+Alt+F"));
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void PaletteShortcut_DuplicateRebindTransfersBinding()
+        {
+            var database = CreateDatabase("PaletteShortcutDuplicate");
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                var debugItem = window.rootVisualElement.Q<VisualElement>("palette-item-debug");
+                Assert.That(debugItem, Is.Not.Null);
+
+                DoubleClick(debugItem);
+                SendKeyDown(debugItem, KeyCode.Alpha1, EventModifiers.Alt);
+
+                Assert.That(GetPaletteShortcutText(window, "debug"), Is.EqualTo("Alt+1"));
+                Assert.That(GetPaletteShortcutText(window, "textnode"), Is.EqualTo("Unassigned"));
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void PaletteShortcut_RebindEscapeCancelsAndDeleteClears()
+        {
+            var database = CreateDatabase("PaletteShortcutCancelClear");
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                var sceneItem = window.rootVisualElement.Q<VisualElement>("palette-item-scene");
+                Assert.That(sceneItem, Is.Not.Null);
+
+                DoubleClick(sceneItem);
+                SendKeyDown(sceneItem, KeyCode.Escape);
+
+                Assert.That(GetPaletteShortcutText(window, "scene"), Is.EqualTo("Alt+4"));
+
+                DoubleClick(sceneItem);
+                SendKeyDown(sceneItem, KeyCode.Delete);
+
+                Assert.That(GetPaletteShortcutText(window, "scene"), Is.EqualTo("Unassigned"));
+            }
+            finally
+            {
                 DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
                 window.Close();
             }
@@ -196,6 +504,7 @@ namespace NewDial.DialogueEditor.Tests
             var database = CreateDatabaseWithLinks("LinkUndo");
             var dialogue = database.Npcs[0].Dialogues[0];
             var startNode = (DialogueTextNodeData)dialogue.Graph.Nodes[0];
+            startNode.UseOutputsAsChoices = true;
             var originalFirstLinkId = DialogueGraphUtility.GetOutgoingLinks(dialogue.Graph, startNode.Id)[0].Id;
             var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
 
@@ -224,6 +533,59 @@ namespace NewDial.DialogueEditor.Tests
                 Undo.PerformUndo();
 
                 Assert.That(DialogueGraphUtility.GetOutgoingLinks(database.Npcs[0].Dialogues[0].Graph, startNode.Id)[0].Id, Is.EqualTo(originalFirstLinkId));
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void LinkInspector_ShowsChoiceTextOnlyForChoiceModeNodes()
+        {
+            var database = CreateDatabaseWithLinks("ChoiceTextVisibility");
+            var dialogue = database.Npcs[0].Dialogues[0];
+            var startNode = (DialogueTextNodeData)dialogue.Graph.Nodes[0];
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                Assert.That(window.FocusDialogueNode(dialogue, startNode.Id), Is.True);
+                Assert.That(window.rootVisualElement.Q<TextField>("link-choice-field"), Is.Null);
+
+                var choiceToggle = window.rootVisualElement.Q<Toggle>("node-choice-toggle");
+                Assert.That(choiceToggle, Is.Not.Null);
+                choiceToggle.value = true;
+
+                Assert.That(startNode.UseOutputsAsChoices, Is.True);
+                Assert.That(window.rootVisualElement.Q<TextField>("link-choice-field"), Is.Not.Null);
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void TextNodeToggles_UseAlignedLayoutClass()
+        {
+            var database = CreateDatabase("TextNodeToggleLayout");
+            var dialogue = database.Npcs[0].Dialogues[0];
+            var node = (DialogueTextNodeData)dialogue.Graph.Nodes[0];
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                Assert.That(window.FocusDialogueNode(dialogue, node.Id), Is.True);
+
+                Assert.That(window.rootVisualElement.Q<Toggle>("node-start-toggle")
+                    ?.ClassListContains("dialogue-editor__node-toggle"), Is.True);
+                Assert.That(window.rootVisualElement.Q<Toggle>("node-choice-toggle")
+                    ?.ClassListContains("dialogue-editor__node-toggle"), Is.True);
             }
             finally
             {
@@ -350,6 +712,30 @@ namespace NewDial.DialogueEditor.Tests
                 Assert.That(preview.Query<Label>(className: "dialogue-rich-text-run").ToList()
                     .Any(label => label.text == "friend" && label.style.unityFontStyleAndWeight.value == FontStyle.Bold), Is.True);
                 Assert.That(window.HasUnsavedChangesForTests, Is.True);
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void NodeInspector_BodyTextFieldUsesFullWidthVerticalLayout()
+        {
+            var database = CreateDatabase("BodyTextLayout");
+            var dialogue = database.Npcs[0].Dialogues[0];
+            var node = (DialogueTextNodeData)dialogue.Graph.Nodes[0];
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                Assert.That(window.FocusDialogueNode(dialogue, node.Id), Is.True);
+
+                var bodyField = window.rootVisualElement.Q<TextField>("node-body-field");
+                Assert.That(bodyField, Is.Not.Null);
+                Assert.That(bodyField.ClassListContains("dialogue-editor__body-field"), Is.True);
             }
             finally
             {
@@ -1142,9 +1528,26 @@ namespace NewDial.DialogueEditor.Tests
 
         private static bool HasLabel(DialogueEditorWindow window, string text)
         {
-            return window.rootVisualElement.Query<Label>()
+            return HasLabel(window.rootVisualElement, text);
+        }
+
+        private static bool HasLabel(VisualElement root, string text)
+        {
+            return root.Query<Label>()
                 .ToList()
                 .Any(label => label.text == text);
+        }
+
+        private static bool HasButton(VisualElement root, string text)
+        {
+            return root.Query<Button>()
+                .ToList()
+                .Any(button => button.text == text);
+        }
+
+        private static string GetPaletteShortcutText(DialogueEditorWindow window, string itemName)
+        {
+            return window.rootVisualElement.Q<Label>($"palette-shortcut-{itemName}")?.text;
         }
 
         private static string GetRichTextPreviewText(VisualElement element)
@@ -1154,17 +1557,17 @@ namespace NewDial.DialogueEditor.Tests
                 .Select(label => label.text));
         }
 
-        private static void Click(Button button)
+        private static void Click(VisualElement button)
         {
             Click(button, 1);
         }
 
-        private static void DoubleClick(Button button)
+        private static void DoubleClick(VisualElement button)
         {
             Click(button, 2);
         }
 
-        private static void Click(Button button, int clickCount)
+        private static void Click(VisualElement button, int clickCount)
         {
             var mouseDownEvent = new Event { type = EventType.MouseDown, button = 0 };
             using (var mouseDown = MouseDownEvent.GetPooled(mouseDownEvent))
@@ -1179,6 +1582,21 @@ namespace NewDial.DialogueEditor.Tests
             {
                 mouseUp.target = button;
                 button.SendEvent(mouseUp);
+            }
+        }
+
+        private static void SendKeyDown(VisualElement target, KeyCode keyCode, EventModifiers modifiers = EventModifiers.None)
+        {
+            var keyEvent = new Event
+            {
+                type = EventType.KeyDown,
+                keyCode = keyCode,
+                modifiers = modifiers
+            };
+            using (var keyDown = KeyDownEvent.GetPooled(keyEvent))
+            {
+                keyDown.target = target;
+                target.SendEvent(keyDown);
             }
         }
 

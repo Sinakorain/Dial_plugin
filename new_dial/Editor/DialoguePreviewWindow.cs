@@ -414,6 +414,23 @@ namespace NewDial.DialogueEditor
                 divider.AddToClassList("dialogue-preview__transcript-divider");
                 card.Add(divider);
 
+                if (entry.Kind == DialoguePreviewTranscriptEntryKind.Choice &&
+                    !string.IsNullOrWhiteSpace(entry.ChoiceText))
+                {
+                    var choiceRow = new VisualElement();
+                    choiceRow.AddToClassList("dialogue-preview__transcript-choice-row");
+
+                    var choiceChip = new Label(entry.ChoiceText);
+                    choiceChip.AddToClassList("dialogue-preview__transcript-choice-chip");
+                    choiceRow.Add(choiceChip);
+
+                    var colon = new Label(":");
+                    colon.AddToClassList("dialogue-preview__transcript-choice-colon");
+                    choiceRow.Add(colon);
+
+                    card.Add(choiceRow);
+                }
+
                 var body = DialogueRichTextRenderer.Create(string.Empty, "dialogue-preview__transcript-body");
                 DialogueRichTextRenderer.SetText(body, entry.Body);
                 card.Add(body);
