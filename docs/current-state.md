@@ -59,7 +59,7 @@ This file describes the current working-tree behavior of `new_dial`, including c
 - Dialogue settings expose a speaker roster editor. Text node inspectors can bind a line to a speaker from that dialogue.
 - Text node inspectors prioritize speaker and body editing, align checkbox toggles with fixed-width wrapping labels, show the body text label above the full-width multiline editor, and keep `LocalizationKey` near the bottom as lower-priority localization metadata.
 - The launcher's advanced import/export section handles Google Sheets `.tsv`/`.csv` exports for dialogue rows shaped like `Conversation/<conversationId>/Entry/<n>/Dialogue Text`, with selected or all-conversation batch import.
-- Rich-text color and highlight lists are editor-only user preferences saved in `EditorPrefs`; `+` adds an empty hex slot, valid values collapse into color icons, one click selects a color, `Apply` formats the current selection, and double click reopens hex editing.
+- Rich-text text-color slots are editor-only user preferences saved in `EditorPrefs`; `+` adds an empty slot with a swatch, exact `#RRGGBB` hex input, inline circular palette, brightness gradient bar, and `Apply` action for the current selection.
 - `DialoguePreviewWindow` opens from the main editor toolbar for the currently selected dialogue and supports speaker labels, transcript history, advancing, choosing branches, going back, restarting, and jumping to the active node.
 - Preview transcript choice entries render the selected choice as an outlined button-like chip followed by a colon and the target node text on the next line.
 - The main editor, graph hints/summaries, preview window, start window, prompts, diagnostics, and inspector labels are localized for English and Russian. Authored dialogue content, serialized field names, ids, and public APIs remain unchanged.
@@ -88,8 +88,8 @@ This file describes the current working-tree behavior of `new_dial`, including c
 - Localization table import groups rows by `Conversation`, can import checked conversations or all conversations in one pass, updates existing dialogues by matching `Dialogue.Id` to the conversation id, and creates missing dialogues under the selected/current NPC.
 - Localization table import creates a vertical top-to-bottom chain of text nodes only when the target dialogue graph is empty. Repeat imports match text nodes by `LocalizationKey` and update only `BodyText`/`LocalizedBodyText`; missing table rows are reported instead of being auto-created.
 - Localization table export writes `Keys` plus only the language columns that exist in the selected dialogue data. Empty cells and `Loading...` are treated as missing translations on import.
-- Text node `BodyText` supports `<b>`, `<i>`, `<color=#RRGGBB>`, and `<mark=#RRGGBBAA>` markup. Unknown or malformed tags remain in raw `BodyText` and render as plain text in editor previews.
-- Inspector, graph, current-line preview, and transcript surfaces render supported rich text through a shared segmented UI Toolkit renderer for bold, italic, color, and highlight.
+- Text node `BodyText` supports `<b>`, `<i>`, and `<color=#RRGGBB>` markup. Unknown or malformed tags, including old `<mark>` highlight tags, remain in raw `BodyText` and render as plain text in editor previews.
+- Inspector, graph, current-line preview, and transcript surfaces render supported rich text through a shared segmented UI Toolkit renderer for bold, italic, and text color.
 - Link `ChoiceText` editing is shown only for text nodes with `UseOutputsAsChoices` enabled.
 - Choice-mode text nodes show editor diagnostics for missing outgoing links, broken targets, empty/fallback choice labels, conflicting link order, negative link order, and unreachable choice targets.
 - Condition editing uses generic `None`, `VariableCheck`, and `Custom` types; irrelevant fields are hidden, operators come from built-in metadata, hints explain expected values, and projects can register key suggestions.

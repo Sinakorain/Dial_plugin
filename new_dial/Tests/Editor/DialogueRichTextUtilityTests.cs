@@ -21,13 +21,11 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
-        public void WrapSelection_NormalizesColorAndHighlightTags()
+        public void WrapSelection_NormalizesColorTags()
         {
             var color = DialogueRichTextUtility.WrapSelection("Danger", 0, 6, DialogueRichTextFormat.TextColor("ff6b6b"));
-            var highlight = DialogueRichTextUtility.WrapSelection("Clue", 0, 4, DialogueRichTextFormat.Highlight("#ffe06680"));
 
             Assert.That(color, Is.EqualTo("<color=#FF6B6B>Danger</color>"));
-            Assert.That(highlight, Is.EqualTo("<mark=#FFE06680>Clue</mark>"));
         }
 
         [Test]
@@ -87,7 +85,7 @@ namespace NewDial.DialogueEditor.Tests
         {
             var runs = DialogueRichTextUtility.ParseSupportedRichText("A <b>bold <i><color=#ff0000>hot</color></i></b> <mark=#FFE06680>clue</mark>");
 
-            Assert.That(runs, Has.Count.EqualTo(5));
+            Assert.That(runs, Has.Count.EqualTo(4));
             Assert.That(runs[0].Text, Is.EqualTo("A "));
             Assert.That(runs[1].Text, Is.EqualTo("bold "));
             Assert.That(runs[1].Bold, Is.True);
@@ -95,8 +93,16 @@ namespace NewDial.DialogueEditor.Tests
             Assert.That(runs[2].Bold, Is.True);
             Assert.That(runs[2].Italic, Is.True);
             Assert.That(runs[2].TextColor, Is.EqualTo("#FF0000"));
-            Assert.That(runs[4].Text, Is.EqualTo("clue"));
-            Assert.That(runs[4].HighlightColor, Is.EqualTo("#FFE06680"));
+            Assert.That(runs[3].Text, Is.EqualTo(" <mark=#FFE06680>clue</mark>"));
+            Assert.That(runs[3].TextColor, Is.Empty);
+        }
+
+        [Test]
+        public void SanitizeSupportedRichText_EscapesMarkTagsAsUnsupported()
+        {
+            var result = DialogueRichTextUtility.SanitizeSupportedRichText("<mark=#FFE06680>clue</mark>");
+
+            Assert.That(result, Is.EqualTo("&lt;mark=#FFE06680&gt;clue&lt;/mark&gt;"));
         }
 
         [Test]
@@ -125,10 +131,6 @@ namespace NewDial.DialogueEditor.Tests
             Assert.That(textColor, Is.EqualTo("#FF00AA"));
             Assert.That(DialogueRichTextUtility.TryNormalizeTextColorCode("ff00aa", out _), Is.False);
             Assert.That(DialogueRichTextUtility.TryNormalizeTextColorCode("#ff00aa80", out _), Is.False);
-
-            Assert.That(DialogueRichTextUtility.TryNormalizeHighlightColorCode("#ff00aa80", out var highlightColor), Is.True);
-            Assert.That(highlightColor, Is.EqualTo("#FF00AA80"));
-            Assert.That(DialogueRichTextUtility.TryNormalizeHighlightColorCode("#ff00aa", out _), Is.False);
         }
     }
 }

@@ -9,8 +9,7 @@ namespace NewDial.DialogueEditor
     {
         Bold,
         Italic,
-        TextColor,
-        Highlight
+        TextColor
     }
 
     public readonly struct DialogueRichTextFormat
@@ -30,7 +29,6 @@ namespace NewDial.DialogueEditor
             DialogueRichTextFormatKind.Bold => "<b>",
             DialogueRichTextFormatKind.Italic => "<i>",
             DialogueRichTextFormatKind.TextColor => $"<color={NormalizeColor(Color, false)}>",
-            DialogueRichTextFormatKind.Highlight => $"<mark={NormalizeColor(Color, true)}>",
             _ => string.Empty
         };
 
@@ -39,7 +37,6 @@ namespace NewDial.DialogueEditor
             DialogueRichTextFormatKind.Bold => "</b>",
             DialogueRichTextFormatKind.Italic => "</i>",
             DialogueRichTextFormatKind.TextColor => "</color>",
-            DialogueRichTextFormatKind.Highlight => "</mark>",
             _ => string.Empty
         };
 
@@ -58,29 +55,23 @@ namespace NewDial.DialogueEditor
             return new DialogueRichTextFormat(DialogueRichTextFormatKind.TextColor, color);
         }
 
-        public static DialogueRichTextFormat Highlight(string color)
-        {
-            return new DialogueRichTextFormat(DialogueRichTextFormatKind.Highlight, color);
-        }
-
         private static string NormalizeColor(string color, bool allowAlpha)
         {
             var normalized = DialogueRichTextUtility.NormalizeHexColor(color, allowAlpha);
             return string.IsNullOrWhiteSpace(normalized)
-                ? allowAlpha ? "#FFE06680" : "#FFFFFF"
+                ? "#FFFFFF"
                 : normalized;
         }
     }
 
     public readonly struct DialogueRichTextRun
     {
-        public DialogueRichTextRun(string text, bool bold, bool italic, string textColor, string highlightColor)
+        public DialogueRichTextRun(string text, bool bold, bool italic, string textColor)
         {
             Text = text ?? string.Empty;
             Bold = bold;
             Italic = italic;
             TextColor = textColor ?? string.Empty;
-            HighlightColor = highlightColor ?? string.Empty;
         }
 
         public string Text { get; }
@@ -90,14 +81,11 @@ namespace NewDial.DialogueEditor
         public bool Italic { get; }
 
         public string TextColor { get; }
-
-        public string HighlightColor { get; }
     }
 
     public static class DialogueRichTextUtility
     {
         private static readonly Regex TextColorTagRegex = new("^color=(#[0-9a-fA-F]{6})$", RegexOptions.Compiled);
-        private static readonly Regex HighlightTagRegex = new("^mark=(#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?)$", RegexOptions.Compiled);
 
         public static string SanitizeSupportedRichText(string text)
         {
@@ -261,11 +249,6 @@ namespace NewDial.DialogueEditor
             return TryNormalizeStrictHexColor(color, false, out normalized);
         }
 
-        public static bool TryNormalizeHighlightColorCode(string color, out string normalized)
-        {
-            return TryNormalizeStrictHexColor(color, true, out normalized);
-        }
-
         internal static string NormalizeHexColor(string color, bool allowAlpha)
         {
             if (string.IsNullOrWhiteSpace(color))
@@ -339,8 +322,7 @@ namespace NewDial.DialogueEditor
                 DecodeEscapedRichText(textBuilder.ToString()),
                 style.Bold,
                 style.Italic,
-                style.TextColor,
-                style.HighlightColor));
+                style.TextColor));
             textBuilder.Clear();
         }
 
@@ -380,19 +362,9 @@ namespace NewDial.DialogueEditor
                 return true;
             }
 
-            var highlightMatch = HighlightTagRegex.Match(rawTag);
-            if (highlightMatch.Success)
-            {
-                nextStyle = currentStyle.WithHighlightColor(NormalizeHexColor(
-                    highlightMatch.Groups[1].Value,
-                    highlightMatch.Groups[1].Value.Length == 9));
-                return true;
-            }
-
             if (string.Equals(rawTag, "/b", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(rawTag, "/i", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(rawTag, "/color", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(rawTag, "/mark", StringComparison.OrdinalIgnoreCase))
+                string.Equals(rawTag, "/color", StringComparison.OrdinalIgnoreCase))
             {
                 isClosing = true;
                 return true;
@@ -507,29 +479,12 @@ namespace NewDial.DialogueEditor
                 return true;
             }
 
-            if (string.Equals(rawTag, "/mark", StringComparison.OrdinalIgnoreCase))
-            {
-                normalizedTag = "</mark>";
-                closingTag = "</mark>";
-                isClosing = true;
-                return true;
-            }
-
             var colorMatch = TextColorTagRegex.Match(rawTag);
             if (colorMatch.Success)
             {
                 var color = NormalizeHexColor(colorMatch.Groups[1].Value, false);
                 normalizedTag = $"<color={color}>";
                 closingTag = "</color>";
-                return true;
-            }
-
-            var highlightMatch = HighlightTagRegex.Match(rawTag);
-            if (highlightMatch.Success)
-            {
-                var color = NormalizeHexColor(highlightMatch.Groups[1].Value, highlightMatch.Groups[1].Value.Length == 9);
-                normalizedTag = $"<mark={color}>";
-                closingTag = "</mark>";
                 return true;
             }
 
@@ -543,15 +498,14 @@ namespace NewDial.DialogueEditor
 
         private readonly struct DialogueRichTextStyle
         {
-            public DialogueRichTextStyle(bool bold, bool italic, string textColor, string highlightColor)
+            public DialogueRichTextStyle(bool bold, bool italic, string textColor)
             {
                 Bold = bold;
                 Italic = italic;
                 TextColor = textColor ?? string.Empty;
-                HighlightColor = highlightColor ?? string.Empty;
             }
 
-            public static readonly DialogueRichTextStyle Default = new(false, false, string.Empty, string.Empty);
+            public static readonly DialogueRichTextStyle Default = new(false, false, string.Empty);
 
             public bool Bold { get; }
 
@@ -559,26 +513,19 @@ namespace NewDial.DialogueEditor
 
             public string TextColor { get; }
 
-            public string HighlightColor { get; }
-
             public DialogueRichTextStyle WithBold(bool bold)
             {
-                return new DialogueRichTextStyle(bold, Italic, TextColor, HighlightColor);
+                return new DialogueRichTextStyle(bold, Italic, TextColor);
             }
 
             public DialogueRichTextStyle WithItalic(bool italic)
             {
-                return new DialogueRichTextStyle(Bold, italic, TextColor, HighlightColor);
+                return new DialogueRichTextStyle(Bold, italic, TextColor);
             }
 
             public DialogueRichTextStyle WithTextColor(string textColor)
             {
-                return new DialogueRichTextStyle(Bold, Italic, textColor, HighlightColor);
-            }
-
-            public DialogueRichTextStyle WithHighlightColor(string highlightColor)
-            {
-                return new DialogueRichTextStyle(Bold, Italic, TextColor, highlightColor);
+                return new DialogueRichTextStyle(Bold, Italic, textColor);
             }
         }
     }

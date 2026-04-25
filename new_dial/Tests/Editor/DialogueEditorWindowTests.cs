@@ -11,14 +11,12 @@ namespace NewDial.DialogueEditor.Tests
     public class DialogueEditorWindowTests
     {
         private const string RichTextTextColorsPrefsKey = "NewDial.DialogueEditor.RichText.TextColors";
-        private const string RichTextHighlightColorsPrefsKey = "NewDial.DialogueEditor.RichText.HighlightColors";
 
         [SetUp]
         public void SetUp()
         {
             DialogueEditorLanguageSettings.CurrentLanguage = DialogueEditorLanguage.English;
             EditorPrefs.DeleteKey(RichTextTextColorsPrefsKey);
-            EditorPrefs.DeleteKey(RichTextHighlightColorsPrefsKey);
             DialoguePaletteShortcutSettings.ResetForTests();
         }
 
@@ -845,7 +843,7 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
-        public void NodeInspector_RichTextColorListAddsPersistsAndAppliesStrictHexOnly()
+        public void NodeInspector_RichTextColorListAddsPersistsAppliesAndUsesInlinePicker()
         {
             var database = CreateDatabase("RichTextCustomColor");
             var dialogue = database.Npcs[0].Dialogues[0];
@@ -863,12 +861,15 @@ namespace NewDial.DialogueEditor.Tests
                 var addButton = window.rootVisualElement.Q<Button>("rich-text-color-add-button");
                 Assert.That(bodyField, Is.Not.Null);
                 Assert.That(addButton, Is.Not.Null);
+                Assert.That(window.rootVisualElement.Q<VisualElement>("rich-text-highlight-list"), Is.Null);
 
                 Click(addButton);
                 var customColorField = window.rootVisualElement.Q<TextField>("rich-text-color-field-0");
                 var applyButton = window.rootVisualElement.Q<Button>("rich-text-color-apply-0");
+                var pickerButton = window.rootVisualElement.Q<Button>("rich-text-color-field-picker-toggle-0");
                 Assert.That(customColorField, Is.Not.Null);
                 Assert.That(applyButton, Is.Not.Null);
+                Assert.That(pickerButton, Is.Not.Null);
 
                 bodyField.cursorIndex = 0;
                 bodyField.selectIndex = 6;
@@ -880,25 +881,37 @@ namespace NewDial.DialogueEditor.Tests
 
                 customColorField.value = "#ff6b6b";
                 var swatchButton = window.rootVisualElement.Q<Button>("rich-text-color-field-swatch-0");
-                applyButton = window.rootVisualElement.Q<Button>("rich-text-color-apply-0");
                 Assert.That(swatchButton, Is.Not.Null);
-                Assert.That(customColorField.panel, Is.Null);
+                Assert.That(customColorField.value, Is.EqualTo("#FF6B6B"));
 
                 Click(swatchButton);
                 Assert.That(node.BodyText, Is.EqualTo("Danger"));
                 Assert.That(swatchButton.ClassListContains("dialogue-editor__rich-text-color-icon--selected"), Is.True);
 
+                customColorField.value = "#ffffff";
+                Click(pickerButton);
+                var picker = window.rootVisualElement.Q<VisualElement>("rich-text-color-field-picker-0");
+                var wheel = window.rootVisualElement.Q<VisualElement>("rich-text-color-field-picker-wheel-0");
+                var pickerHandle = window.rootVisualElement.Q<VisualElement>("rich-text-color-field-picker-handle-0");
+                var brightnessTrack = window.rootVisualElement.Q<VisualElement>("rich-text-color-field-picker-brightness-0");
+                var brightnessHandle = window.rootVisualElement.Q<VisualElement>("rich-text-color-field-picker-brightness-handle-0");
+                Assert.That(picker, Is.Not.Null);
+                Assert.That(wheel, Is.Not.Null);
+                Assert.That(pickerHandle, Is.Not.Null);
+                Assert.That(brightnessTrack, Is.Not.Null);
+                Assert.That(brightnessHandle, Is.Not.Null);
+                Assert.That(brightnessTrack.userData, Is.TypeOf<DialogueEditorWindow.RichTextColorPickerState>());
+
+                ((DialogueEditorWindow.RichTextColorPickerState)brightnessTrack.userData).SetBrightnessForTests(0.5f);
+
+                var pickedColor = customColorField.value;
+                Assert.That(pickedColor, Does.Match("^#[0-9A-F]{6}$"));
+                Assert.That(pickedColor, Is.Not.EqualTo("#FFFFFF"));
+                Assert.That(node.BodyText, Is.EqualTo("Danger"));
+
                 Click(applyButton);
 
-                Assert.That(node.BodyText, Is.EqualTo("<color=#FF6B6B>Danger</color>"));
-
-                Click(swatchButton);
-                Assert.That(window.rootVisualElement.Q<TextField>("rich-text-color-field-0"), Is.Null);
-
-                DoubleClick(swatchButton);
-                customColorField = window.rootVisualElement.Q<TextField>("rich-text-color-field-0");
-                Assert.That(customColorField, Is.Not.Null);
-                Assert.That(customColorField.value, Is.EqualTo("#FF6B6B"));
+                Assert.That(node.BodyText, Is.EqualTo($"<color={pickedColor}>Danger</color>"));
 
                 window.Close();
                 window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
@@ -906,11 +919,11 @@ namespace NewDial.DialogueEditor.Tests
                 Assert.That(window.FocusDialogueNode(dialogue, node.Id), Is.True);
 
                 Assert.That(window.rootVisualElement.Q<Button>("rich-text-color-field-swatch-0"), Is.Not.Null);
+                Assert.That(window.rootVisualElement.Q<TextField>("rich-text-color-field-0")?.value, Is.EqualTo(pickedColor));
             }
             finally
             {
                 EditorPrefs.DeleteKey(RichTextTextColorsPrefsKey);
-                EditorPrefs.DeleteKey(RichTextHighlightColorsPrefsKey);
                 DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
                 if (window != null)
                 {

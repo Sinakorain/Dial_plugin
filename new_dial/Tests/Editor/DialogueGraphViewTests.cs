@@ -430,7 +430,7 @@ namespace NewDial.DialogueEditor.Tests
             var node = new DialogueTextNodeData
             {
                 Title = "Rich",
-                BodyText = "Hello <b>friend</b> <unknown>tag</unknown>"
+                BodyText = "Hello <b>friend</b> <color=#00ff00>green</color> <mark=#FFE06680>clue</mark>"
             };
             graph.Nodes.Add(node);
 
@@ -442,10 +442,11 @@ namespace NewDial.DialogueEditor.Tests
             Assert.That(preview, Is.Not.Null);
             var runs = preview.Query<Label>(className: "dialogue-rich-text-run").ToList();
             Assert.That(string.Concat(runs.Select(label => label.text.Replace('\u00A0', ' '))),
-                Is.EqualTo("Hello friend <unknown>tag</unknown>"));
+                Is.EqualTo("Hello friend green <mark=#FFE06680>clue</mark>"));
             Assert.That(runs, Has.Count.GreaterThanOrEqualTo(3));
             Assert.That(runs[0].text, Is.EqualTo("Hello\u00A0"));
-            Assert.That(runs[2].text, Does.StartWith("\u00A0<unknown>"));
+            Assert.That(runs.Any(label => label.text == "green" && label.style.color.value == new Color(0f, 1f, 0f, 1f)), Is.True);
+            Assert.That(runs.Any(label => label.text.Contains("<mark=#FFE06680>clue</mark>")), Is.True);
             Assert.That(runs
                 .Any(label => label.text == "friend" && label.style.unityFontStyleAndWeight.value == FontStyle.Bold), Is.True);
         }

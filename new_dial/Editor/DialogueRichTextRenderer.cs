@@ -7,7 +7,6 @@ namespace NewDial.DialogueEditor
     {
         private const string RendererClass = "dialogue-rich-text-renderer";
         private const string RunClass = "dialogue-rich-text-run";
-        private const string HighlightRunClass = "dialogue-rich-text-run--highlight";
         private const string EmptyRunClass = "dialogue-rich-text-run--empty";
         private const char NonBreakingSpace = '\u00A0';
 
@@ -42,7 +41,7 @@ namespace NewDial.DialogueEditor
             var runs = DialogueRichTextUtility.ParseSupportedRichText(renderText, maxVisibleCharacters);
             if (runs.Count == 0)
             {
-                AddRun(container, new DialogueRichTextRun(string.Empty, false, false, string.Empty, string.Empty), true);
+                AddRun(container, new DialogueRichTextRun(string.Empty, false, false, string.Empty), true);
                 return;
             }
 
@@ -83,12 +82,6 @@ namespace NewDial.DialogueEditor
             if (!string.IsNullOrWhiteSpace(run.TextColor) && ColorUtility.TryParseHtmlString(run.TextColor, out var textColor))
             {
                 label.style.color = textColor;
-            }
-
-            if (!string.IsNullOrWhiteSpace(run.HighlightColor) && ColorUtility.TryParseHtmlString(run.HighlightColor, out var highlightColor))
-            {
-                label.style.backgroundColor = highlightColor;
-                label.AddToClassList(HighlightRunClass);
             }
 
             container.Add(label);

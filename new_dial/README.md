@@ -16,7 +16,7 @@ The package is intentionally scoped as an MVP. It already includes a reusable ru
 - choice-flow diagnostics for choice nodes, broken targets, fallback labels, and ordering issues
 - guided condition editing with generic variable checks, hints, and project-provided key suggestions
 - per-dialogue speaker rosters with text-node speaker binding and preview speaker labels
-- rich-text body authoring for text nodes with bold, italic, user-editable color/highlight lists, clear formatting, and formatted sanitized previews
+- rich-text body authoring for text nodes with bold, italic, user-editable text colors, clear formatting, and formatted sanitized previews
 - TSV/CSV localization import/export for Google Sheets dialogue rows using `Conversation/<conversationId>/Entry/<n>/Dialogue Text` keys, including selected or all-conversation batch import
 - preview test variables with blocked-state explanations for conditions and broken flow
 - Where Used blocks with internal references and a project-extensible external reference resolver
@@ -127,8 +127,8 @@ These APIs are suitable for the current MVP package workflow, but they should no
 - WASD pans the focused graph canvas with smoothed screen-space movement so large graphs remain navigable without delayed-frame jumps.
 - Text and executable nodes can be selected by clicking any non-button part of the node. Dragging from the lower half still starts link creation.
 - Each dialogue has a speaker roster. Text nodes can bind to a speaker, and empty or missing speaker references fall back to the first speaker in that dialogue.
-- Text node body text supports a small Unity/TMP-like rich-text subset: `<b>`, `<i>`, `<color=#RRGGBB>`, and `<mark=#RRGGBBAA>`. Unsupported tags are preserved in authored data and shown as plain text in editor previews.
-- Rich-text color lists are user editor preferences: `+` adds an empty slot, text colors use `#RRGGBB`, highlights use `#RRGGBBAA`, and saved slots display as color icons: click to select, `Apply` to format, double-click to edit.
+- Text node body text supports a small Unity/TMP-like rich-text subset: `<b>`, `<i>`, and `<color=#RRGGBB>`. Unsupported tags are preserved in authored data and shown as plain text in editor previews.
+- Rich-text color slots are user editor preferences: `+` adds an empty slot, text colors use `#RRGGBB`, and each slot includes a swatch, exact hex input, inline circular palette, brightness gradient bar, and `Apply` action for the current selection.
 - Text node `VoiceKey` values are stable string metadata for project-side voiceover or localization lookup; the package does not play audio clips, call FMOD events, or resolve voice assets itself.
 - Text node `LocalizationKey` values are stable table row keys, while `BodyText` remains the Russian/default fallback for older content.
 - NPC, dialogue, and node identifiers are editable in the editor. Node identifier regeneration updates internal graph links; NPC and dialogue id changes warn about possible external references, but external reference lookup is not implemented yet.

@@ -12,8 +12,12 @@ namespace NewDial.DialogueEditor
     {
         private const string EditorStyleSheetSearchQuery = "DialogueEditorStyles t:StyleSheet";
         private const string RichTextTextColorsPrefsKey = "NewDial.DialogueEditor.RichText.TextColors";
-        private const string RichTextHighlightColorsPrefsKey = "NewDial.DialogueEditor.RichText.HighlightColors";
+        private const int RichTextColorWheelSize = 96;
+        private const int RichTextColorWheelTextureSize = 192;
+        private const int RichTextBrightnessStripWidth = 96;
+        private const int RichTextBrightnessStripHeight = 12;
         private delegate bool TryNormalizeRichTextColor(string color, out string normalized);
+        private static Texture2D _richTextColorWheelTexture;
 
         private DialogueDatabaseAsset _database;
         private NpcEntry _selectedNpc;
@@ -1007,22 +1011,6 @@ namespace NewDial.DialogueEditor
                 node,
                 selectionState));
 
-            colorStack.Add(BuildRichTextColorList(
-                DialogueEditorLocalization.Text("Highlight"),
-                "rich-text-highlight-list",
-                "rich-text-highlight-add-button",
-                "rich-text-highlight-field",
-                "rich-text-highlight-apply",
-                "rich-text-highlight-remove",
-                RichTextHighlightColorsPrefsKey,
-                9,
-                "Format Node Body Highlight",
-                DialogueRichTextUtility.TryNormalizeHighlightColorCode,
-                normalized => DialogueRichTextFormat.Highlight(normalized),
-                bodyField,
-                bodyPreview,
-                node,
-                selectionState));
             toolbar.Add(colorStack);
 
             var clearButton = CreateRichTextButton(DialogueEditorLocalization.Text("Clear Formatting"), "Clear Formatting", () =>
@@ -1119,6 +1107,172 @@ namespace NewDial.DialogueEditor
             var row = new VisualElement();
             row.AddToClassList("dialogue-editor__rich-text-color-row");
 
+            var controlRow = new VisualElement();
+            controlRow.AddToClassList("dialogue-editor__rich-text-color-row-controls");
+            row.Add(controlRow);
+
+            VisualElement pickerPanel = null;
+            VisualElement pickerHandle = null;
+            VisualElement brightnessTrack = null;
+            var suppressFieldChange = false;
+
+            Button swatchButton = null;
+            swatchButton = CreateRichTextButton(string.Empty, "Select Color", () =>
+                SelectRichTextColorIcon(rows, swatchButton), bodyField, selectionState);
+            swatchButton.name = $"{fieldNamePrefix}-swatch-{index}";
+            swatchButton.AddToClassList("dialogue-editor__rich-text-color-icon");
+            controlRow.Add(swatchButton);
+
+            var field = new TextField
+            {
+                name = $"{fieldNamePrefix}-{index}",
+                value = list.Colors[index],
+                maxLength = maxLength
+            };
+            field.AddToClassList("dialogue-editor__rich-text-color-field");
+            controlRow.Add(field);
+
+            void UpdatePickerFromNormalized(string normalized)
+            {
+                if (pickerHandle == null && brightnessTrack == null)
+                {
+                    return;
+                }
+
+                if (!TryParseRichTextColor(normalized, out var color))
+                {
+                    return;
+                }
+
+                Color.RGBToHSV(color, out var hue, out var saturation, out var value);
+                if (brightnessTrack?.userData is RichTextColorPickerState pickerState)
+                {
+                    pickerState.Hue = hue;
+                    pickerState.Saturation = saturation;
+                    pickerState.Value = value;
+                    UpdateRichTextBrightnessTrack(brightnessTrack, hue, saturation);
+                    UpdateRichTextBrightnessHandle(brightnessTrack, value);
+                }
+
+                if (pickerHandle != null)
+                {
+                    UpdateRichTextColorPickerHandle(pickerHandle, hue, saturation);
+                }
+            }
+
+            void PersistNormalizedColor(string normalized)
+            {
+                if (index < 0 || index >= list.Colors.Count)
+                {
+                    return;
+                }
+
+                if (!string.Equals(field.value, normalized, StringComparison.Ordinal))
+                {
+                    suppressFieldChange = true;
+                    field.SetValueWithoutNotify(normalized);
+                    suppressFieldChange = false;
+                }
+
+                list.Colors[index] = normalized;
+                SaveRichTextColorList(prefsKey, list);
+                SetRichTextSwatchColor(swatchButton, normalized);
+                ClearCustomColorError(field);
+                UpdatePickerFromNormalized(normalized);
+            }
+
+            void SetFieldFromPicker(string normalized)
+            {
+                suppressFieldChange = true;
+                field.value = normalized;
+                suppressFieldChange = false;
+                PersistNormalizedColor(normalized);
+            }
+
+            string GetPickerBaseColor()
+            {
+                if (tryNormalize(field.value, out var normalized))
+                {
+                    return normalized;
+                }
+
+                if (tryNormalize(list.Colors[index], out normalized))
+                {
+                    return normalized;
+                }
+
+                return "#FFFFFF";
+            }
+
+            void TogglePicker()
+            {
+                if (pickerPanel != null)
+                {
+                    pickerPanel.RemoveFromHierarchy();
+                    pickerPanel = null;
+                    pickerHandle = null;
+                    brightnessTrack = null;
+                    return;
+                }
+
+                pickerPanel = CreateRichTextColorPicker(
+                    index,
+                    fieldNamePrefix,
+                    GetPickerBaseColor(),
+                    normalized => SetFieldFromPicker(normalized),
+                    out pickerHandle,
+                    out brightnessTrack);
+                AttachRichTextSelectionCapture(pickerPanel, bodyField, selectionState);
+                row.Add(pickerPanel);
+            }
+
+            field.RegisterValueChangedCallback(evt =>
+            {
+                if (suppressFieldChange)
+                {
+                    return;
+                }
+
+                var value = evt.newValue ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    list.Colors[index] = string.Empty;
+                    SaveRichTextColorList(prefsKey, list);
+                    SetRichTextSwatchColor(swatchButton, string.Empty);
+                    ClearCustomColorError(field);
+                    return;
+                }
+
+                if (!tryNormalize(value, out var normalized))
+                {
+                    ShowCustomColorError(field);
+                    return;
+                }
+
+                PersistNormalizedColor(normalized);
+            });
+            field.RegisterCallback<KeyDownEvent>(evt =>
+            {
+                if (evt.keyCode != KeyCode.Return && evt.keyCode != KeyCode.KeypadEnter)
+                {
+                    return;
+                }
+
+                ApplyCustomRichTextColor(field, bodyField, bodyPreview, node, selectionState, tryNormalize, createFormat, actionName);
+                evt.StopPropagation();
+            });
+
+            var pickerButton = CreateRichTextButton("...", "Open Color Palette", TogglePicker, bodyField, selectionState);
+            pickerButton.name = $"{fieldNamePrefix}-picker-toggle-{index}";
+            pickerButton.AddToClassList("dialogue-editor__rich-text-picker-button");
+            controlRow.Add(pickerButton);
+
+            var applyButton = CreateRichTextButton(DialogueEditorLocalization.Text("Apply"), "Apply", () =>
+                ApplyCustomRichTextColor(field, bodyField, bodyPreview, node, selectionState, tryNormalize, createFormat, actionName), bodyField, selectionState);
+            applyButton.name = $"{applyButtonNamePrefix}-{index}";
+            applyButton.AddToClassList("dialogue-editor__rich-text-apply-button");
+            controlRow.Add(applyButton);
+
             void AddRemoveButton()
             {
                 var removeButton = CreateRichTextButton("X", "Remove", () =>
@@ -1132,104 +1286,287 @@ namespace NewDial.DialogueEditor
                 }, bodyField, selectionState);
                 removeButton.name = $"{removeButtonNamePrefix}-{index}";
                 removeButton.AddToClassList("dialogue-editor__rich-text-remove-button");
-                row.Add(removeButton);
-            }
-
-            void ShowSwatch(string normalized)
-            {
-                row.Clear();
-                Button swatchButton = null;
-                swatchButton = CreateRichTextButton(string.Empty, "Select Color", () =>
-                    SelectRichTextColorIcon(rows, swatchButton), bodyField, selectionState);
-                swatchButton.name = $"{fieldNamePrefix}-swatch-{index}";
-                swatchButton.AddToClassList("dialogue-editor__rich-text-color-icon");
-                swatchButton.RegisterCallback<MouseDownEvent>(evt =>
-                {
-                    if (evt.clickCount < 2)
-                    {
-                        return;
-                    }
-
-                    ShowEditor();
-                    evt.StopImmediatePropagation();
-                }, TrickleDown.TrickleDown);
-                if (ColorUtility.TryParseHtmlString(normalized, out var color))
-                {
-                    swatchButton.style.backgroundColor = color;
-                }
-
-                row.Add(swatchButton);
-
-                var applyButton = CreateRichTextButton(DialogueEditorLocalization.Text("Apply"), "Apply", () =>
-                    ApplyRichTextFormat(bodyField, bodyPreview, node, selectionState, createFormat(normalized), actionName), bodyField, selectionState);
-                applyButton.name = $"{applyButtonNamePrefix}-{index}";
-                applyButton.AddToClassList("dialogue-editor__rich-text-apply-button");
-                row.Add(applyButton);
-                AddRemoveButton();
-            }
-
-            void ShowEditor()
-            {
-                row.Clear();
-                var field = new TextField
-                {
-                    name = $"{fieldNamePrefix}-{index}",
-                    value = list.Colors[index],
-                    maxLength = maxLength
-                };
-                field.AddToClassList("dialogue-editor__rich-text-color-field");
-                field.RegisterValueChangedCallback(evt =>
-                {
-                    var value = evt.newValue ?? string.Empty;
-                    if (string.IsNullOrWhiteSpace(value))
-                    {
-                        list.Colors[index] = string.Empty;
-                        SaveRichTextColorList(prefsKey, list);
-                        ClearCustomColorError(field);
-                        return;
-                    }
-
-                    if (!tryNormalize(value, out var normalized))
-                    {
-                        ShowCustomColorError(field);
-                        return;
-                    }
-
-                    list.Colors[index] = normalized;
-                    SaveRichTextColorList(prefsKey, list);
-                    ShowSwatch(normalized);
-                });
-                field.RegisterCallback<KeyDownEvent>(evt =>
-                {
-                    if (evt.keyCode != KeyCode.Return && evt.keyCode != KeyCode.KeypadEnter)
-                    {
-                        return;
-                    }
-
-                    ApplyCustomRichTextColor(field, bodyField, bodyPreview, node, selectionState, tryNormalize, createFormat, actionName);
-                    evt.StopPropagation();
-                });
-                row.Add(field);
-
-                var applyButton = CreateRichTextButton(DialogueEditorLocalization.Text("Apply"), "Apply", () =>
-                    ApplyCustomRichTextColor(field, bodyField, bodyPreview, node, selectionState, tryNormalize, createFormat, actionName), bodyField, selectionState);
-                applyButton.name = $"{applyButtonNamePrefix}-{index}";
-                applyButton.AddToClassList("dialogue-editor__rich-text-apply-button");
-                row.Add(applyButton);
-                AddRemoveButton();
+                controlRow.Add(removeButton);
             }
 
             if (tryNormalize(list.Colors[index], out var existingNormalized))
             {
-                list.Colors[index] = existingNormalized;
-                ShowSwatch(existingNormalized);
+                suppressFieldChange = true;
+                field.value = existingNormalized;
+                suppressFieldChange = false;
+                PersistNormalizedColor(existingNormalized);
             }
             else
             {
-                ShowEditor();
+                SetRichTextSwatchColor(swatchButton, string.Empty);
             }
 
+            AddRemoveButton();
             return row;
+        }
+
+        private static VisualElement CreateRichTextColorPicker(
+            int index,
+            string fieldNamePrefix,
+            string normalized,
+            Action<string> setColor,
+            out VisualElement pickerHandle,
+            out VisualElement brightnessTrack)
+        {
+            var color = TryParseRichTextColor(normalized, out var parsedColor)
+                ? parsedColor
+                : Color.white;
+            Color.RGBToHSV(color, out var hue, out var saturation, out var value);
+            var pickerState = new RichTextColorPickerState
+            {
+                Hue = hue,
+                Saturation = saturation,
+                Value = value
+            };
+
+            var panel = new VisualElement
+            {
+                name = $"{fieldNamePrefix}-picker-{index}"
+            };
+            panel.AddToClassList("dialogue-editor__rich-text-picker");
+
+            var wheel = new VisualElement
+            {
+                name = $"{fieldNamePrefix}-picker-wheel-{index}"
+            };
+            wheel.AddToClassList("dialogue-editor__rich-text-picker-wheel");
+            wheel.style.backgroundImage = new StyleBackground(GetRichTextColorWheelTexture());
+
+            var handle = new VisualElement
+            {
+                name = $"{fieldNamePrefix}-picker-handle-{index}"
+            };
+            handle.AddToClassList("dialogue-editor__rich-text-picker-handle");
+            wheel.Add(handle);
+            panel.Add(wheel);
+
+            var track = new VisualElement
+            {
+                name = $"{fieldNamePrefix}-picker-brightness-{index}"
+            };
+            track.AddToClassList("dialogue-editor__rich-text-picker-brightness");
+            track.AddToClassList("dialogue-editor__rich-text-picker-brightness-track");
+            pickerState.BrightnessTexture = CreateRichTextBrightnessTexture(hue, saturation);
+            track.style.backgroundImage = new StyleBackground(pickerState.BrightnessTexture);
+
+            var brightnessHandle = new VisualElement
+            {
+                name = $"{fieldNamePrefix}-picker-brightness-handle-{index}"
+            };
+            brightnessHandle.AddToClassList("dialogue-editor__rich-text-picker-brightness-handle");
+            track.Add(brightnessHandle);
+            panel.Add(track);
+
+            void ApplyCurrentColor()
+            {
+                var next = RichTextHsvToHex(pickerState.Hue, pickerState.Saturation, pickerState.Value);
+                setColor(next);
+                UpdateRichTextColorPickerHandle(handle, pickerState.Hue, pickerState.Saturation);
+                UpdateRichTextBrightnessTrack(track, pickerState.Hue, pickerState.Saturation);
+                UpdateRichTextBrightnessHandle(track, pickerState.Value);
+            }
+
+            void PickWheelColor(Vector2 localPosition)
+            {
+                var center = new Vector2(RichTextColorWheelSize / 2f, RichTextColorWheelSize / 2f);
+                var offset = localPosition - center;
+                var distance = offset.magnitude;
+                var radius = RichTextColorWheelSize / 2f;
+                if (distance > radius)
+                {
+                    return;
+                }
+
+                pickerState.Hue = Mathf.Repeat(Mathf.Atan2(-offset.y, offset.x) / (Mathf.PI * 2f), 1f);
+                pickerState.Saturation = Mathf.Clamp01(distance / radius);
+                ApplyCurrentColor();
+            }
+
+            void PickBrightness(Vector2 localPosition)
+            {
+                pickerState.Value = Mathf.Clamp01(localPosition.x / RichTextBrightnessStripWidth);
+                ApplyCurrentColor();
+            }
+
+            wheel.RegisterCallback<PointerDownEvent>(evt =>
+            {
+                PickWheelColor(evt.localPosition);
+                evt.StopPropagation();
+            });
+            wheel.RegisterCallback<PointerMoveEvent>(evt =>
+            {
+                if ((evt.pressedButtons & 1) == 0)
+                {
+                    return;
+                }
+
+                PickWheelColor(evt.localPosition);
+                evt.StopPropagation();
+            });
+            track.RegisterCallback<PointerDownEvent>(evt =>
+            {
+                PickBrightness(evt.localPosition);
+                evt.StopPropagation();
+            });
+            track.RegisterCallback<PointerMoveEvent>(evt =>
+            {
+                if ((evt.pressedButtons & 1) == 0)
+                {
+                    return;
+                }
+
+                PickBrightness(evt.localPosition);
+                evt.StopPropagation();
+            });
+            pickerState.SetBrightnessForTests = normalizedValue =>
+            {
+                pickerState.Value = Mathf.Clamp01(normalizedValue);
+                ApplyCurrentColor();
+            };
+            track.userData = pickerState;
+
+            UpdateRichTextColorPickerHandle(handle, pickerState.Hue, pickerState.Saturation);
+            UpdateRichTextBrightnessHandle(track, pickerState.Value);
+            pickerHandle = handle;
+            brightnessTrack = track;
+            return panel;
+        }
+
+        private static Texture2D GetRichTextColorWheelTexture()
+        {
+            if (_richTextColorWheelTexture != null)
+            {
+                return _richTextColorWheelTexture;
+            }
+
+            var texture = new Texture2D(RichTextColorWheelTextureSize, RichTextColorWheelTextureSize, TextureFormat.RGBA32, false)
+            {
+                hideFlags = HideFlags.HideAndDontSave,
+                wrapMode = TextureWrapMode.Clamp,
+                filterMode = FilterMode.Bilinear
+            };
+            var center = new Vector2((RichTextColorWheelTextureSize - 1) / 2f, (RichTextColorWheelTextureSize - 1) / 2f);
+            var radius = (RichTextColorWheelTextureSize - 1) / 2f;
+            const float edgeFeather = 3f;
+            for (var y = 0; y < RichTextColorWheelTextureSize; y++)
+            {
+                for (var x = 0; x < RichTextColorWheelTextureSize; x++)
+                {
+                    var offset = new Vector2(x, y) - center;
+                    var distance = offset.magnitude;
+                    var alpha = Mathf.Clamp01(radius - distance + edgeFeather);
+                    if (alpha <= 0f)
+                    {
+                        texture.SetPixel(x, y, Color.clear);
+                        continue;
+                    }
+
+                    var saturation = Mathf.Clamp01(distance / radius);
+                    var hue = Mathf.Repeat(Mathf.Atan2(offset.y, offset.x) / (Mathf.PI * 2f), 1f);
+                    var color = Color.HSVToRGB(hue, saturation, 1f);
+                    color.a = alpha;
+                    texture.SetPixel(x, y, color);
+                }
+            }
+
+            texture.Apply();
+            _richTextColorWheelTexture = texture;
+            return _richTextColorWheelTexture;
+        }
+
+        private static Texture2D CreateRichTextBrightnessTexture(float hue, float saturation)
+        {
+            var texture = new Texture2D(RichTextBrightnessStripWidth, RichTextBrightnessStripHeight, TextureFormat.RGBA32, false)
+            {
+                hideFlags = HideFlags.HideAndDontSave,
+                wrapMode = TextureWrapMode.Clamp,
+                filterMode = FilterMode.Bilinear
+            };
+            UpdateRichTextBrightnessTexture(texture, hue, saturation);
+            return texture;
+        }
+
+        private static void UpdateRichTextBrightnessTrack(VisualElement brightnessTrack, float hue, float saturation)
+        {
+            if (brightnessTrack?.userData is not RichTextColorPickerState pickerState ||
+                pickerState.BrightnessTexture == null)
+            {
+                return;
+            }
+
+            UpdateRichTextBrightnessTexture(pickerState.BrightnessTexture, hue, saturation);
+        }
+
+        private static void UpdateRichTextBrightnessTexture(Texture2D texture, float hue, float saturation)
+        {
+            for (var x = 0; x < RichTextBrightnessStripWidth; x++)
+            {
+                var value = RichTextBrightnessStripWidth <= 1
+                    ? 1f
+                    : x / (RichTextBrightnessStripWidth - 1f);
+                var color = Color.HSVToRGB(hue, saturation, value);
+                for (var y = 0; y < RichTextBrightnessStripHeight; y++)
+                {
+                    texture.SetPixel(x, y, color);
+                }
+            }
+
+            texture.Apply();
+        }
+
+        private static void UpdateRichTextColorPickerHandle(VisualElement pickerHandle, float hue, float saturation)
+        {
+            if (pickerHandle == null)
+            {
+                return;
+            }
+
+            var angle = hue * Mathf.PI * 2f;
+            var radius = saturation * RichTextColorWheelSize / 2f;
+            var center = RichTextColorWheelSize / 2f;
+            pickerHandle.style.left = center + Mathf.Cos(angle) * radius - 4f;
+            pickerHandle.style.top = center - Mathf.Sin(angle) * radius - 4f;
+        }
+
+        private static void UpdateRichTextBrightnessHandle(VisualElement brightnessTrack, float value)
+        {
+            var brightnessHandle = brightnessTrack?.Q<VisualElement>(className: "dialogue-editor__rich-text-picker-brightness-handle");
+            if (brightnessHandle == null)
+            {
+                return;
+            }
+
+            brightnessHandle.style.left = Mathf.Clamp01(value) * RichTextBrightnessStripWidth - 4f;
+        }
+
+        private static bool TryParseRichTextColor(string normalized, out Color color)
+        {
+            color = Color.white;
+            return !string.IsNullOrWhiteSpace(normalized) && ColorUtility.TryParseHtmlString(normalized, out color);
+        }
+
+        private static string RichTextHsvToHex(float hue, float saturation, float value)
+        {
+            var color = Color.HSVToRGB(hue, saturation, value);
+            var color32 = (Color32)color;
+            return $"#{color32.r:X2}{color32.g:X2}{color32.b:X2}";
+        }
+
+        private static void SetRichTextSwatchColor(Button swatchButton, string normalized)
+        {
+            if (swatchButton == null)
+            {
+                return;
+            }
+
+            swatchButton.style.backgroundColor = TryParseRichTextColor(normalized, out var color)
+                ? color
+                : Color.clear;
         }
 
         private static void SelectRichTextColorIcon(VisualElement rows, Button selectedButton)
@@ -2494,6 +2831,15 @@ namespace NewDial.DialogueEditor
         private sealed class RichTextColorList
         {
             public List<string> Colors = new();
+        }
+
+        internal sealed class RichTextColorPickerState
+        {
+            public float Hue;
+            public float Saturation;
+            public float Value;
+            public Texture2D BrightnessTexture;
+            public Action<float> SetBrightnessForTests;
         }
 
         private sealed class RichTextSelectionState
