@@ -166,7 +166,7 @@ namespace NewDial.DialogueEditor
                 BeginUndoGestureAction = BeginUndoGesture,
                 EndUndoGestureAction = EndUndoGesture,
                 PaletteShortcutResolver = DialoguePaletteShortcutSettings.FindMatchingItem,
-                PaletteShortcutAction = itemType => _graphView?.CreateNodeFromPaletteShortcut(itemType),
+                PaletteShortcutAction = CreateNodeFromPaletteShortcut,
                 SpeakerNameResolver = node => DialogueSpeakerUtility.ResolveSpeakerName(_selectedDialogue, node)
             };
             _graphView.AddToClassList("dialogue-editor__graph-surface");
@@ -2753,6 +2753,17 @@ namespace NewDial.DialogueEditor
                     _graphView?.CreateDebugNode(_graphView.GetCanvasCenter());
                     break;
             }
+        }
+
+        private void CreateNodeFromPaletteShortcut(DialoguePaletteItemType itemType)
+        {
+            EnsureDialogueSelected();
+            if (_selectedDialogue == null)
+            {
+                return;
+            }
+
+            _graphView?.CreateNodeFromPaletteShortcut(itemType);
         }
 
         private bool BeginPalettePlacement(DialoguePaletteItemType itemType, Vector2 worldPointerPosition)

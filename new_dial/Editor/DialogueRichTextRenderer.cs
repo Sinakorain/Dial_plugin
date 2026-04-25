@@ -9,6 +9,7 @@ namespace NewDial.DialogueEditor
         private const string RunClass = "dialogue-rich-text-run";
         private const string HighlightRunClass = "dialogue-rich-text-run--highlight";
         private const string EmptyRunClass = "dialogue-rich-text-run--empty";
+        private const char NonBreakingSpace = '\u00A0';
 
         public static VisualElement Create(string name, string className)
         {
@@ -53,7 +54,7 @@ namespace NewDial.DialogueEditor
 
         private static void AddRun(VisualElement container, DialogueRichTextRun run, bool isEmpty)
         {
-            var label = new Label(run.Text)
+            var label = new Label(GetDisplayText(run.Text))
             {
                 pickingMode = PickingMode.Ignore
             };
@@ -91,6 +92,27 @@ namespace NewDial.DialogueEditor
             }
 
             container.Add(label);
+        }
+
+        private static string GetDisplayText(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return text;
+            }
+
+            var displayText = text.ToCharArray();
+            for (var index = 0; index < displayText.Length && displayText[index] == ' '; index++)
+            {
+                displayText[index] = NonBreakingSpace;
+            }
+
+            for (var index = displayText.Length - 1; index >= 0 && displayText[index] == ' '; index--)
+            {
+                displayText[index] = NonBreakingSpace;
+            }
+
+            return new string(displayText);
         }
     }
 }

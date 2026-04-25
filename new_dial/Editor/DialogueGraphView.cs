@@ -117,6 +117,13 @@ namespace NewDial.DialogueEditor
         private const float KeyboardPanSpeed = 900f;
         private const float MaxKeyboardPanDeltaTime = 0.05f;
         private const float FrameCenterTolerancePixels = 42f;
+        private const float EdgeLayerPadding = 240f;
+        private const float LinkAnchorInset = 18f;
+        private const float LinkHitTestScreenDistance = 10f;
+        private const int LinkHitTestSamples = 24;
+        private const float LinkThickness = 3.2f;
+        private const float LinkHoverThickness = 4.4f;
+        private const float LinkPreviewThickness = 3.8f;
         internal static readonly Vector2 TextNodeInitialSize = new(280f, 170f);
         internal static readonly Vector2 CommentNodeInitialSize = new(420f, 260f);
 
@@ -136,8 +143,9 @@ namespace NewDial.DialogueEditor
         private DialoguePaletteItemType? _placementNodeType;
         private IDialogueRuntimeNodeView _activeLinkSource;
         private IDialogueRuntimeNodeView _activeLinkTarget;
-        private Vector2 _activeLinkStartWorld;
         private Vector2 _activeLinkPointerWorld;
+        private Rect _edgeLayerCanvasBounds = new(0f, 0f, 1f, 1f);
+        private string _hoveredLinkId;
         private bool _hasCanvasFocus;
         private bool _moveUpPressed;
         private bool _moveDownPressed;
@@ -169,8 +177,7 @@ namespace NewDial.DialogueEditor
                 GeometryProvider = GetEdgeGeometries
             };
             _edgeLayer.AddToClassList("dialogue-edge-layer");
-            _edgeLayer.StretchToParentSize();
-            Insert(1, _edgeLayer);
+            contentViewContainer.Insert(0, _edgeLayer);
 
             _placementGhost = new VisualElement();
             _placementGhost.AddToClassList("dialogue-placement-ghost");
@@ -191,13 +198,14 @@ namespace NewDial.DialogueEditor
 
             this.StretchToParentSize();
             SetupZoom(ContentZoomer.DefaultMinScale, ContentZoomer.DefaultMaxScale);
-            this.AddManipulator(new ContentZoomer());
             this.AddManipulator(new ContentDragger());
             this.AddManipulator(new SelectionDragger());
             this.AddManipulator(new RectangleSelector());
 
             graphViewChanged = OnGraphViewChanged;
+            viewTransformChanged = _ => RefreshEdgeLayer();
             RegisterCallback<MouseMoveEvent>(OnMouseMove, TrickleDown.TrickleDown);
+            RegisterCallback<MouseLeaveEvent>(_ => ClearHoveredLink());
             RegisterCallback<MouseDownEvent>(OnMouseDown, TrickleDown.TrickleDown);
             RegisterCallback<MouseUpEvent>(OnMouseUp, TrickleDown.TrickleDown);
             RegisterCallback<KeyDownEvent>(OnKeyDown, TrickleDown.TrickleDown);
@@ -223,6 +231,9 @@ namespace NewDial.DialogueEditor
         public DialogueGraphData Graph => _graph;
         public bool HasCanvasFocus => _hasCanvasFocus;
         internal bool IsLinkDragActiveForTests => _activeLinkSource != null;
+        internal bool IsEdgeLayerInContentViewContainerForTests => _edgeLayer.parent == contentViewContainer;
+        internal Rect EdgeLayerCanvasBoundsForTests => _edgeLayerCanvasBounds;
+        internal string HoveredLinkIdForTests => _hoveredLinkId;
 
         public override void BuildContextualMenu(ContextualMenuPopulateEvent evt)
         {
@@ -240,6 +251,7 @@ namespace NewDial.DialogueEditor
                 _executableNodeViews.Clear();
                 _commentNodeViews.Clear();
                 CancelLinkDrag();
+                ClearHoveredLink();
                 CancelNodePlacement();
 
                 if (_graph == null)
@@ -1028,6 +1040,11 @@ namespace NewDial.DialogueEditor
                     return;
                 }
 
+                if (_hoveredLinkId == link.Id)
+                {
+                    _hoveredLinkId = null;
+                }
+
                 DialogueGraphUtility.NormalizeLinkOrder(_graph, link.FromNodeId);
 
                 if (reloadGraph)
@@ -1046,6 +1063,21 @@ namespace NewDial.DialogueEditor
             });
 
             return removed;
+        }
+
+        internal bool DeleteLinkAtCanvasPosition(Vector2 canvasPosition, bool registerUndo = true)
+        {
+            if (!TryFindLinkAtCanvasPosition(canvasPosition, out var link))
+            {
+                return false;
+            }
+
+            return DeleteLink(link, true, false, registerUndo);
+        }
+
+        internal bool UpdateHoveredLinkForTests(Vector2 canvasPosition)
+        {
+            return UpdateHoveredLink(canvasPosition);
         }
 
         internal void NotifySelected(BaseNodeData node)
@@ -1352,9 +1384,9 @@ namespace NewDial.DialogueEditor
             }
 
             FocusCanvas();
+            ClearHoveredLink();
             _activeLinkSource = sourceView;
             _activeLinkTarget = null;
-            _activeLinkStartWorld = sourceView.GetBottomAnchorWorld(worldPointerPosition.x);
             _activeLinkPointerWorld = worldPointerPosition;
             RefreshEdgeLayer();
         }
@@ -1477,22 +1509,31 @@ namespace NewDial.DialogueEditor
 
         private void OnMouseMove(MouseMoveEvent evt)
         {
-            _lastPointerPosition = this.LocalToWorld(evt.localMousePosition);
+            _lastPointerPosition = evt.mousePosition;
             if (_activeLinkSource == null)
             {
+                UpdateHoveredLink(WorldToCanvasPosition(_lastPointerPosition));
                 return;
             }
 
-            _activeLinkPointerWorld = this.LocalToWorld(evt.localMousePosition);
+            ClearHoveredLink();
+            _activeLinkPointerWorld = evt.mousePosition;
             _activeLinkTarget = ResolveLinkTarget(_activeLinkPointerWorld, _activeLinkSource);
             RefreshEdgeLayer();
         }
 
         private void OnMouseDown(MouseDownEvent evt)
         {
-            _lastPointerPosition = this.LocalToWorld(evt.localMousePosition);
+            _lastPointerPosition = evt.mousePosition;
             if (_activeLinkSource != null)
             {
+                return;
+            }
+
+            if (evt.button == 0 && evt.actionKey &&
+                DeleteLinkAtCanvasPosition(WorldToCanvasPosition(_lastPointerPosition)))
+            {
+                evt.StopImmediatePropagation();
                 return;
             }
 
@@ -1505,7 +1546,7 @@ namespace NewDial.DialogueEditor
 
         private void OnMouseUp(MouseUpEvent evt)
         {
-            _lastPointerPosition = this.LocalToWorld(evt.localMousePosition);
+            _lastPointerPosition = evt.mousePosition;
             if (evt.button == 0)
             {
                 EndSelectionPointerDrag();
@@ -1516,7 +1557,7 @@ namespace NewDial.DialogueEditor
                 return;
             }
 
-            var pointerWorld = this.LocalToWorld(evt.localMousePosition);
+            var pointerWorld = evt.mousePosition;
             var targetView = ResolveLinkTarget(pointerWorld, _activeLinkSource);
             var created = false;
             if (targetView != null)
@@ -1571,27 +1612,180 @@ namespace NewDial.DialogueEditor
                     continue;
                 }
 
-                var sourceAnchorWorld = sourceView.GetBottomAnchorWorld(targetView.WorldBound.center.x);
-                var targetAnchorWorld = targetView.GetTopAnchorWorld(sourceView.WorldBound.center.x);
+                var isHovered = link.Id == _hoveredLinkId;
+                var sourceRect = GetRuntimeNodeCanvasRect(sourceView);
+                var targetRect = GetRuntimeNodeCanvasRect(targetView);
+                var sourceAnchor = GetBottomAnchorCanvas(sourceRect, targetRect.center.x);
+                var targetAnchor = GetTopAnchorCanvas(targetRect, sourceRect.center.x);
                 yield return new DialogueEdgeGeometry(
-                    _edgeLayer.WorldToLocal(sourceAnchorWorld),
-                    _edgeLayer.WorldToLocal(targetAnchorWorld),
-                    new Color(0.88f, 0.9f, 0.96f, 0.92f),
-                    2.3f);
+                    sourceAnchor - _edgeLayerCanvasBounds.position,
+                    targetAnchor - _edgeLayerCanvasBounds.position,
+                    isHovered
+                        ? new Color(0.74f, 0.86f, 1f, 0.98f)
+                        : new Color(0.88f, 0.9f, 0.96f, 0.92f),
+                    isHovered ? LinkHoverThickness : LinkThickness,
+                    link);
             }
 
             if (_activeLinkSource != null)
             {
-                var previewEndWorld = _activeLinkTarget != null
-                    ? _activeLinkTarget.GetTopAnchorWorld(_activeLinkSource.WorldBound.center.x)
-                    : _activeLinkPointerWorld;
+                var sourceRect = GetRuntimeNodeCanvasRect(_activeLinkSource);
+                var previewEndCanvas = WorldToCanvasPosition(_activeLinkPointerWorld);
+                if (_activeLinkTarget != null)
+                {
+                    var targetRect = GetRuntimeNodeCanvasRect(_activeLinkTarget);
+                    previewEndCanvas = GetTopAnchorCanvas(targetRect, sourceRect.center.x);
+                }
 
+                var sourceAnchor = GetBottomAnchorCanvas(sourceRect, previewEndCanvas.x);
                 yield return new DialogueEdgeGeometry(
-                    _edgeLayer.WorldToLocal(_activeLinkStartWorld),
-                    _edgeLayer.WorldToLocal(previewEndWorld),
+                    sourceAnchor - _edgeLayerCanvasBounds.position,
+                    previewEndCanvas - _edgeLayerCanvasBounds.position,
                     new Color(0.55f, 0.76f, 1f, 0.98f),
-                    2.8f);
+                    LinkPreviewThickness);
             }
+        }
+
+        internal IReadOnlyList<DialogueEdgeGeometry> GetEdgeGeometriesForTests()
+        {
+            SyncEdgeLayerBounds();
+            return GetEdgeGeometries().ToList();
+        }
+
+        private Rect GetRuntimeNodeCanvasRect(IDialogueRuntimeNodeView view)
+        {
+            if (view?.Element == null)
+            {
+                return default;
+            }
+
+            var rect = view.Element.GetPosition();
+            if (rect.width > 0f && rect.height > 0f)
+            {
+                return rect;
+            }
+
+            var topLeft = WorldToCanvasPosition(view.Element.worldBound.position);
+            var bottomRight = WorldToCanvasPosition(view.Element.worldBound.max);
+            return Rect.MinMaxRect(
+                Mathf.Min(topLeft.x, bottomRight.x),
+                Mathf.Min(topLeft.y, bottomRight.y),
+                Mathf.Max(topLeft.x, bottomRight.x),
+                Mathf.Max(topLeft.y, bottomRight.y));
+        }
+
+        private static Vector2 GetBottomAnchorCanvas(Rect sourceRect, float targetCenterX)
+        {
+            var x = Mathf.Clamp(targetCenterX, sourceRect.xMin + LinkAnchorInset, sourceRect.xMax - LinkAnchorInset);
+            return new Vector2(x, sourceRect.yMax - 2f);
+        }
+
+        private static Vector2 GetTopAnchorCanvas(Rect targetRect, float sourceCenterX)
+        {
+            var x = Mathf.Clamp(sourceCenterX, targetRect.xMin + LinkAnchorInset, targetRect.xMax - LinkAnchorInset);
+            return new Vector2(x, targetRect.yMin + 2f);
+        }
+
+        private bool TryFindLinkAtCanvasPosition(Vector2 canvasPosition, out NodeLinkData link)
+        {
+            SyncEdgeLayerBounds();
+            var localPosition = canvasPosition - _edgeLayerCanvasBounds.position;
+            var threshold = GetLinkHitTestCanvasDistance();
+            var closestDistance = float.MaxValue;
+            link = null;
+
+            foreach (var geometry in GetEdgeGeometries())
+            {
+                if (geometry.Link == null)
+                {
+                    continue;
+                }
+
+                var distance = DistanceToBezier(localPosition, geometry.Start, geometry.End);
+                if (distance > threshold || distance >= closestDistance)
+                {
+                    continue;
+                }
+
+                closestDistance = distance;
+                link = geometry.Link;
+            }
+
+            return link != null;
+        }
+
+        private bool UpdateHoveredLink(Vector2 canvasPosition)
+        {
+            var nextHoveredLinkId = _activeLinkSource == null &&
+                                    TryFindLinkAtCanvasPosition(canvasPosition, out var link)
+                ? link.Id
+                : null;
+
+            if (_hoveredLinkId == nextHoveredLinkId)
+            {
+                return false;
+            }
+
+            _hoveredLinkId = nextHoveredLinkId;
+            RefreshEdgeLayer();
+            return true;
+        }
+
+        private void ClearHoveredLink()
+        {
+            if (string.IsNullOrEmpty(_hoveredLinkId))
+            {
+                return;
+            }
+
+            _hoveredLinkId = null;
+            RefreshEdgeLayer();
+        }
+
+        private float GetLinkHitTestCanvasDistance()
+        {
+            return LinkHitTestScreenDistance / Mathf.Max(0.01f, GetCurrentGraphScale());
+        }
+
+        private static float DistanceToBezier(Vector2 point, Vector2 start, Vector2 end)
+        {
+            var tangent = Mathf.Max(70f, Mathf.Abs(end.y - start.y) * 0.55f);
+            var startTangent = start + Vector2.up * tangent;
+            var endTangent = end + Vector2.down * tangent;
+            var closestDistance = float.MaxValue;
+            var previous = start;
+
+            for (var sample = 1; sample <= LinkHitTestSamples; sample++)
+            {
+                var t = sample / LinkHitTestSamples;
+                var current = EvaluateCubicBezier(start, startTangent, endTangent, end, t);
+                closestDistance = Mathf.Min(closestDistance, DistanceToSegment(point, previous, current));
+                previous = current;
+            }
+
+            return closestDistance;
+        }
+
+        private static Vector2 EvaluateCubicBezier(Vector2 start, Vector2 controlA, Vector2 controlB, Vector2 end, float t)
+        {
+            var oneMinusT = 1f - t;
+            return (oneMinusT * oneMinusT * oneMinusT * start) +
+                   (3f * oneMinusT * oneMinusT * t * controlA) +
+                   (3f * oneMinusT * t * t * controlB) +
+                   (t * t * t * end);
+        }
+
+        private static float DistanceToSegment(Vector2 point, Vector2 a, Vector2 b)
+        {
+            var segment = b - a;
+            var lengthSquared = segment.sqrMagnitude;
+            if (Mathf.Approximately(lengthSquared, 0f))
+            {
+                return Vector2.Distance(point, a);
+            }
+
+            var t = Mathf.Clamp01(Vector2.Dot(point - a, segment) / lengthSquared);
+            return Vector2.Distance(point, a + (segment * t));
         }
 
         private bool TryGetRuntimeNodeView(string nodeId, out IDialogueRuntimeNodeView view)
@@ -1616,7 +1810,6 @@ namespace NewDial.DialogueEditor
         {
             _activeLinkSource = null;
             _activeLinkTarget = null;
-            _activeLinkStartWorld = Vector2.zero;
             _activeLinkPointerWorld = Vector2.zero;
             RefreshEdgeLayer();
         }
@@ -1954,7 +2147,101 @@ namespace NewDial.DialogueEditor
 
         private void RefreshEdgeLayer()
         {
+            SyncEdgeLayerBounds();
             _edgeLayer.MarkDirtyRepaint();
+        }
+
+        private void SyncEdgeLayerBounds()
+        {
+            _edgeLayerCanvasBounds = CalculateEdgeLayerCanvasBounds();
+            _edgeLayer.style.left = _edgeLayerCanvasBounds.x;
+            _edgeLayer.style.top = _edgeLayerCanvasBounds.y;
+            _edgeLayer.style.width = Mathf.Max(1f, _edgeLayerCanvasBounds.width);
+            _edgeLayer.style.height = Mathf.Max(1f, _edgeLayerCanvasBounds.height);
+        }
+
+        private Rect CalculateEdgeLayerCanvasBounds()
+        {
+            var bounds = default(Rect);
+            var hasBounds = false;
+
+            EncapsulateRect(ref bounds, ref hasBounds, GetVisibleCanvasRect());
+
+            foreach (var link in _graph?.Links ?? Enumerable.Empty<NodeLinkData>())
+            {
+                if (link == null ||
+                    string.IsNullOrWhiteSpace(link.ToNodeId) ||
+                    !TryGetRuntimeNodeView(link.FromNodeId, out var sourceView) ||
+                    !TryGetRuntimeNodeView(link.ToNodeId, out var targetView))
+                {
+                    continue;
+                }
+
+                EncapsulateRect(ref bounds, ref hasBounds, GetRuntimeNodeCanvasRect(sourceView));
+                EncapsulateRect(ref bounds, ref hasBounds, GetRuntimeNodeCanvasRect(targetView));
+            }
+
+            if (_activeLinkSource != null)
+            {
+                EncapsulateRect(ref bounds, ref hasBounds, GetRuntimeNodeCanvasRect(_activeLinkSource));
+                EncapsulatePoint(ref bounds, ref hasBounds, WorldToCanvasPosition(_activeLinkPointerWorld));
+                if (_activeLinkTarget != null)
+                {
+                    EncapsulateRect(ref bounds, ref hasBounds, GetRuntimeNodeCanvasRect(_activeLinkTarget));
+                }
+            }
+
+            if (!hasBounds)
+            {
+                return new Rect(0f, 0f, 1f, 1f);
+            }
+
+            return Rect.MinMaxRect(
+                bounds.xMin - EdgeLayerPadding,
+                bounds.yMin - EdgeLayerPadding,
+                bounds.xMax + EdgeLayerPadding,
+                bounds.yMax + EdgeLayerPadding);
+        }
+
+        private static void EncapsulateRect(ref Rect bounds, ref bool hasBounds, Rect rect)
+        {
+            if (rect.width <= 0f || rect.height <= 0f ||
+                !IsFinite(rect.x) ||
+                !IsFinite(rect.y) ||
+                !IsFinite(rect.width) ||
+                !IsFinite(rect.height))
+            {
+                return;
+            }
+
+            if (!hasBounds)
+            {
+                bounds = rect;
+                hasBounds = true;
+                return;
+            }
+
+            bounds = Rect.MinMaxRect(
+                Mathf.Min(bounds.xMin, rect.xMin),
+                Mathf.Min(bounds.yMin, rect.yMin),
+                Mathf.Max(bounds.xMax, rect.xMax),
+                Mathf.Max(bounds.yMax, rect.yMax));
+        }
+
+        private static void EncapsulatePoint(ref Rect bounds, ref bool hasBounds, Vector2 point)
+        {
+            if (!IsFinite(point.x) || !IsFinite(point.y))
+            {
+                return;
+            }
+
+            var rect = new Rect(point, Vector2.one);
+            EncapsulateRect(ref bounds, ref hasBounds, rect);
+        }
+
+        private static bool IsFinite(float value)
+        {
+            return !float.IsNaN(value) && !float.IsInfinity(value);
         }
 
         internal void SetMovementKeyState(KeyCode keyCode, bool isPressed)
@@ -2182,7 +2469,7 @@ namespace NewDial.DialogueEditor
                 return;
             }
 
-            if (!evt.actionKey && (evt.keyCode == KeyCode.Delete || evt.keyCode == KeyCode.Backspace))
+            if (!evt.altKey && !evt.shiftKey && (evt.keyCode == KeyCode.Delete || evt.keyCode == KeyCode.Backspace))
             {
                 if (DeleteSelectionFromHotkey())
                 {
@@ -2597,20 +2884,22 @@ namespace NewDial.DialogueEditor
             public Vector2 ReferencePosition;
         }
 
-        private readonly struct DialogueEdgeGeometry
+        internal readonly struct DialogueEdgeGeometry
         {
-            public DialogueEdgeGeometry(Vector2 start, Vector2 end, Color color, float thickness)
+            public DialogueEdgeGeometry(Vector2 start, Vector2 end, Color color, float thickness, NodeLinkData link = null)
             {
                 Start = start;
                 End = end;
                 Color = color;
                 Thickness = thickness;
+                Link = link;
             }
 
             public Vector2 Start { get; }
             public Vector2 End { get; }
             public Color Color { get; }
             public float Thickness { get; }
+            public NodeLinkData Link { get; }
         }
 
         private sealed class DialogueEdgeLayer : ImmediateModeElement

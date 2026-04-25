@@ -55,7 +55,7 @@ This file describes the current working-tree behavior of `new_dial`, including c
 - `DialogueStartWindow` opens as a compact floating launcher from `Tools/New Dial/Dialogue Editor` and remains available from `Window/New Dial/Dialogue Editor`.
 - The compact start launcher can create a new `DialogueDatabaseAsset`, load an existing asset, or reveal a collapsed advanced `Import / Export` section inside the same window; expanding the section grows the utility window downward from its current top-left position.
 - `DialogueEditorWindow` is the main authoring surface. Its toolbar exposes `New`, `Load`, `Save`, `Preview`, `Localization`, `Delete`, `Dialogue Settings`, a per-user content-language switcher for authored text, and a separate `EN/RU` editor UI language switcher backed by `EditorPrefs`.
-- The palette supports `Text Node`, `Comment`, `Function`, `Scene`, and `Debug`; palette items show saved editor shortcuts, double-click starts shortcut rebinding, and shortcuts create nodes only while the graph canvas is focused. Shortcut-created nodes appear at the cursor when it is over the canvas, otherwise near the current viewport center, and are clamped into the visible viewport even if they overlap existing nodes.
+- The palette supports `Text Node`, `Comment`, `Function`, `Scene`, and `Debug`; palette items show saved editor shortcuts, double-click starts shortcut rebinding, and shortcuts create nodes only while the graph canvas is focused. Shortcut-created nodes use the same empty-project flow as palette placement by creating an NPC and dialogue when needed, appear at the cursor when it is over the canvas, otherwise near the current viewport center, and are clamped into the visible viewport even if they overlap existing nodes.
 - Dialogue settings expose a speaker roster editor. Text node inspectors can bind a line to a speaker from that dialogue.
 - Text node inspectors prioritize speaker and body editing, align checkbox toggles with fixed-width wrapping labels, show the body text label above the full-width multiline editor, and keep `LocalizationKey` near the bottom as lower-priority localization metadata.
 - The launcher's advanced import/export section handles Google Sheets `.tsv`/`.csv` exports for dialogue rows shaped like `Conversation/<conversationId>/Entry/<n>/Dialogue Text`, with selected or all-conversation batch import.
@@ -73,6 +73,9 @@ This file describes the current working-tree behavior of `new_dial`, including c
 - Native Unity undo/redo now covers node-scope graph operations: create/delete, drag, comment resize, links, cut/paste, and node/link inspector edits.
 - Undo/redo refreshes graph selection, inspector state, preview sessions, and autosave dirty-state against the last saved database snapshot.
 - The graph canvas shows a large, low-contrast grid slightly lighter than the canvas background.
+- Graph zoom uses a single content zoom manipulator; changing scale preserves node canvas positions, comment areas, and relative graph layout while repainting link overlays.
+- Graph links render slightly thicker for readability, highlight subtly on hover, and `Cmd`/`Ctrl` + left click on a link deletes that connection.
+- `Delete`/`Backspace` and `Cmd`/`Ctrl` + `Delete`/`Backspace` use the same canvas delete flow; a single selected comment with contents prompts between comment-only and group deletion.
 - The graph empty-state warning is visible for an empty graph, hides as soon as the first text or comment node is created, and returns when the last node is deleted.
 - Selected NPC and dialogue metadata in the project panel uses compact inline ID and Where Used rows instead of nested cards.
 - Dialogue settings speaker roster rows keep the speaker name field and remove action on one line.

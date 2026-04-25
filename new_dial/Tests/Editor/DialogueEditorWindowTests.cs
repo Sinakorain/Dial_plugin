@@ -280,6 +280,33 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
+        public void PaletteShortcut_InEmptyDatabaseCreatesNpcDialogueAndNode()
+        {
+            var database = ScriptableObject.CreateInstance<DialogueDatabaseAsset>();
+            database.name = $"PaletteShortcutEmpty-{Guid.NewGuid():N}";
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                var graphView = window.GraphViewForTests;
+                graphView.FocusCanvas();
+
+                var handled = graphView.TryHandlePaletteShortcut(new DialoguePaletteShortcut(KeyCode.Alpha1, alt: true));
+
+                Assert.That(handled, Is.True);
+                Assert.That(database.Npcs, Has.Count.EqualTo(1));
+                Assert.That(database.Npcs[0].Dialogues, Has.Count.EqualTo(1));
+                Assert.That(database.Npcs[0].Dialogues[0].Graph.Nodes.OfType<DialogueTextNodeData>(), Has.Count.EqualTo(1));
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
         public void PaletteShortcut_WithoutCanvasFocus_DoesNotCreateNode()
         {
             var database = CreateDatabase("PaletteShortcutNoFocus");
@@ -708,8 +735,12 @@ namespace NewDial.DialogueEditor.Tests
                 bodyField.value = "Hello <b>friend</b> <unknown>tag</unknown>";
 
                 Assert.That(node.BodyText, Is.EqualTo("Hello <b>friend</b> <unknown>tag</unknown>"));
+                var runs = preview.Query<Label>(className: "dialogue-rich-text-run").ToList();
                 Assert.That(GetRichTextPreviewText(preview), Is.EqualTo("Hello friend <unknown>tag</unknown>"));
-                Assert.That(preview.Query<Label>(className: "dialogue-rich-text-run").ToList()
+                Assert.That(runs, Has.Count.GreaterThanOrEqualTo(3));
+                Assert.That(runs[0].text, Is.EqualTo("Hello\u00A0"));
+                Assert.That(runs[2].text, Does.StartWith("\u00A0<unknown>"));
+                Assert.That(runs
                     .Any(label => label.text == "friend" && label.style.unityFontStyleAndWeight.value == FontStyle.Bold), Is.True);
                 Assert.That(window.HasUnsavedChangesForTests, Is.True);
             }
@@ -1554,7 +1585,7 @@ namespace NewDial.DialogueEditor.Tests
         {
             return string.Concat(element.Query<Label>(className: "dialogue-rich-text-run")
                 .ToList()
-                .Select(label => label.text));
+                .Select(label => label.text.Replace('\u00A0', ' ')));
         }
 
         private static void Click(VisualElement button)

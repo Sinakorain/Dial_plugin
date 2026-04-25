@@ -118,6 +118,146 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
+        public void DeleteLinkAtCanvasPosition_RemovesHitLink()
+        {
+            var graph = new DialogueGraphData();
+            var start = new DialogueTextNodeData
+            {
+                Title = "Start",
+                Position = new Vector2(100f, 140f)
+            };
+            var end = new DialogueTextNodeData
+            {
+                Title = "End",
+                Position = new Vector2(460f, 420f)
+            };
+            graph.Nodes.Add(start);
+            graph.Nodes.Add(end);
+            graph.Links.Add(new NodeLinkData
+            {
+                FromNodeId = start.Id,
+                ToNodeId = end.Id,
+                Order = 0
+            });
+
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+            var geometry = view.GetEdgeGeometriesForTests().Single();
+            var canvasHitPosition = geometry.Start + view.EdgeLayerCanvasBoundsForTests.position;
+
+            var deleted = view.DeleteLinkAtCanvasPosition(canvasHitPosition, registerUndo: false);
+
+            Assert.That(deleted, Is.True);
+            Assert.That(graph.Links, Is.Empty);
+            Assert.That(view.GetRenderedLinkCount(), Is.EqualTo(0));
+        }
+
+        [Test]
+        public void DeleteLinkAtCanvasPosition_IgnoresMiss()
+        {
+            var graph = new DialogueGraphData();
+            var start = new DialogueTextNodeData
+            {
+                Title = "Start",
+                Position = new Vector2(100f, 140f)
+            };
+            var end = new DialogueTextNodeData
+            {
+                Title = "End",
+                Position = new Vector2(460f, 420f)
+            };
+            graph.Nodes.Add(start);
+            graph.Nodes.Add(end);
+            graph.Links.Add(new NodeLinkData
+            {
+                FromNodeId = start.Id,
+                ToNodeId = end.Id,
+                Order = 0
+            });
+
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+
+            var deleted = view.DeleteLinkAtCanvasPosition(new Vector2(-500f, -500f), registerUndo: false);
+
+            Assert.That(deleted, Is.False);
+            Assert.That(graph.Links, Has.Count.EqualTo(1));
+        }
+
+        [Test]
+        public void HoverLinkAtCanvasPosition_HighlightsLinkGeometry()
+        {
+            var graph = CreateSingleLinkGraph(out var link);
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+            var defaultGeometry = view.GetEdgeGeometriesForTests().Single();
+            var canvasHitPosition = defaultGeometry.Start + view.EdgeLayerCanvasBoundsForTests.position;
+
+            var changed = view.UpdateHoveredLinkForTests(canvasHitPosition);
+            var hoveredGeometry = view.GetEdgeGeometriesForTests().Single();
+
+            Assert.That(changed, Is.True);
+            Assert.That(view.HoveredLinkIdForTests, Is.EqualTo(link.Id));
+            Assert.That(hoveredGeometry.Thickness, Is.GreaterThan(defaultGeometry.Thickness));
+            Assert.That(hoveredGeometry.Color, Is.Not.EqualTo(defaultGeometry.Color));
+        }
+
+        [Test]
+        public void HoverLinkAtCanvasPosition_MissClearsHover()
+        {
+            var graph = CreateSingleLinkGraph(out _);
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+            var geometry = view.GetEdgeGeometriesForTests().Single();
+            var canvasHitPosition = geometry.Start + view.EdgeLayerCanvasBoundsForTests.position;
+
+            view.UpdateHoveredLinkForTests(canvasHitPosition);
+            var changed = view.UpdateHoveredLinkForTests(new Vector2(-500f, -500f));
+            var restoredGeometry = view.GetEdgeGeometriesForTests().Single();
+
+            Assert.That(changed, Is.True);
+            Assert.That(view.HoveredLinkIdForTests, Is.Null);
+            Assert.That(restoredGeometry.Thickness, Is.EqualTo(geometry.Thickness));
+            Assert.That(restoredGeometry.Color, Is.EqualTo(geometry.Color));
+        }
+
+        [Test]
+        public void HoverLinkAtCanvasPosition_IsSuppressedDuringActiveLinkDrag()
+        {
+            var graph = CreateSingleLinkGraph(out _);
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+            var geometry = view.GetEdgeGeometriesForTests().Single();
+            var canvasHitPosition = geometry.Start + view.EdgeLayerCanvasBoundsForTests.position;
+            var sourceView = view.graphElements
+                .OfType<DialogueTextNodeView>()
+                .First();
+
+            view.BeginLinkDrag(sourceView, sourceView.worldBound.center);
+            var changed = view.UpdateHoveredLinkForTests(canvasHitPosition);
+
+            Assert.That(changed, Is.False);
+            Assert.That(view.HoveredLinkIdForTests, Is.Null);
+        }
+
+        [Test]
+        public void DeleteHoveredLink_ClearsHoverState()
+        {
+            var graph = CreateSingleLinkGraph(out _);
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+            var geometry = view.GetEdgeGeometriesForTests().Single();
+            var canvasHitPosition = geometry.Start + view.EdgeLayerCanvasBoundsForTests.position;
+
+            view.UpdateHoveredLinkForTests(canvasHitPosition);
+            var deleted = view.DeleteLinkAtCanvasPosition(canvasHitPosition, registerUndo: false);
+
+            Assert.That(deleted, Is.True);
+            Assert.That(view.HoveredLinkIdForTests, Is.Null);
+            Assert.That(graph.Links, Is.Empty);
+        }
+
+        [Test]
         public void CreateTextNode_HidesEmptyStateWarning()
         {
             var view = new DialogueGraphView();
@@ -300,9 +440,13 @@ namespace NewDial.DialogueEditor.Tests
 
             var preview = nodeView.Q<VisualElement>(className: "dialogue-node__body-preview");
             Assert.That(preview, Is.Not.Null);
-            Assert.That(string.Concat(preview.Query<Label>(className: "dialogue-rich-text-run").ToList().Select(label => label.text)),
+            var runs = preview.Query<Label>(className: "dialogue-rich-text-run").ToList();
+            Assert.That(string.Concat(runs.Select(label => label.text.Replace('\u00A0', ' '))),
                 Is.EqualTo("Hello friend <unknown>tag</unknown>"));
-            Assert.That(preview.Query<Label>(className: "dialogue-rich-text-run").ToList()
+            Assert.That(runs, Has.Count.GreaterThanOrEqualTo(3));
+            Assert.That(runs[0].text, Is.EqualTo("Hello\u00A0"));
+            Assert.That(runs[2].text, Does.StartWith("\u00A0<unknown>"));
+            Assert.That(runs
                 .Any(label => label.text == "friend" && label.style.unityFontStyleAndWeight.value == FontStyle.Bold), Is.True);
         }
 
@@ -556,6 +700,86 @@ namespace NewDial.DialogueEditor.Tests
 
             Assert.That(view.DeleteSelectionFromHotkey(), Is.True);
 
+            Assert.That(graph.Nodes.Select(node => node.Id), Is.EquivalentTo(new[]
+            {
+                textNode.Id
+            }));
+        }
+
+        [Test]
+        public void DeleteHotkey_CommandDeleteWithCommentContents_ShowsPrompt()
+        {
+            var graph = new DialogueGraphData();
+            var comment = new CommentNodeData
+            {
+                Title = "Group",
+                Position = new Vector2(100f, 100f),
+                Area = new Rect(100f, 100f, 420f, 260f)
+            };
+            var textNode = new DialogueTextNodeData
+            {
+                Title = "Inside",
+                Position = new Vector2(130f, 130f)
+            };
+            graph.Nodes.Add(comment);
+            graph.Nodes.Add(textNode);
+
+            var promptCalls = 0;
+            var view = new DialogueGraphView
+            {
+                CommentDeletePrompt = _ =>
+                {
+                    promptCalls++;
+                    return DialogueCommentDeleteChoice.DeleteCommentOnly;
+                }
+            };
+            view.LoadGraph(graph);
+            view.FocusCanvas();
+            view.SelectCommentGroup(comment);
+
+            SendKeyDown(view, KeyCode.Delete, EventModifiers.Command);
+
+            Assert.That(promptCalls, Is.EqualTo(1));
+            Assert.That(graph.Nodes.Select(node => node.Id), Is.EquivalentTo(new[]
+            {
+                textNode.Id
+            }));
+        }
+
+        [Test]
+        public void DeleteHotkey_ControlBackspaceWithCommentContents_ShowsPrompt()
+        {
+            var graph = new DialogueGraphData();
+            var comment = new CommentNodeData
+            {
+                Title = "Group",
+                Position = new Vector2(100f, 100f),
+                Area = new Rect(100f, 100f, 420f, 260f)
+            };
+            var textNode = new DialogueTextNodeData
+            {
+                Title = "Inside",
+                Position = new Vector2(130f, 130f)
+            };
+            graph.Nodes.Add(comment);
+            graph.Nodes.Add(textNode);
+
+            var promptCalls = 0;
+            var view = new DialogueGraphView
+            {
+                CommentDeletePrompt = _ =>
+                {
+                    promptCalls++;
+                    return DialogueCommentDeleteChoice.DeleteCommentOnly;
+                }
+            };
+            view.LoadGraph(graph);
+            view.FocusCanvas();
+            view.SelectCommentGroup(comment);
+
+            SendKeyDown(view, KeyCode.Backspace, EventModifiers.Control);
+
+            Assert.That(promptCalls, Is.EqualTo(1));
             Assert.That(graph.Nodes.Select(node => node.Id), Is.EquivalentTo(new[]
             {
                 textNode.Id
@@ -1102,6 +1326,190 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
+        public void Zoom_DoesNotChangeNodeDataPositions()
+        {
+            var graph = new DialogueGraphData();
+            var textNode = new DialogueTextNodeData
+            {
+                Title = "Text",
+                Position = new Vector2(120f, 180f)
+            };
+            var functionNode = new FunctionNodeData
+            {
+                Title = "Function",
+                Position = new Vector2(420f, 360f)
+            };
+            var sceneNode = new SceneNodeData
+            {
+                Title = "Scene",
+                Position = new Vector2(680f, 500f)
+            };
+            graph.Nodes.Add(textNode);
+            graph.Nodes.Add(functionNode);
+            graph.Nodes.Add(sceneNode);
+            var originalTextPosition = textNode.Position;
+            var originalFunctionPosition = functionNode.Position;
+            var originalScenePosition = sceneNode.Position;
+
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+
+            view.UpdateViewTransform(new Vector3(70f, -35f, 0f), Vector3.one * 0.5f);
+            view.UpdateViewTransform(new Vector3(-20f, 50f, 0f), Vector3.one * 2f);
+            view.UpdateViewTransform(Vector3.zero, Vector3.one);
+
+            Assert.That(textNode.Position, Is.EqualTo(originalTextPosition));
+            Assert.That(functionNode.Position, Is.EqualTo(originalFunctionPosition));
+            Assert.That(sceneNode.Position, Is.EqualTo(originalScenePosition));
+        }
+
+        [Test]
+        public void Zoom_DoesNotChangeCommentAreas()
+        {
+            var graph = new DialogueGraphData();
+            var comment = new CommentNodeData
+            {
+                Title = "Comment",
+                Position = new Vector2(90f, 110f),
+                Area = new Rect(90f, 110f, 500f, 260f)
+            };
+            graph.Nodes.Add(comment);
+            var originalPosition = comment.Position;
+            var originalArea = comment.Area;
+
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+
+            view.UpdateViewTransform(new Vector3(100f, 40f, 0f), Vector3.one * 0.5f);
+            view.UpdateViewTransform(new Vector3(-120f, -60f, 0f), Vector3.one * 1.75f);
+            view.UpdateViewTransform(Vector3.zero, Vector3.one);
+
+            Assert.That(comment.Position, Is.EqualTo(originalPosition));
+            Assert.That(comment.Area, Is.EqualTo(originalArea));
+        }
+
+        [Test]
+        public void Zoom_PreservesCanvasDistanceBetweenNodes()
+        {
+            var graph = new DialogueGraphData();
+            var first = new DialogueTextNodeData
+            {
+                Title = "First",
+                Position = new Vector2(100f, 140f)
+            };
+            var second = new DialogueTextNodeData
+            {
+                Title = "Second",
+                Position = new Vector2(460f, 420f)
+            };
+            graph.Nodes.Add(first);
+            graph.Nodes.Add(second);
+
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+            var firstView = view.graphElements
+                .OfType<DialogueTextNodeView>()
+                .Single(element => element.Data.Id == first.Id);
+            var secondView = view.graphElements
+                .OfType<DialogueTextNodeView>()
+                .Single(element => element.Data.Id == second.Id);
+            var originalCanvasDistance = secondView.GetPosition().center - firstView.GetPosition().center;
+
+            view.UpdateViewTransform(new Vector3(80f, -45f, 0f), Vector3.one * 0.5f);
+            var zoomedOutCanvasDistance = secondView.GetPosition().center - firstView.GetPosition().center;
+            view.UpdateViewTransform(new Vector3(-30f, 95f, 0f), Vector3.one * 2f);
+            var zoomedInCanvasDistance = secondView.GetPosition().center - firstView.GetPosition().center;
+
+            Assert.That(zoomedOutCanvasDistance, Is.EqualTo(originalCanvasDistance));
+            Assert.That(zoomedInCanvasDistance, Is.EqualTo(originalCanvasDistance));
+        }
+
+        [Test]
+        public void EdgeLayer_IsChildOfContentViewContainer()
+        {
+            var view = new DialogueGraphView();
+
+            Assert.That(view.IsEdgeLayerInContentViewContainerForTests, Is.True);
+        }
+
+        [Test]
+        public void Zoom_PreservesEdgeCanvasAnchorsRelativeToNodeRects()
+        {
+            var graph = new DialogueGraphData();
+            var source = new DialogueTextNodeData
+            {
+                Title = "Source",
+                Position = new Vector2(100f, 140f)
+            };
+            var target = new DialogueTextNodeData
+            {
+                Title = "Target",
+                Position = new Vector2(460f, 420f)
+            };
+            graph.Nodes.Add(source);
+            graph.Nodes.Add(target);
+            graph.Links.Add(new NodeLinkData
+            {
+                FromNodeId = source.Id,
+                ToNodeId = target.Id,
+                Order = 0
+            });
+
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+            var expectedSourceAnchor = GetExpectedBottomAnchor(
+                new Rect(source.Position, DialogueGraphView.TextNodeInitialSize),
+                new Rect(target.Position, DialogueGraphView.TextNodeInitialSize).center.x);
+            var expectedTargetAnchor = GetExpectedTopAnchor(
+                new Rect(target.Position, DialogueGraphView.TextNodeInitialSize),
+                new Rect(source.Position, DialogueGraphView.TextNodeInitialSize).center.x);
+
+            var initialGeometry = view.GetEdgeGeometriesForTests().Single();
+            var initialStart = initialGeometry.Start + view.EdgeLayerCanvasBoundsForTests.position;
+            var initialEnd = initialGeometry.End + view.EdgeLayerCanvasBoundsForTests.position;
+
+            view.UpdateViewTransform(new Vector3(80f, -45f, 0f), Vector3.one * 0.5f);
+            var zoomedGeometry = view.GetEdgeGeometriesForTests().Single();
+            var zoomedStart = zoomedGeometry.Start + view.EdgeLayerCanvasBoundsForTests.position;
+            var zoomedEnd = zoomedGeometry.End + view.EdgeLayerCanvasBoundsForTests.position;
+
+            Assert.That(initialStart, Is.EqualTo(expectedSourceAnchor));
+            Assert.That(initialEnd, Is.EqualTo(expectedTargetAnchor));
+            Assert.That(initialGeometry.Thickness, Is.GreaterThan(3f));
+            Assert.That(zoomedStart, Is.EqualTo(expectedSourceAnchor));
+            Assert.That(zoomedEnd, Is.EqualTo(expectedTargetAnchor));
+        }
+
+        [Test]
+        public void LinkDragPreview_UsesCanvasPointerAfterZoom()
+        {
+            var graph = new DialogueGraphData();
+            var source = new DialogueTextNodeData
+            {
+                Title = "Source",
+                Position = new Vector2(100f, 140f)
+            };
+            graph.Nodes.Add(source);
+
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+            view.UpdateViewTransform(new Vector3(80f, -45f, 0f), Vector3.one * 0.5f);
+            var sourceView = view.graphElements
+                .OfType<DialogueTextNodeView>()
+                .Single(element => element.Data.Id == source.Id);
+            var pointerCanvasPosition = new Vector2(640f, 520f);
+            var pointerWorldPosition = view.contentViewContainer.LocalToWorld(pointerCanvasPosition);
+
+            view.BeginLinkDrag(sourceView, pointerWorldPosition);
+
+            var previewGeometry = view.GetEdgeGeometriesForTests().Single();
+            var previewEnd = previewGeometry.End + view.EdgeLayerCanvasBoundsForTests.position;
+            Assert.That(previewGeometry.Thickness, Is.GreaterThan(3f));
+            Assert.That(previewEnd.x, Is.EqualTo(pointerCanvasPosition.x).Within(0.01f));
+            Assert.That(previewEnd.y, Is.EqualTo(pointerCanvasPosition.y).Within(0.01f));
+        }
+
+        [Test]
         public void StepKeyboardPan_ClampsLargeFrameDelta()
         {
             var view = new DialogueGraphView();
@@ -1486,9 +1894,64 @@ namespace NewDial.DialogueEditor.Tests
             return view;
         }
 
+        private static DialogueGraphData CreateSingleLinkGraph(out NodeLinkData link)
+        {
+            var graph = new DialogueGraphData();
+            var start = new DialogueTextNodeData
+            {
+                Title = "Start",
+                Position = new Vector2(100f, 140f)
+            };
+            var end = new DialogueTextNodeData
+            {
+                Title = "End",
+                Position = new Vector2(460f, 420f)
+            };
+
+            link = new NodeLinkData
+            {
+                FromNodeId = start.Id,
+                ToNodeId = end.Id,
+                Order = 0
+            };
+
+            graph.Nodes.Add(start);
+            graph.Nodes.Add(end);
+            graph.Links.Add(link);
+            return graph;
+        }
+
+        private static Vector2 GetExpectedBottomAnchor(Rect sourceRect, float targetCenterX)
+        {
+            var x = Mathf.Clamp(targetCenterX, sourceRect.xMin + 18f, sourceRect.xMax - 18f);
+            return new Vector2(x, sourceRect.yMax - 2f);
+        }
+
+        private static Vector2 GetExpectedTopAnchor(Rect targetRect, float sourceCenterX)
+        {
+            var x = Mathf.Clamp(sourceCenterX, targetRect.xMin + 18f, targetRect.xMax - 18f);
+            return new Vector2(x, targetRect.yMin + 2f);
+        }
+
         private static DialogueGraphData GetResolvedGraph(DialogueDatabaseAsset database)
         {
             return database.Npcs[0].Dialogues[0].Graph;
+        }
+
+        private static void SendKeyDown(VisualElement target, KeyCode keyCode, EventModifiers modifiers = EventModifiers.None)
+        {
+            var keyEvent = new Event
+            {
+                type = EventType.KeyDown,
+                keyCode = keyCode,
+                modifiers = modifiers
+            };
+
+            using (var keyDown = KeyDownEvent.GetPooled(keyEvent))
+            {
+                keyDown.target = target;
+                target.SendEvent(keyDown);
+            }
         }
 
         private static TNode GetResolvedNode<TNode>(DialogueDatabaseAsset database, string nodeId) where TNode : BaseNodeData

@@ -31,6 +31,10 @@
 - Prompt to save or discard unsaved changes before opening another dialogue database in the editor.
 - Graph empty-state visibility now updates when the first node is created and when the last node is removed.
 - Graph canvas now uses a large, low-contrast grid slightly lighter than the canvas background.
+- Graph zoom now uses a single content zoom manipulator so node positions and relative layout no longer drift while changing scale.
+- Graph links are now slightly thicker, highlight subtly on hover, and can be removed with `Cmd`/`Ctrl` + left click on the link.
+- Graph link hover and click hit-testing now uses panel-space pointer coordinates so the interactive zone matches the visual link more closely.
+- `Cmd`/`Ctrl` + `Delete`/`Backspace` on the graph canvas now uses the same comment-delete prompt as plain `Delete`/`Backspace`.
 - Selected NPC and dialogue metadata in the project panel now uses compact inline rows instead of nested cards.
 - Scene, function, start, and debug graph-node badges now use distinct semantic colors.
 - Nested comment-group ownership and movement behavior now follow the most specific containing comment group.
@@ -51,6 +55,7 @@
 - Text-node body fields now place the label above the multiline editor so the text box uses the full inspector width.
 - Text-node inspector checkboxes now align by using fixed-width wrapping labels.
 - Palette shortcuts now create nodes at the cursor when it is over the canvas or near the current viewport center otherwise, clamping them into view even if they overlap existing nodes.
+- Palette shortcuts now create the first NPC and dialogue in an empty database before adding the requested node, matching palette drag/drop behavior.
 - The start window is now a compact floating launcher and no longer mentions cutscenes.
 - Localization import/export now lives in a collapsed advanced section of the unified dialogue launcher instead of a separate menu item.
 - Fixed the start launcher opening path so it centers new windows after Unity creates them and keeps the current top-left position when the import/export section is toggled.
@@ -67,6 +72,7 @@
 - WASD graph panning during node drag now uses a drag-start baseline to avoid snapping selected nodes back after keyboard pan.
 - Content-language choices now refresh after localization import, including when the editor UI language is Russian.
 - Where Used reference details are now collapsed by default in editor inspectors.
+- Rich-text previews now preserve visible spaces at formatting boundaries.
 
 ### Tests
 
