@@ -8,11 +8,15 @@ namespace NewDial.DialogueEditor
     public class DialogueExecutableNodeView : Node, IDialogueRuntimeNodeView
     {
         private const float LinkAnchorInset = 18f;
+        private const float InlineTextMinHeight = 58f;
 
         private readonly DialogueGraphView _graphView;
         private readonly Label _kindBadge;
         private readonly Label _summaryLabel;
         private readonly Label _metaLabel;
+        private readonly TextField _titleField;
+        private readonly TextField _choiceTextField;
+        private readonly TextField _bodyField;
 
         public DialogueExecutableNodeView(BaseNodeData data, DialogueGraphView graphView)
         {
@@ -31,6 +35,16 @@ namespace NewDial.DialogueEditor
             inputContainer.style.display = DisplayStyle.None;
             outputContainer.style.display = DisplayStyle.None;
 
+            _titleField = CreateHeaderTitleField("runtime-node-header-title-field");
+            _titleField.RegisterValueChangedCallback(evt =>
+            {
+                _graphView.ApplyInlineNodeEdit($"Edit {GetKindLabel(Data)} Title", () => Data.Title = evt.newValue);
+            });
+            _titleField.RegisterCallback<FocusInEvent>(_ => _graphView.SelectRuntimeNode(this));
+            titleContainer.Clear();
+            titleContainer.Add(_titleField);
+            titleContainer.Add(titleButtonContainer);
+
             _kindBadge = new Label(GetKindLabel(data));
             _kindBadge.AddToClassList("dialogue-node__start-badge");
             titleButtonContainer.Insert(0, _kindBadge);
@@ -42,10 +56,32 @@ namespace NewDial.DialogueEditor
             deleteButton.AddToClassList("dialogue-node__delete-button");
             titleButtonContainer.Add(deleteButton);
 
-            _summaryLabel = new Label();
-            _summaryLabel.AddToClassList("dialogue-node__body-preview");
-            _summaryLabel.style.whiteSpace = WhiteSpace.Normal;
-            extensionContainer.Add(_summaryLabel);
+            if (data is DialogueChoiceNodeData choiceNode)
+            {
+                _choiceTextField = CreateInlineTextField("answer-node-inline-button-text-field", true);
+                _choiceTextField.AddToClassList("dialogue-node__inline-field--compact-multiline");
+                _choiceTextField.RegisterValueChangedCallback(evt =>
+                {
+                    _graphView.ApplyInlineNodeEdit("Edit Button Text", () => choiceNode.ChoiceText = evt.newValue);
+                });
+                AddAnswerInlineSection(DialogueEditorLocalization.Text("Button Text"), _choiceTextField);
+
+                _bodyField = CreateInlineTextField("answer-node-inline-body-field", true);
+                _bodyField.RegisterValueChangedCallback(evt =>
+                {
+                    var activeContentLanguage = DialogueContentLanguageSettings.CurrentLanguageCode;
+                    _graphView.ApplyInlineNodeEdit("Edit Answer Body", () =>
+                        DialogueTextLocalizationUtility.SetBodyText(choiceNode, activeContentLanguage, evt.newValue));
+                });
+                AddAnswerInlineSection(DialogueEditorLocalization.Text("Text"), _bodyField);
+            }
+            else
+            {
+                _summaryLabel = new Label();
+                _summaryLabel.AddToClassList("dialogue-node__body-preview");
+                _summaryLabel.style.whiteSpace = WhiteSpace.Normal;
+                extensionContainer.Add(_summaryLabel);
+            }
 
             _metaLabel = new Label();
             _metaLabel.AddToClassList("dialogue-node__meta");
@@ -89,16 +125,48 @@ namespace NewDial.DialogueEditor
                 .GetOutgoingLinks(Data.Id)
                 .Count(link => !string.IsNullOrWhiteSpace(link.ToNodeId));
 
-            title = string.IsNullOrWhiteSpace(Data.Title) ? GetKindLabel(Data) : Data.Title;
+            title = string.Empty;
+            _titleField.SetValueWithoutNotify(Data.Title ?? string.Empty);
             _kindBadge.text = GetKindLabel(Data).ToUpperInvariant();
-            _summaryLabel.text = BuildSummary(Data);
-            _metaLabel.text = outgoingCount == 0
-                ? DialogueEditorLocalization.Text("Executes immediately, then ends unless connected.")
-                : DialogueEditorLocalization.Format("{0} execution link{1}", outgoingCount, outgoingCount == 1 ? string.Empty : "s");
+            if (Data is DialogueChoiceNodeData choiceNode)
+            {
+                _choiceTextField?.SetValueWithoutNotify(choiceNode.ChoiceText ?? string.Empty);
+                if (_choiceTextField != null)
+                {
+                    _choiceTextField.style.height = EstimateTextFieldHeight(choiceNode.ChoiceText, 34f);
+                }
 
+                var bodyText = DialogueTextLocalizationUtility.GetBodyText(choiceNode, DialogueContentLanguageSettings.CurrentLanguageCode);
+                if (_bodyField != null)
+                {
+                    _bodyField.SetValueWithoutNotify(bodyText);
+                    _bodyField.style.height = EstimateTextFieldHeight(bodyText, InlineTextMinHeight);
+                }
+
+                var speakerName = _graphView.ResolveSpeakerName(Data);
+                var linkSummary = outgoingCount == 0
+                    ? DialogueEditorLocalization.Text("No next")
+                    : DialogueEditorLocalization.Format("{0} link{1}", outgoingCount, outgoingCount == 1 ? string.Empty : "s");
+                _metaLabel.text = string.IsNullOrWhiteSpace(speakerName)
+                    ? linkSummary
+                    : $"{speakerName} | {linkSummary}";
+            }
+            else
+            {
+                _summaryLabel.text = BuildSummary(Data);
+                _metaLabel.text = outgoingCount == 0
+                    ? DialogueEditorLocalization.Text("Ends here")
+                    : DialogueEditorLocalization.Format("{0} exec link{1}", outgoingCount, outgoingCount == 1 ? string.Empty : "s");
+            }
+
+            var nodeHeight = Data is DialogueChoiceNodeData answerNode
+                ? EstimateAnswerNodeHeight(
+                    answerNode.ChoiceText,
+                    DialogueTextLocalizationUtility.GetBodyText(answerNode, DialogueContentLanguageSettings.CurrentLanguageCode))
+                : DialogueGraphView.TextNodeInitialSize.y;
             base.SetPosition(new Rect(
                 Data.Position,
-                GetPosition().size == Vector2.zero ? DialogueGraphView.TextNodeInitialSize : GetPosition().size));
+                new Vector2(DialogueGraphView.TextNodeInitialSize.x, nodeHeight)));
             RefreshExpandedState();
         }
 
@@ -126,13 +194,19 @@ namespace NewDial.DialogueEditor
 
         private void OnMouseDown(MouseDownEvent evt)
         {
-            if (evt.button != 0 || IsInsideButton(evt.target as VisualElement))
+            if (evt.button != 0 || DialogueGraphView.IsInlineInteractiveTarget(evt.target as VisualElement))
             {
                 return;
             }
 
             var worldPointerPosition = this.LocalToWorld(evt.localMousePosition);
             _graphView.SelectRuntimeNodeForPointerDrag(this);
+            if (evt.clickCount >= 2)
+            {
+                _graphView.RequestNodeInspector(Data);
+                evt.StopImmediatePropagation();
+                return;
+            }
 
             if (IsPointerInBottomHalf(worldPointerPosition))
             {
@@ -181,6 +255,9 @@ namespace NewDial.DialogueEditor
         {
             return data switch
             {
+                DialogueChoiceNodeData choiceNode => string.IsNullOrWhiteSpace(choiceNode.ChoiceText)
+                    ? DialogueEditorLocalization.Text("Button text is empty.")
+                    : BuildPreviewText(choiceNode.ChoiceText),
                 FunctionNodeData functionNode => string.IsNullOrWhiteSpace(functionNode.FunctionId)
                     ? DialogueEditorLocalization.Text("No function selected")
                     : DialogueEditorLocalization.Format(
@@ -204,10 +281,91 @@ namespace NewDial.DialogueEditor
             return normalized.Length <= 120 ? normalized : $"{normalized.Substring(0, 117)}...";
         }
 
+        private TextField CreateInlineTextField(string fieldName, bool multiline)
+        {
+            var field = new TextField
+            {
+                name = fieldName,
+                multiline = multiline,
+                isDelayed = false
+            };
+            field.AddToClassList("dialogue-node__inline-field");
+            if (multiline)
+            {
+                field.AddToClassList("dialogue-node__inline-field--multiline");
+                ConfigureSoftWrappedInlineField(field);
+            }
+
+            field.RegisterCallback<FocusInEvent>(_ => _graphView.SelectRuntimeNode(this));
+            return field;
+        }
+
+        private TextField CreateHeaderTitleField(string fieldName)
+        {
+            var field = new TextField
+            {
+                name = fieldName,
+                isDelayed = false
+            };
+            field.AddToClassList("dialogue-node__header-title-field");
+            return field;
+        }
+
+        private void AddAnswerInlineSection(string labelText, TextField field)
+        {
+            var label = new Label(labelText);
+            label.AddToClassList("dialogue-node__inline-label");
+            extensionContainer.Add(label);
+            extensionContainer.Add(field);
+        }
+
+        private static float EstimateAnswerNodeHeight(string buttonText, string bodyText)
+        {
+            return Mathf.Max(
+                DialogueGraphView.TextNodeInitialSize.y,
+                128f + EstimateTextFieldHeight(buttonText, 34f) + EstimateTextFieldHeight(bodyText, InlineTextMinHeight));
+        }
+
+        private static float EstimateTextFieldHeight(string text, float minHeight)
+        {
+            var explicitLines = string.IsNullOrEmpty(text)
+                ? 1
+                : text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n').Sum(line =>
+                    Mathf.Max(1, Mathf.CeilToInt(line.Length / 32f)));
+            return Mathf.Max(minHeight, 28f + explicitLines * 18f);
+        }
+
+        private static void ConfigureSoftWrappedInlineField(TextField field)
+        {
+            field.style.whiteSpace = WhiteSpace.Normal;
+            field.style.overflow = Overflow.Hidden;
+            field.RegisterCallback<AttachToPanelEvent>(_ => ApplySoftWrapToTextInput(field));
+            field.RegisterCallback<GeometryChangedEvent>(_ => ApplySoftWrapToTextInput(field));
+        }
+
+        private static void ApplySoftWrapToTextInput(TextField field)
+        {
+            field.Query<VisualElement>(className: "unity-text-input").ForEach(element =>
+            {
+                element.style.whiteSpace = WhiteSpace.Normal;
+                element.style.overflow = Overflow.Hidden;
+                element.style.minWidth = 0f;
+                element.style.maxWidth = Length.Percent(100f);
+            });
+
+            field.Query<VisualElement>(className: "unity-base-text-field__input").ForEach(element =>
+            {
+                element.style.overflow = Overflow.Hidden;
+                element.style.minWidth = 0f;
+                element.style.maxWidth = Length.Percent(100f);
+            });
+        }
+
         private static string GetKindLabel(BaseNodeData data)
         {
             return data switch
             {
+                DialogueChoiceNodeData => DialogueEditorLocalization.Text("Answer"),
                 FunctionNodeData => DialogueEditorLocalization.Text("Function"),
                 SceneNodeData => DialogueEditorLocalization.Text("Scene"),
                 DebugNodeData => DialogueEditorLocalization.Text("Debug"),
@@ -215,25 +373,11 @@ namespace NewDial.DialogueEditor
             };
         }
 
-        private static bool IsInsideButton(VisualElement element)
-        {
-            while (element != null)
-            {
-                if (element is Button)
-                {
-                    return true;
-                }
-
-                element = element.parent;
-            }
-
-            return false;
-        }
-
         private static string GetNodeClass(BaseNodeData data)
         {
             return data switch
             {
+                DialogueChoiceNodeData => "dialogue-node--choice",
                 FunctionNodeData => "dialogue-node--function",
                 SceneNodeData => "dialogue-node--scene",
                 DebugNodeData => "dialogue-node--debug",

@@ -78,6 +78,73 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
+        public void Choose_UsesAnswerNodeTextInPreview()
+        {
+            var dialogue = new DialogueEntry { Name = "Answer Preview" };
+            var start = new DialogueTextNodeData
+            {
+                BodyText = "Question",
+                IsStartNode = true
+            };
+            var answer = new DialogueChoiceNodeData
+            {
+                ChoiceText = "Ask about work",
+                BodyText = "The mill needs help."
+            };
+            var target = new DialogueTextNodeData { BodyText = "Come back tomorrow." };
+            dialogue.Graph.Nodes.Add(start);
+            dialogue.Graph.Nodes.Add(answer);
+            dialogue.Graph.Nodes.Add(target);
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = start.Id, ToNodeId = answer.Id, Order = 0 });
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = answer.Id, ToNodeId = target.Id, Order = 0 });
+
+            var session = new DialoguePreviewSession(dialogue);
+
+            Assert.That(session.CurrentChoices, Has.Count.EqualTo(1));
+            Assert.That(session.CurrentChoices[0].Text, Is.EqualTo("Ask about work"));
+            Assert.That(session.Choose(0), Is.True);
+            Assert.That(session.CurrentLineNode, Is.EqualTo(answer));
+            Assert.That(session.CurrentNode, Is.Null);
+            Assert.That(session.Transcript[1].ChoiceText, Is.EqualTo("Ask about work"));
+            Assert.That(session.Transcript[1].Body, Is.EqualTo("The mill needs help."));
+            Assert.That(session.Advance(), Is.True);
+            Assert.That(session.CurrentNode, Is.EqualTo(target));
+        }
+
+        [Test]
+        public void Choose_BlockedManualAnswerLinkReportsBlockedChoice()
+        {
+            var dialogue = new DialogueEntry { Name = "Blocked Manual Answer Preview" };
+            var start = new DialogueTextNodeData
+            {
+                BodyText = "Question",
+                IsStartNode = true
+            };
+            var answer = new DialogueChoiceNodeData
+            {
+                ChoiceText = "Secret",
+                Condition = new ConditionData
+                {
+                    Type = ConditionType.VariableCheck,
+                    Key = "has_secret",
+                    Operator = "==",
+                    Value = "true"
+                }
+            };
+            dialogue.Graph.Nodes.Add(start);
+            dialogue.Graph.Nodes.Add(answer);
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = start.Id, ToNodeId = answer.Id, Order = 0 });
+
+            var session = new DialoguePreviewSession(dialogue);
+
+            Assert.That(session.CurrentChoices, Is.Empty);
+            Assert.That(session.CanAdvance, Is.False);
+            Assert.That(session.BlockedChoices, Has.Count.EqualTo(1));
+            Assert.That(session.BlockedChoices[0].Label, Is.EqualTo("Secret"));
+            Assert.That(session.CurrentReason, Is.EqualTo("No choices are available with the current test variables."));
+        }
+
+        [Test]
         public void Choose_WithSpeaker_KeepsChoiceTextSeparateFromNodeBody()
         {
             var dialogue = new DialogueEntry

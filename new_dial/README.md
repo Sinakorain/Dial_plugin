@@ -63,11 +63,11 @@ The start window can create a new `DialogueDatabaseAsset` or load an existing on
 | Implemented | Runtime dialogue database model | `DialogueDatabaseAsset`, NPC/dialogue records, per-dialogue speakers, graph nodes and links |
 | Implemented | Traversal helper | `DialoguePlayer` supports start, linear advance, choice selection, executable node execution, and pending execution resume |
 | Implemented | Conditions | Lightweight start/node gating through `ConditionData` and evaluator interfaces |
-| Implemented | Graph authoring | Text nodes, speaker binding, rich-text body markup, comment nodes, ordered links, voice-key metadata, choice text, and details editing |
+| Implemented | Graph authoring | Header-editable text, answer, executable, and comment nodes; speaker binding; rich-text body markup; ordered links; voice-key metadata; and details editing |
 | Implemented | Executable nodes | Generic `Function`, `Scene`, and `Debug` nodes with primitive argument bags |
 | Implemented | Execution extension points | Project-provided registries and executors drive concrete function and scene behavior |
 | Implemented | Identifier management | NPC, dialogue, and node ids can be edited explicitly; node id changes update internal graph links |
-| Implemented | Choice-flow diagnostics | Choice-mode nodes warn about missing outputs, invalid targets, fallback labels, order conflicts, and unreachable targets |
+| Implemented | Choice-flow diagnostics | Text nodes with outgoing answers warn about missing answers, invalid targets, fallback labels, legacy answer links, order conflicts, and unreachable targets |
 | Implemented | Guided conditions | Condition fields show generic variable-check operators, hints, and optional project key suggestions |
 | Implemented | Preview test variables | Preview can simulate bool, number, and string values and show blocked-state explanations |
 | Implemented | Where Used | Editor shows internal references and can display project-provided external references |
@@ -88,15 +88,16 @@ The start window can create a new `DialogueDatabaseAsset` or load an existing on
 - `DialogueEntry`: dialogue record with speakers, a start condition, and graph payload
 - `DialogueSpeakerEntry`: per-dialogue speaker id and display name
 - `DialogueGraphData`: graph container for nodes and links
-- `DialogueTextNodeData`: playable text node with body text, optional speaker and voice-key metadata, start-node, and choice-mode flags
+- `DialogueTextNodeData`: playable text node with body text, optional speaker and voice-key metadata, start-node, and legacy direct-choice flags
+- `DialogueChoiceNodeData`: playable answer line node with `ChoiceText` for the choice button plus its own body text, localization, speaker, and voice-key metadata
 - `DialogueRichTextUtility`: supported rich-text sanitizer, plain-text stripper, and selection wrapper for dialogue body markup
 - `FunctionNodeData`: generic project-function node with primitive arguments and failure policy
 - `SceneNodeData`: generic scene request node with scene key, load mode, optional entry/transition ids, and parameters
 - `DebugNodeData`: lightweight logging node for diagnostics
 - `CommentNodeData`: editor grouping and annotation node
-- `NodeLinkData`: ordered outgoing edge with optional `ChoiceText`
+- `NodeLinkData`: ordered outgoing edge; legacy `ChoiceText` is still read for older direct-choice graphs
 - `ConditionData` and `ConditionType`: lightweight `None`, `VariableCheck`, and `Custom` condition metadata
-- `DialoguePlayer`: runtime traversal helper for starting, advancing, choosing branches, and resolving the current speaker
+- `DialoguePlayer`: runtime traversal helper for starting, advancing, choosing branches, resolving the current line node, and resolving the current speaker
 - `DialogueExecutionResult`: result contract for success, failure, pending, and end-dialogue execution outcomes
 - `IDialogueExecutionRegistry`, `IDialogueFunctionExecutor`, and `IDialogueSceneExecutor`: extension points for project metadata and executable behavior
 - `DialogueChoice`: resolved choice option exposed by `DialoguePlayer`
@@ -123,16 +124,17 @@ These APIs are suitable for the current MVP package workflow, but they should no
 - The editor language is a per-user preference saved in `EditorPrefs`; English is the default and Russian can be selected from the graph toolbar without reopening Unity.
 - The content-language dropdown is separate from the editor UI language and controls which localized body text is displayed and edited in graph, inspector, and preview surfaces. New databases show only `ru`; extra language options appear after CSV/TSV import or other localized node data is present, including while the editor UI is set to Russian.
 - `Localization` opens a TSV/CSV import/export window. Imported tables are grouped by `Conversation`; selected conversations or all conversations can be imported in one pass. Existing dialogues with matching `Dialogue.Id` values are updated, and missing conversations create new dialogues under the selected/current NPC.
-- The first import into an empty dialogue creates a vertical top-to-bottom chain of text nodes; repeat imports match by `LocalizationKey` and update text data without rebuilding links, positions, executable nodes, speakers, conditions, or choice flags.
-- WASD pans the focused graph canvas with smoothed screen-space movement so large graphs remain navigable without delayed-frame jumps.
-- Text and executable nodes can be selected by clicking any non-button part of the node. Dragging from the lower half still starts link creation.
-- Each dialogue has a speaker roster. Text nodes can bind to a speaker, and empty or missing speaker references fall back to the first speaker in that dialogue.
+- The first import into an empty dialogue creates a vertical top-to-bottom chain of text nodes; repeat imports match text and answer nodes by `LocalizationKey` and update text data without rebuilding links, positions, executable nodes, speakers, conditions, or choice flags.
+- WASD pans the focused graph canvas; typing in inline node fields does not move the canvas.
+- Node titles are edited directly in each graph header. Text and answer nodes expose their body/button text fields on the graph with visual soft wrapping, stable card width, and downward growth; single-click selects for inline editing, while double-clicking non-field node areas opens the details inspector. Dragging from the lower half outside inline fields still starts link creation.
+- Outgoing `Text -> Answer` links automatically appear as player choices. The legacy `UseOutputsAsChoices` flag is still supported for older direct `Text -> Text` choice links.
+- Each dialogue has a speaker roster. Text and answer nodes can bind to a speaker, and empty or missing speaker references fall back to the first speaker in that dialogue.
 - Text node body text supports a small Unity/TMP-like rich-text subset: `<b>`, `<i>`, and `<color=#RRGGBB>`. Unsupported tags are preserved in authored data and shown as plain text in editor previews.
 - Rich-text color slots are user editor preferences: `+` adds an empty slot, text colors use `#RRGGBB`, and each slot includes a swatch, exact hex input, inline circular palette, brightness gradient bar, and `Apply` action for the current selection.
-- Text node `VoiceKey` values are stable string metadata for project-side voiceover or localization lookup; the package does not play audio clips, call FMOD events, or resolve voice assets itself.
-- Text node `LocalizationKey` values are stable table row keys, while `BodyText` remains the Russian/default fallback for older content.
+- Text and answer node `VoiceKey` values are stable string metadata for project-side voiceover or localization lookup; the package does not play audio clips, call FMOD events, or resolve voice assets itself.
+- Text and answer node `LocalizationKey` values are stable table row keys, while `BodyText` remains the Russian/default fallback for older content.
 - NPC, dialogue, and node identifiers are editable in the editor. Node identifier regeneration updates internal graph links; NPC and dialogue id changes warn about possible external references, but external reference lookup is not implemented yet.
-- Choice-mode node inspectors show authoring diagnostics for broken or unclear choice flows before entering play mode.
+- Text-node inspectors show authoring diagnostics for broken or unclear answer flows before entering play mode.
 - Projects can register `IDialogueConditionMetadataProvider` implementations for condition key suggestions, `IDialogueExternalReferenceResolver` implementations for external Where Used results, and `IDialogueExecutionRegistry` implementations for executable function/scene metadata.
 - Function and scene nodes intentionally use only primitive arguments. Project-specific payloads such as battles, deck state, rewards, and quest outcomes belong in project-side executors.
 - The preview variable sandbox uses the built-in editor-side condition evaluator and is not intended to exactly reproduce project runtime logic.

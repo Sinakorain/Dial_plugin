@@ -209,6 +209,40 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
+        public void ImportExport_UpdatesAnswerNodeBodyLocalization()
+        {
+            var dialogue = new DialogueEntry();
+            var answer = new DialogueChoiceNodeData
+            {
+                LocalizationKey = "Conversation/Farm.Plot.Dialogue_0001/Entry/2/Dialogue Text",
+                ChoiceText = "Ask",
+                BodyText = "Старый ответ"
+            };
+            dialogue.Graph.Nodes.Add(new DialogueTextNodeData
+            {
+                LocalizationKey = "Conversation/Farm.Plot.Dialogue_0001/Entry/1/Dialogue Text",
+                BodyText = "Привет",
+                IsStartNode = true
+            });
+            dialogue.Graph.Nodes.Add(answer);
+            var table = DialogueLocalizationTableParser.Parse(
+                "Keys\tRussian\tEnglish\n" +
+                "Conversation/Farm.Plot.Dialogue_0001/Entry/2/Dialogue Text\tНовый ответ\tNew answer\n");
+
+            var importReport = DialogueLocalizationImportUtility.ApplyConversationToDialogue(
+                dialogue,
+                table.GetConversation("Farm.Plot.Dialogue_0001"));
+            var exportReport = DialogueLocalizationImportUtility.ExportDialogue(dialogue, string.Empty, out var tsv);
+            var parsed = DialogueLocalizationTableParser.Parse(tsv);
+
+            Assert.That(importReport.Updated, Is.EqualTo(1));
+            Assert.That(answer.BodyText, Is.EqualTo("Новый ответ"));
+            Assert.That(DialogueTextLocalizationUtility.GetBodyText(answer, "en"), Is.EqualTo("New answer"));
+            Assert.That(exportReport.Exported, Is.EqualTo(2));
+            Assert.That(parsed.Rows.Any(row => row.Key == answer.LocalizationKey), Is.True);
+        }
+
+        [Test]
         public void EditorContentLanguage_DefaultsToOnlyBodyTextLanguageBeforeImport()
         {
             DialogueContentLanguageSettings.CurrentLanguageCode = "en";

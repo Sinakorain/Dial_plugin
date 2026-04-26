@@ -31,6 +31,11 @@ namespace NewDial.DialogueEditor
             return GetNode(graph, nodeId) as DialogueTextNodeData;
         }
 
+        public static DialogueChoiceNodeData GetChoiceNode(DialogueGraphData graph, string nodeId)
+        {
+            return GetNode(graph, nodeId) as DialogueChoiceNodeData;
+        }
+
         public static bool IsExecutableNode(BaseNodeData node)
         {
             return node is FunctionNodeData or SceneNodeData or DebugNodeData;
@@ -38,7 +43,7 @@ namespace NewDial.DialogueEditor
 
         public static bool IsRuntimeNode(BaseNodeData node)
         {
-            return node is DialogueTextNodeData || IsExecutableNode(node);
+            return node is DialogueTextNodeData or DialogueChoiceNodeData || IsExecutableNode(node);
         }
 
         public static List<NodeLinkData> GetOutgoingLinks(DialogueGraphData graph, string nodeId)
@@ -52,6 +57,40 @@ namespace NewDial.DialogueEditor
                 .Where(link => link != null && link.FromNodeId == nodeId)
                 .OrderBy(link => link.Order)
                 .ThenBy(link => link.Id)
+                .ToList();
+        }
+
+        public static bool HasAnswerOutputs(DialogueGraphData graph, DialogueTextNodeData node)
+        {
+            if (graph == null || node == null)
+            {
+                return false;
+            }
+
+            return GetOutgoingLinks(graph, node.Id)
+                .Any(link => GetNode(graph, link.ToNodeId) is DialogueChoiceNodeData);
+        }
+
+        public static bool UsesChoices(DialogueGraphData graph, DialogueTextNodeData node)
+        {
+            return node != null && (node.UseOutputsAsChoices || HasAnswerOutputs(graph, node));
+        }
+
+        public static List<NodeLinkData> GetChoiceCandidateLinks(DialogueGraphData graph, DialogueTextNodeData node)
+        {
+            if (graph == null || node == null)
+            {
+                return new List<NodeLinkData>();
+            }
+
+            var links = GetOutgoingLinks(graph, node.Id);
+            if (node.UseOutputsAsChoices)
+            {
+                return links;
+            }
+
+            return links
+                .Where(link => GetNode(graph, link.ToNodeId) is DialogueChoiceNodeData)
                 .ToList();
         }
 

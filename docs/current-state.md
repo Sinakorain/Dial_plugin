@@ -23,18 +23,19 @@ This file describes the current working-tree behavior of `new_dial`, including c
 - `DialogueSpeakerEntry` stores a stable `Id` and display `Name` for a speaker available inside one dialogue.
 - `DialogueGraphData` stores `Nodes` through `SerializeReference` plus ordered `Links`.
 - `DialogueTextNodeData` is the main playable text node type. It carries backward-compatible `BodyText`, a `LocalizationKey`, per-language `LocalizedBodyText`, optional `SpeakerId` and `VoiceKey` metadata, `IsStartNode`, and `UseOutputsAsChoices`.
-- `DialogueTextLocalizationUtility` resolves and updates localized text by language code with fallback to `BodyText`.
+- `DialogueChoiceNodeData` is the playable answer-line node type. It stores `ChoiceText` for the player-facing button plus its own `BodyText`, localization, optional `SpeakerId`, and `VoiceKey`.
+- `DialogueTextLocalizationUtility` resolves and updates localized text by language code with fallback to `BodyText` for both text and answer-line nodes.
 - `DialogueRichTextUtility` defines the supported `BodyText` rich-text subset, strips supported tags for plain text, wraps selection ranges, validates strict custom color codes, sanitizes preview strings, and parses sanitized text into styled runs for editor rendering.
 - `FunctionNodeData`, `SceneNodeData`, and `DebugNodeData` are executable runtime node types.
 - `DialogueArgumentEntry` and `DialogueArgumentValue` store primitive executable parameters: string, int, float, and bool.
 - `CommentNodeData` stores editor-only grouping information: `Area`, `Comment`, and `Tint`.
-- `NodeLinkData` connects nodes with ordered outgoing edges and optional `ChoiceText`.
+- `NodeLinkData` connects nodes with ordered outgoing edges; legacy `ChoiceText` remains readable for older direct-choice graphs.
 - `ConditionData` plus `ConditionType` represent start conditions and node entry conditions.
 
 ### Runtime traversal
 
-- `DialoguePlayer` supports `CanStart`, `Start`, `Next`, `Choose`, current speaker resolution, executable node execution, and pending execution resume.
-- `DialogueChoice` exposes the selected `NodeLinkData`, target text node, and resolved display text.
+- `DialoguePlayer` supports `CanStart`, `Start`, `Next`, `Choose`, current line-node resolution, current speaker resolution, executable node execution, and pending execution resume.
+- `DialogueChoice` exposes the selected `NodeLinkData`, optional answer node, target runtime node, target text-node convenience property, and resolved display text.
 - `IDialogueFunctionExecutor` and `IDialogueSceneExecutor` execute project-provided function and scene behavior.
 - `IDialogueExecutionRegistry` supplies optional function and scene descriptors for editor/runtime metadata.
 - Executable nodes are entered immediately, do not display text or choices, and continue along the first valid outgoing link sorted by `Order` then stable link id.
@@ -55,7 +56,8 @@ This file describes the current working-tree behavior of `new_dial`, including c
 - `DialogueStartWindow` opens as a compact floating launcher from `Tools/New Dial/Dialogue Editor` and remains available from `Window/New Dial/Dialogue Editor`.
 - The compact start launcher can create a new `DialogueDatabaseAsset`, load an existing asset, or reveal a collapsed advanced `Import / Export` section inside the same window; expanding the section grows the utility window downward from its current top-left position.
 - `DialogueEditorWindow` is the main authoring surface. Its toolbar exposes `New`, `Load`, `Save`, `Preview`, `Localization`, `Delete`, `Dialogue Settings`, a per-user content-language switcher for authored text, and a separate `EN/RU` editor UI language switcher backed by `EditorPrefs`.
-- The palette supports `Text Node`, `Comment`, `Function`, `Scene`, and `Debug`; palette items show saved editor shortcuts, double-click starts shortcut rebinding, and shortcuts create nodes only while the graph canvas is focused. Shortcut-created nodes use the same empty-project flow as palette placement by creating an NPC and dialogue when needed, appear at the cursor when it is over the canvas, otherwise near the current viewport center, and are clamped into the visible viewport even if they overlap existing nodes.
+- The palette supports `Text Node`, `Comment`, `Function`, `Scene`, and `Debug`; palette items show saved editor shortcuts, double-click starts shortcut rebinding with a compact `Press` prompt, and shortcuts create nodes only while the graph canvas is focused. Shortcut-created nodes use the same empty-project flow as palette placement by creating an NPC and dialogue when needed, appear near the cursor when it is over the canvas, otherwise near the current viewport center, and are clamped into the visible viewport.
+- Shortcut-created nodes search nearby visible positions around the cursor or viewport center, so they avoid spawning directly on top of existing graph nodes when space is available.
 - Dialogue settings expose a speaker roster editor. Text node inspectors can bind a line to a speaker from that dialogue.
 - Text node inspectors prioritize speaker and body editing, align checkbox toggles with fixed-width wrapping labels, show the body text label above the full-width multiline editor, and keep `LocalizationKey` near the bottom as lower-priority localization metadata.
 - The launcher's advanced import/export section handles Google Sheets `.tsv`/`.csv` exports for dialogue rows shaped like `Conversation/<conversationId>/Entry/<n>/Dialogue Text`, with selected or all-conversation batch import.
@@ -79,30 +81,35 @@ This file describes the current working-tree behavior of `new_dial`, including c
 - The graph empty-state warning is visible for an empty graph, hides as soon as the first text or comment node is created, and returns when the last node is deleted.
 - Selected NPC and dialogue metadata in the project panel uses compact inline ID and Where Used rows instead of nested cards.
 - Dialogue settings speaker roster rows keep the speaker name field and remove action on one line.
-- Text and executable nodes select from any non-button body area; lower-half drags still begin link creation and top-half targeting still accepts link drops. Text node graph previews keep the initial node width and wrap long uninterrupted text downward.
+- Text, answer, executable, and comment node titles are editable directly in the graph header. Text and answer body/button fields soft-wrap visually without inserting automatic newline characters. Single click selects without opening the inspector and double-clicking non-field node areas opens details. Lower-half drags outside inline fields still begin link creation, and node width stays stable while long text grows downward.
+- Newly created graph nodes use globally numbered default titles based on the current graph size, for example `Text Node_1`, `Function_2`, and `Answer_3`.
+- Graph node meta hints use compact status text and clip inside the card instead of spilling past the node edge.
 - NPC, dialogue, and node `Id` values are explicitly editable in the editor, with generate and safe-regenerate actions plus immediate empty/duplicate warnings.
 - Changing a node `Id` updates internal graph links that referenced the old node `Id`; NPC and dialogue `Id` changes warn about possible external references but do not resolve them yet.
 - Text node inspectors expose optional `VoiceKey` metadata for future project-side voiceover, audio, or localization lookup; the package does not resolve or play audio assets itself.
 - Text node inspectors expose speaker selection. Empty or missing text-node speaker references fall back to the first speaker in the dialogue roster.
 - The content-language toolbar dropdown changes which localized text graph nodes, inspectors, and preview surfaces display and edit; it is independent from the EN/RU editor UI language. A database starts with only `ru`; additional language codes appear after imported or authored localized node data exists, including when the editor UI is set to Russian.
 - Localization table import groups rows by `Conversation`, can import checked conversations or all conversations in one pass, updates existing dialogues by matching `Dialogue.Id` to the conversation id, and creates missing dialogues under the selected/current NPC.
-- Localization table import creates a vertical top-to-bottom chain of text nodes only when the target dialogue graph is empty. Repeat imports match text nodes by `LocalizationKey` and update only `BodyText`/`LocalizedBodyText`; missing table rows are reported instead of being auto-created.
+- Localization table import creates a vertical top-to-bottom chain of text nodes only when the target dialogue graph is empty. Repeat imports match text and answer-line nodes by `LocalizationKey` and update only `BodyText`/`LocalizedBodyText`; missing table rows are reported instead of being auto-created.
 - Localization table export writes `Keys` plus only the language columns that exist in the selected dialogue data. Empty cells and `Loading...` are treated as missing translations on import.
 - Text node `BodyText` supports `<b>`, `<i>`, and `<color=#RRGGBB>` markup. Unknown or malformed tags, including old `<mark>` highlight tags, remain in raw `BodyText` and render as plain text in editor previews.
 - Inspector, graph, current-line preview, and transcript surfaces render supported rich text through a shared segmented UI Toolkit renderer for bold, italic, and text color.
-- Link `ChoiceText` editing is shown only for text nodes with `UseOutputsAsChoices` enabled.
-- Choice-mode text nodes show editor diagnostics for missing outgoing links, broken targets, empty/fallback choice labels, conflicting link order, negative link order, and unreachable choice targets.
+- Text node inspectors include an `Answers` section. `Add Choice` creates a visible playable answer node and connects it as `Text question -> Answer line`; manually linked `Text -> Answer` outputs also appear as choices without requiring the legacy `UseOutputsAsChoices` flag.
+- Text and answer nodes can edit their primary text fields directly on the graph, while all node titles are edited from their headers; single-click selects a node or field, while double-clicking non-field node areas opens the details inspector.
+- Answer node inspectors edit `Button Text`, body text, speaker, voice key, localization key, conditions, outgoing next links, and deletion. The answer condition controls whether the choice appears.
+- Text nodes with outgoing answers show editor diagnostics for missing answers, broken targets, empty/fallback answer labels, legacy direct-choice links, conflicting link order, negative link order, and unreachable choice targets.
 - Condition editing uses generic `None`, `VariableCheck`, and `Custom` types; irrelevant fields are hidden, operators come from built-in metadata, hints explain expected values, and projects can register key suggestions.
 - The preview window includes a bool/number/string test-variable sandbox and explains blocked dialogue starts, unavailable choices, missing targets, branch ends, and generic fallback labels.
 - Collapsible Where Used blocks show internal NPC/dialogue/node references and can include project-provided external references through an editor resolver registry.
-- Comment groups can own both text nodes and nested comment groups.
+- Comment groups can own text nodes, answer nodes, executable nodes, and nested comment groups.
 - Comment inspectors expose separate delete actions for removing only the comment node or removing the whole comment group with its contained nodes.
 - Hotkey-delete for a single selected comment removes empty comments immediately and prompts between comment-only and group deletion when the comment contains nodes.
 - Nested ownership prefers the most specific containing comment group when several comment areas overlap.
-- Moving a parent comment group moves text nodes and nested comment groups that were directly contained when the drag started; nodes newly overlapped during the drag are not attached mid-drag.
+- Moving a parent comment group moves directly contained nodes and nested comment groups captured when the drag started; nodes newly overlapped during the drag are not attached mid-drag.
 - Cutting a selected root comment group removes the full nested hierarchy from the graph after copying it to the clipboard payload.
 - Clipboard shortcuts for copy, cut, and paste are implemented in the graph view.
-- WASD pans only while the graph canvas is focused, uses screen-space speed independent of zoom, keeps mouse-dragged selected nodes under the cursor with a drag-start baseline during pan, and clamps delayed editor ticks to avoid large jumps on big graphs.
+- WASD pans the focused graph canvas without changing zoom, including left and diagonal movement while zoomed out; handled movement keys consume default GraphView shortcuts, and typing in inline node fields or using modifier-key combinations does not move the canvas.
+- Graph links use restrained smoothed curves with shared render and hit-test geometry, avoiding large S-shaped waves while keeping the same top/bottom anchors.
 
 ### Sample content
 
@@ -114,8 +121,8 @@ This file describes the current working-tree behavior of `new_dial`, including c
 The sample also includes:
 
 - an `Innkeeper` speaker roster entry used by text nodes through default speaker fallback
-- link-level choice text
-- a `UseOutputsAsChoices` start node
+- visible answer nodes with button text and playable reply text
+- text-to-answer links that route through visible answer nodes
 - a simple numeric variable condition
 - a comment node used as an in-editor design note
 
@@ -127,13 +134,14 @@ The sample also includes:
 - `DialogueSpeakerEntry`: serializable per-dialogue speaker record.
 - `DialogueGraphData`: serializable graph container for node and link data.
 - `DialogueTextNodeData`: playable dialogue node model with localization key/text data plus optional speaker and voice-key metadata.
+- `DialogueChoiceNodeData`: playable answer-line model with editable button text, body text, localization, optional speaker/voice metadata, and optional condition.
 - `DialogueLocalizedTextEntry` and `DialogueTextLocalizationUtility`: per-language text storage and fallback helpers.
 - `DialogueRichTextUtility`: helper for supported dialogue body rich text.
 - `FunctionNodeData`: executable project function node model.
 - `SceneNodeData`: executable scene request node model.
 - `DebugNodeData`: executable diagnostic log node model.
 - `CommentNodeData`: editor grouping/annotation node, not a runtime dialogue line.
-- `NodeLinkData`: ordered outgoing connection between nodes with optional choice text.
+- `NodeLinkData`: ordered outgoing connection between nodes; legacy direct-choice text remains supported for older data.
 - `ConditionData` and `ConditionType`: lightweight condition metadata for start and node gating.
 - `DialoguePlayer`: runtime traversal helper for moving through a dialogue graph and resolving the current speaker.
 - `DialogueChoice`: resolved branch option returned by `DialoguePlayer`.
@@ -172,7 +180,7 @@ EditMode coverage currently exists for:
 - graph rendering, link order normalization, empty-state behavior, comment-group movement, nested ownership resolution, clipboard cut behavior, and keyboard-pan focus rules
 - undo/redo for node creation, link edits, node movement, comment resize, selection restoration, and autosave dirty-state reset
 - identifier validation and node `Id` rename link preservation
-- choice-flow diagnostics for choice-mode nodes
+- choice-flow diagnostics for text nodes with answers and legacy choice-mode nodes
 - executable graph rendering and inspector behavior
 - guided condition editor behavior, preview blocked-state explanations, and Where Used resolver results
 - localization table parsing, batch import, repeated text-data updates, TSV export, content-language editing, and Russian UI language-list refresh after import

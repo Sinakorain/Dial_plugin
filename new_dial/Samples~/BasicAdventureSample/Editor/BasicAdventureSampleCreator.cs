@@ -58,25 +58,28 @@ namespace NewDial.DialogueEditor.Samples
                 Position = new Vector2(100f, 100f)
             };
 
-            var room = new DialogueTextNodeData
+            var roomAnswer = new DialogueChoiceNodeData
             {
-                Title = "Ask About Room",
+                Title = "Room Answer",
+                ChoiceText = "I need a room.",
                 BodyText = "A room is 5 gold, breakfast included.",
-                Position = new Vector2(460f, 20f)
+                Position = new Vector2(430f, 20f)
             };
 
-            var rumor = new DialogueTextNodeData
+            var rumorAnswer = new DialogueChoiceNodeData
             {
-                Title = "Ask About Rumor",
+                Title = "Rumor Answer",
+                ChoiceText = "Heard any rumors?",
                 BodyText = "People say the old watchtower lights itself at midnight.",
-                Position = new Vector2(460f, 180f)
+                Position = new Vector2(430f, 180f)
             };
 
-            var trusted = new DialogueTextNodeData
+            var trustedAnswer = new DialogueChoiceNodeData
             {
-                Title = "Show Guard Badge",
+                Title = "Trusted Answer",
+                ChoiceText = "I have official business.",
                 BodyText = "If you are with the city watch, take the back room. No charge.",
-                Position = new Vector2(460f, 340f),
+                Position = new Vector2(430f, 340f),
                 Condition = new ConditionData
                 {
                     Type = ConditionType.VariableCheck,
@@ -90,38 +93,34 @@ namespace NewDial.DialogueEditor.Samples
             {
                 Title = "Design Note",
                 Comment = "Trusted branch demonstrates a simple numeric condition.",
-                Area = new Rect(760f, 240f, 340f, 160f),
-                Position = new Vector2(760f, 240f)
+                Area = new Rect(1080f, 240f, 340f, 160f),
+                Position = new Vector2(1080f, 240f)
             };
 
             dialogue.Graph.Nodes.Add(start);
-            dialogue.Graph.Nodes.Add(room);
-            dialogue.Graph.Nodes.Add(rumor);
-            dialogue.Graph.Nodes.Add(trusted);
+            dialogue.Graph.Nodes.Add(roomAnswer);
+            dialogue.Graph.Nodes.Add(rumorAnswer);
+            dialogue.Graph.Nodes.Add(trustedAnswer);
             dialogue.Graph.Nodes.Add(note);
 
             dialogue.Graph.Links.Add(new NodeLinkData
             {
                 FromNodeId = start.Id,
-                ToNodeId = room.Id,
-                Order = 0,
-                ChoiceText = "I need a room."
+                ToNodeId = roomAnswer.Id,
+                Order = 0
+            });
+            dialogue.Graph.Links.Add(new NodeLinkData
+            {
+                FromNodeId = start.Id,
+                ToNodeId = rumorAnswer.Id,
+                Order = 1
             });
 
             dialogue.Graph.Links.Add(new NodeLinkData
             {
                 FromNodeId = start.Id,
-                ToNodeId = rumor.Id,
-                Order = 1,
-                ChoiceText = "Heard any rumors?"
-            });
-
-            dialogue.Graph.Links.Add(new NodeLinkData
-            {
-                FromNodeId = start.Id,
-                ToNodeId = trusted.Id,
-                Order = 2,
-                ChoiceText = "I have official business."
+                ToNodeId = trustedAnswer.Id,
+                Order = 2
             });
 
             return dialogue;

@@ -56,6 +56,7 @@ namespace NewDial.DialogueEditor
         internal bool HasUnsavedChangesForTests => _hasUnsavedChanges;
         internal string SelectedNodeIdForTests => _selectedNode?.Id;
         internal bool SuppressIdentifierWarningsForTests { get; set; }
+        private bool IsPaletteShortcutRebinding => _activePaletteShortcutRebind != null;
 
         internal void InitializeForTests(DialogueDatabaseAsset asset)
         {
@@ -165,6 +166,7 @@ namespace NewDial.DialogueEditor
             {
                 GraphChangedAction = OnGraphChanged,
                 SelectionChangedAction = OnNodeSelectionChanged,
+                NodeInspectorRequestedAction = OnNodeInspectorRequested,
                 CanvasFocusChangedAction = focused => _graphHost?.EnableInClassList("is-focused", focused),
                 ApplyUndoableChangeAction = ApplyUndoableNodeChange,
                 BeginUndoGestureAction = BeginUndoGesture,
@@ -281,10 +283,15 @@ namespace NewDial.DialogueEditor
                          .Where(npc => npc != null)
                          .SelectMany(npc => npc.Dialogues ?? Enumerable.Empty<DialogueEntry>())
                          .Where(dialogue => dialogue?.Graph?.Nodes != null)
-                         .SelectMany(dialogue => dialogue.Graph.Nodes)
-                         .OfType<DialogueTextNodeData>() ?? Enumerable.Empty<DialogueTextNodeData>())
+                         .SelectMany(dialogue => dialogue.Graph.Nodes) ?? Enumerable.Empty<BaseNodeData>())
             {
-                foreach (var entry in node.LocalizedBodyText ?? Enumerable.Empty<DialogueLocalizedTextEntry>())
+                var localizedEntries = node switch
+                {
+                    DialogueTextNodeData textNode => textNode.LocalizedBodyText,
+                    DialogueChoiceNodeData choiceNode => choiceNode.LocalizedBodyText,
+                    _ => null
+                };
+                foreach (var entry in localizedEntries ?? Enumerable.Empty<DialogueLocalizedTextEntry>())
                 {
                     var normalized = DialogueTextLocalizationUtility.NormalizeLanguageCode(entry?.LanguageCode);
                     if (!string.IsNullOrWhiteSpace(normalized))
@@ -341,6 +348,7 @@ namespace NewDial.DialogueEditor
             content.name = "palette-content";
 
             AddPaletteItem(content, DialoguePaletteItemType.TextNode, DialogueEditorLocalization.Text("Text Node"), DialogueEditorLocalization.Text("Click to add at center. Drag onto the graph to place."));
+            AddPaletteItem(content, DialoguePaletteItemType.Choice, DialogueEditorLocalization.Text("Answer"), DialogueEditorLocalization.Text("A player answer button. Use Add Choice on a text node for the guided flow."));
             AddPaletteItem(content, DialoguePaletteItemType.Comment, DialogueEditorLocalization.Text("Comment"), DialogueEditorLocalization.Text("Click to add at center. Drag onto the graph to place."));
             AddPaletteItem(content, DialoguePaletteItemType.Function, DialogueEditorLocalization.Text("Function"), DialogueEditorLocalization.Text("Execute a project-provided function and continue."));
             AddPaletteItem(content, DialoguePaletteItemType.Scene, DialogueEditorLocalization.Text("Scene"), DialogueEditorLocalization.Text("Request project scene loading and continue."));
@@ -727,6 +735,13 @@ namespace NewDial.DialogueEditor
                 return;
             }
 
+            if (_selectedNode is DialogueChoiceNodeData choiceNode)
+            {
+                _detailsTitleLabel.text = DialogueEditorLocalization.Text("Answer Details");
+                BuildChoiceNodeInspector(choiceNode);
+                return;
+            }
+
             if (_selectedNode is FunctionNodeData functionNode)
             {
                 _detailsTitleLabel.text = DialogueEditorLocalization.Text("Function Details");
@@ -919,17 +934,10 @@ namespace NewDial.DialogueEditor
             });
             _inspectorView.Add(startToggle);
 
-            var choiceToggle = new Toggle(DialogueEditorLocalization.Text("Use Outputs As Choices")) { value = node.UseOutputsAsChoices, name = "node-choice-toggle" };
-            choiceToggle.AddToClassList("dialogue-editor__node-toggle");
-            choiceToggle.RegisterValueChangedCallback(evt =>
-            {
-                PerformNodeScopedChange("Toggle Node Choice Mode", () => node.UseOutputsAsChoices = evt.newValue, refreshNodeVisuals: true, refreshInspector: true);
-            });
-            _inspectorView.Add(choiceToggle);
-
+            BuildAnswersSection(node);
             BuildChoiceFlowDiagnostics(node);
             BuildConditionEditor(node.Condition, DialogueEditorLocalization.Text("Condition"), "Edit Node Condition");
-            BuildLinksInspector(node, node.UseOutputsAsChoices);
+            BuildLinksInspector(node);
 
             _inspectorView.Add(localizationKeyField);
 
@@ -938,7 +946,75 @@ namespace NewDial.DialogueEditor
             _inspectorView.Add(deleteButton);
         }
 
-        private void BuildTextNodeSpeakerField(DialogueTextNodeData node)
+        private void BuildAnswersSection(DialogueTextNodeData node)
+        {
+            _inspectorView.Add(CreateSectionTitle(DialogueEditorLocalization.Text("Answers")));
+
+            var box = new VisualElement();
+            box.AddToClassList("dialogue-editor__links-list");
+            box.name = "node-answers-list";
+
+            var addButton = new Button(() => _graphView?.CreateChoiceBranch(node))
+            {
+                text = DialogueEditorLocalization.Text("Add Choice"),
+                name = "node-add-choice-button"
+            };
+            addButton.AddToClassList("dialogue-editor__action-button");
+            box.Add(addButton);
+
+            var links = DialogueGraphUtility.GetChoiceCandidateLinks(_selectedDialogue?.Graph, node);
+            if (links.Count == 0)
+            {
+                box.Add(CreateInlineHelp(DialogueEditorLocalization.Text("Add a choice to create an answer button with its own reply text.")));
+                _inspectorView.Add(box);
+                return;
+            }
+
+            foreach (var link in links)
+            {
+                var target = DialogueGraphUtility.GetNode(_selectedDialogue.Graph, link.ToNodeId);
+                var choiceNode = target as DialogueChoiceNodeData;
+                var answerCard = new VisualElement();
+                answerCard.AddToClassList("dialogue-editor__link-card");
+                answerCard.name = choiceNode == null ? "legacy-answer-card" : "answer-card";
+
+                var answerText = choiceNode == null
+                    ? GetLegacyChoiceLabel(link, target)
+                    : string.IsNullOrWhiteSpace(choiceNode.ChoiceText)
+                        ? DialogueEditorLocalization.Text("Untitled answer")
+                        : choiceNode.ChoiceText;
+                var answerLabel = new Label(DialogueEditorLocalization.Format("Answer: {0}", answerText));
+                answerLabel.AddToClassList("dialogue-editor__link-label");
+                answerCard.Add(answerLabel);
+
+                var destination = choiceNode == null ? target : GetFirstOutgoingTarget(choiceNode);
+                var targetLabel = new Label(choiceNode == null
+                    ? DialogueEditorLocalization.Format("Target: {0}", GetNodeDisplayName(destination))
+                    : DialogueEditorLocalization.Format("Next: {0}", destination == null ? DialogueEditorLocalization.Text("End") : GetNodeDisplayName(destination)));
+                targetLabel.AddToClassList("dialogue-editor__link-target");
+                answerCard.Add(targetLabel);
+
+                if (choiceNode != null)
+                {
+                    var editButton = new Button(() => FocusDialogueNode(_selectedDialogue, choiceNode.Id))
+                    {
+                        text = DialogueEditorLocalization.Text("Edit Answer"),
+                        name = "answer-edit-button"
+                    };
+                    answerCard.Add(editButton);
+                }
+                else
+                {
+                    answerCard.Add(CreateInlineHelp(DialogueEditorLocalization.Text("Legacy answer link. Create new answers with Add Choice.")));
+                }
+
+                box.Add(answerCard);
+            }
+
+            _inspectorView.Add(box);
+        }
+
+        private void BuildTextNodeSpeakerField(BaseNodeData node)
         {
             EnsureDialogueSpeakers(_selectedNpc, _selectedDialogue);
             var speakers = _selectedDialogue?.Speakers?.Where(speaker => speaker != null).ToList() ?? new List<DialogueSpeakerEntry>();
@@ -963,16 +1039,101 @@ namespace NewDial.DialogueEditor
                     return;
                 }
 
-                PerformNodeScopedChange("Edit Node Speaker", () => node.SpeakerId = speakers[index].Id, refreshNodeVisuals: true);
+                PerformNodeScopedChange("Edit Node Speaker", () => SetNodeSpeakerId(node, speakers[index].Id), refreshNodeVisuals: true);
                 DialoguePreviewWindow.RefreshOpenWindows(this);
             });
             _inspectorView.Add(speakerField);
         }
 
+        private void BuildChoiceNodeInspector(DialogueChoiceNodeData node)
+        {
+            _inspectorView.Add(CreateSectionTitle(DialogueEditorLocalization.Text("Answer")));
+
+            var titleField = new TextField(DialogueEditorLocalization.Text("Title")) { value = node.Title, name = "choice-title-field" };
+            titleField.RegisterValueChangedCallback(evt =>
+            {
+                PerformNodeScopedChange("Edit Answer Title", () => node.Title = evt.newValue, refreshNodeVisuals: true);
+            });
+            _inspectorView.Add(titleField);
+
+            _inspectorView.Add(BuildNodeIdEditor(node));
+            _inspectorView.Add(BuildWhereUsedSection(DialogueWhereUsedUtility.GetWhereUsed(_database, _selectedNpc, _selectedDialogue, node)));
+
+            var answerField = new TextField(DialogueEditorLocalization.Text("Button Text"))
+            {
+                value = node.ChoiceText,
+                name = "choice-button-text-field"
+            };
+            answerField.RegisterValueChangedCallback(evt =>
+            {
+                PerformNodeScopedChange("Edit Button Text", () => node.ChoiceText = evt.newValue, refreshNodeVisuals: true);
+                DialoguePreviewWindow.RefreshOpenWindows(this);
+            });
+            _inspectorView.Add(answerField);
+
+            BuildTextNodeSpeakerField(node);
+
+            var activeContentLanguage = DialogueContentLanguageSettings.CurrentLanguageCode;
+            var bodyText = DialogueTextLocalizationUtility.GetBodyText(node, activeContentLanguage);
+            var bodyPreview = CreateRichTextPreview(bodyText);
+            var bodyField = new TextField(DialogueEditorLocalization.Text("Body Text"))
+            {
+                value = bodyText,
+                multiline = true,
+                name = "choice-body-field"
+            };
+            var bodySelectionState = new RichTextSelectionState();
+            RegisterRichTextSelectionTracking(bodyField, bodySelectionState);
+            _inspectorView.Add(BuildRichTextToolbar(bodyField, bodyPreview, node, bodySelectionState));
+
+            bodyField.AddToClassList("dialogue-editor__multiline-field");
+            bodyField.AddToClassList("dialogue-editor__body-field");
+            bodyField.style.whiteSpace = WhiteSpace.Normal;
+            bodyField.RegisterValueChangedCallback(evt =>
+            {
+                PerformNodeScopedChange("Edit Answer Body", () =>
+                    DialogueTextLocalizationUtility.SetBodyText(node, activeContentLanguage, evt.newValue), refreshNodeVisuals: true);
+                bodySelectionState.Capture(bodyField);
+                UpdateRichTextPreview(bodyPreview, evt.newValue);
+                DialoguePreviewWindow.RefreshOpenWindows(this);
+            });
+            _inspectorView.Add(bodyField);
+            _inspectorView.Add(bodyPreview);
+
+            var voiceKeyField = new TextField(DialogueEditorLocalization.Text("Voice Key"))
+            {
+                value = node.VoiceKey,
+                name = "choice-voice-key-field"
+            };
+            voiceKeyField.RegisterValueChangedCallback(evt =>
+            {
+                PerformNodeScopedChange("Edit Answer Voice Key", () => node.VoiceKey = evt.newValue);
+            });
+            _inspectorView.Add(voiceKeyField);
+
+            var localizationKeyField = new TextField(DialogueEditorLocalization.Text("Localization Key"))
+            {
+                value = node.LocalizationKey,
+                name = "choice-localization-key-field"
+            };
+            localizationKeyField.RegisterValueChangedCallback(evt =>
+            {
+                PerformNodeScopedChange("Edit Answer Localization Key", () => node.LocalizationKey = evt.newValue, refreshNodeVisuals: true);
+            });
+            _inspectorView.Add(localizationKeyField);
+
+            BuildConditionEditor(node.Condition, DialogueEditorLocalization.Text("Condition"), "Edit Answer Condition");
+            BuildLinksInspector(node);
+
+            var deleteButton = new Button(() => _graphView.DeleteNode(node)) { text = DialogueEditorLocalization.Text("Delete Answer") };
+            deleteButton.AddToClassList("dialogue-editor__danger-button");
+            _inspectorView.Add(deleteButton);
+        }
+
         private VisualElement BuildRichTextToolbar(
             TextField bodyField,
             VisualElement bodyPreview,
-            DialogueTextNodeData node,
+            BaseNodeData node,
             RichTextSelectionState selectionState)
         {
             var toolbar = new VisualElement();
@@ -1004,7 +1165,7 @@ namespace NewDial.DialogueEditor
                 RichTextTextColorsPrefsKey,
                 7,
                 "Format Node Body Color",
-                DialogueRichTextUtility.TryNormalizeTextColorCode,
+                TryNormalizeEditorTextColorCode,
                 normalized => DialogueRichTextFormat.TextColor(normalized),
                 bodyField,
                 bodyPreview,
@@ -1034,7 +1195,7 @@ namespace NewDial.DialogueEditor
             Func<string, DialogueRichTextFormat> createFormat,
             TextField bodyField,
             VisualElement bodyPreview,
-            DialogueTextNodeData node,
+            BaseNodeData node,
             RichTextSelectionState selectionState)
         {
             var list = LoadRichTextColorList(prefsKey);
@@ -1077,7 +1238,7 @@ namespace NewDial.DialogueEditor
             Func<string, DialogueRichTextFormat> createFormat,
             TextField bodyField,
             VisualElement bodyPreview,
-            DialogueTextNodeData node,
+            BaseNodeData node,
             RichTextSelectionState selectionState)
         {
             rows.Clear();
@@ -1100,7 +1261,7 @@ namespace NewDial.DialogueEditor
             Func<string, DialogueRichTextFormat> createFormat,
             TextField bodyField,
             VisualElement bodyPreview,
-            DialogueTextNodeData node,
+            BaseNodeData node,
             RichTextSelectionState selectionState,
             VisualElement rows)
         {
@@ -1583,7 +1744,7 @@ namespace NewDial.DialogueEditor
             TextField colorField,
             TextField bodyField,
             VisualElement bodyPreview,
-            DialogueTextNodeData node,
+            BaseNodeData node,
             RichTextSelectionState selectionState,
             TryNormalizeRichTextColor tryNormalize,
             Func<string, DialogueRichTextFormat> createFormat,
@@ -1597,6 +1758,23 @@ namespace NewDial.DialogueEditor
 
             ClearCustomColorError(colorField);
             ApplyRichTextFormat(bodyField, bodyPreview, node, selectionState, createFormat(normalized), actionName);
+        }
+
+        private static bool TryNormalizeEditorTextColorCode(string color, out string normalized)
+        {
+            normalized = string.Empty;
+            if (string.IsNullOrWhiteSpace(color))
+            {
+                return false;
+            }
+
+            var value = color.Trim();
+            if (!value.StartsWith("#", StringComparison.Ordinal))
+            {
+                value = $"#{value}";
+            }
+
+            return DialogueRichTextUtility.TryNormalizeTextColorCode(value, out normalized);
         }
 
         private static void ShowCustomColorError(TextField colorField)
@@ -1705,7 +1883,7 @@ namespace NewDial.DialogueEditor
         private void ApplyRichTextFormat(
             TextField bodyField,
             VisualElement bodyPreview,
-            DialogueTextNodeData node,
+            BaseNodeData node,
             RichTextSelectionState selectionState,
             DialogueRichTextFormat format,
             string actionName)
@@ -1722,7 +1900,7 @@ namespace NewDial.DialogueEditor
         private void ClearRichTextFormatting(
             TextField bodyField,
             VisualElement bodyPreview,
-            DialogueTextNodeData node,
+            BaseNodeData node,
             RichTextSelectionState selectionState)
         {
             var rawText = bodyField.value ?? string.Empty;
@@ -1734,7 +1912,7 @@ namespace NewDial.DialogueEditor
         private void SetBodyTextFromRichTextTool(
             TextField bodyField,
             VisualElement bodyPreview,
-            DialogueTextNodeData node,
+            BaseNodeData node,
             RichTextSelectionState selectionState,
             string updatedText,
             int cursorIndex,
@@ -1893,7 +2071,7 @@ namespace NewDial.DialogueEditor
             BuildArgumentsEditor(DialogueEditorLocalization.Text("Arguments"), node.Arguments, descriptor.Parameters, DialogueEditorLocalization.Text("Function Arguments"));
             BuildExecutableValidation(node);
             BuildConditionEditor(node.Condition, DialogueEditorLocalization.Text("Condition"), "Edit Function Condition");
-            BuildLinksInspector(node, false);
+            BuildLinksInspector(node);
             BuildDeleteButton(node, DialogueEditorLocalization.Text("Delete Function"));
         }
 
@@ -1995,7 +2173,7 @@ namespace NewDial.DialogueEditor
             BuildArgumentsEditor(DialogueEditorLocalization.Text("Parameters"), node.Parameters, descriptor.Parameters, DialogueEditorLocalization.Text("Scene Parameters"));
             BuildExecutableValidation(node);
             BuildConditionEditor(node.Condition, DialogueEditorLocalization.Text("Condition"), "Edit Scene Condition");
-            BuildLinksInspector(node, false);
+            BuildLinksInspector(node);
             BuildDeleteButton(node, DialogueEditorLocalization.Text("Delete Scene"));
         }
 
@@ -2041,7 +2219,7 @@ namespace NewDial.DialogueEditor
             BuildArgumentsEditor(DialogueEditorLocalization.Text("Arguments"), node.Arguments, Array.Empty<DialogueParameterDescriptor>(), DialogueEditorLocalization.Text("Debug Arguments"));
             BuildExecutableValidation(node);
             BuildConditionEditor(node.Condition, DialogueEditorLocalization.Text("Condition"), "Edit Debug Condition");
-            BuildLinksInspector(node, false);
+            BuildLinksInspector(node);
             BuildDeleteButton(node, DialogueEditorLocalization.Text("Delete Debug"));
         }
 
@@ -2281,7 +2459,37 @@ namespace NewDial.DialogueEditor
             _inspectorView.Add(deleteButton);
         }
 
-        private void BuildLinksInspector(BaseNodeData node, bool showChoiceText = true)
+        private BaseNodeData GetFirstOutgoingTarget(BaseNodeData node)
+        {
+            var link = DialogueGraphUtility.GetOutgoingLinks(_selectedDialogue?.Graph, node?.Id).FirstOrDefault();
+            return link == null ? null : DialogueGraphUtility.GetNode(_selectedDialogue.Graph, link.ToNodeId);
+        }
+
+        private string GetLegacyChoiceLabel(NodeLinkData link, BaseNodeData target)
+        {
+            if (!string.IsNullOrWhiteSpace(link?.ChoiceText))
+            {
+                return link.ChoiceText;
+            }
+
+            return string.IsNullOrWhiteSpace(target?.Title)
+                ? DialogueEditorLocalization.Text("Choice")
+                : target.Title;
+        }
+
+        private string GetNodeDisplayName(BaseNodeData node)
+        {
+            if (node == null)
+            {
+                return DialogueEditorLocalization.Text("Missing target");
+            }
+
+            return string.IsNullOrWhiteSpace(node.Title)
+                ? DialogueEditorLocalization.Text("Untitled")
+                : node.Title;
+        }
+
+        private void BuildLinksInspector(BaseNodeData node)
         {
             _inspectorView.Add(CreateSectionTitle(DialogueEditorLocalization.Text("Connected Links")));
 
@@ -2303,12 +2511,6 @@ namespace NewDial.DialogueEditor
 
                 var target = DialogueGraphUtility.GetNode(_selectedDialogue.Graph, link.ToNodeId);
                 box.Add(new Label(DialogueEditorLocalization.Format("Target: {0}", target?.Title ?? DialogueEditorLocalization.Text("Unconnected"))));
-                if (showChoiceText && node is DialogueTextNodeData textNode)
-                {
-                    AddChoiceFlowDiagnostics(box, DialogueChoiceFlowDiagnostics.Analyze(_selectedDialogue, textNode)
-                        .Where(diagnostic => diagnostic.Link == link));
-                }
-
                 var orderField = new IntegerField(DialogueEditorLocalization.Text("Order")) { value = link.Order, name = "link-order-field" };
                 orderField.RegisterValueChangedCallback(evt =>
                 {
@@ -2320,19 +2522,7 @@ namespace NewDial.DialogueEditor
                 });
                 box.Add(orderField);
 
-                if (showChoiceText)
-                {
-                    var choiceField = new TextField(DialogueEditorLocalization.Text("Choice Text")) { value = link.ChoiceText, name = "link-choice-field" };
-                    choiceField.RegisterValueChangedCallback(evt =>
-                    {
-                        PerformNodeScopedChange("Edit Link Choice Text", () => link.ChoiceText = evt.newValue, refreshNodeVisuals: true);
-                    });
-                    box.Add(choiceField);
-                }
-                else
-                {
-                    box.Add(CreateInlineHelp(DialogueEditorLocalization.Text("Executable links ignore ChoiceText and use Order only.")));
-                }
+                box.Add(CreateInlineHelp(DialogueEditorLocalization.Text("This link uses Order for traversal.")));
 
                 var removeButton = new Button(() =>
                 {
@@ -2808,6 +2998,14 @@ namespace NewDial.DialogueEditor
                         textNode.SpeakerId = string.Empty;
                     }
                 }
+
+                foreach (var choiceNode in dialogue.Graph?.Nodes?.OfType<DialogueChoiceNodeData>() ?? Enumerable.Empty<DialogueChoiceNodeData>())
+                {
+                    if (choiceNode.SpeakerId == speakerId)
+                    {
+                        choiceNode.SpeakerId = string.Empty;
+                    }
+                }
             }, refreshNodeVisuals: true, refreshInspector: true);
         }
 
@@ -2825,6 +3023,19 @@ namespace NewDial.DialogueEditor
                     return nameCounts[name] > 1 ? $"{name} ({index + 1})" : name;
                 })
                 .ToList();
+        }
+
+        private static void SetNodeSpeakerId(BaseNodeData node, string speakerId)
+        {
+            switch (node)
+            {
+                case DialogueTextNodeData textNode:
+                    textNode.SpeakerId = speakerId ?? string.Empty;
+                    break;
+                case DialogueChoiceNodeData choiceNode:
+                    choiceNode.SpeakerId = speakerId ?? string.Empty;
+                    break;
+            }
         }
 
         [Serializable]
@@ -2998,6 +3209,7 @@ namespace NewDial.DialogueEditor
             _selectedNpc = npc;
             _selectedDialogue = resolvedDialogue;
             _selectedNode = resolvedNode;
+            SetDetailsCollapsed(false);
             RefreshAll();
             _graphView?.FrameAndSelectNode(nodeId);
             Focus();
@@ -3027,13 +3239,25 @@ namespace NewDial.DialogueEditor
                 DialogueGraphUtility.NormalizeLinkOrder(_selectedDialogue.Graph, textNode.Id);
             }
 
+            foreach (var choiceNode in _selectedDialogue.Graph.Nodes.OfType<DialogueChoiceNodeData>())
+            {
+                DialogueGraphUtility.NormalizeLinkOrder(_selectedDialogue.Graph, choiceNode.Id);
+            }
+
             MarkChanged();
             RefreshInspector();
+            DialoguePreviewWindow.RefreshOpenWindows(this);
         }
 
         private void OnNodeSelectionChanged(BaseNodeData node)
         {
             _selectedNode = node;
+        }
+
+        private void OnNodeInspectorRequested(BaseNodeData node)
+        {
+            _selectedNode = node;
+            SetDetailsCollapsed(false);
             RefreshInspector();
         }
 
@@ -3085,6 +3309,9 @@ namespace NewDial.DialogueEditor
             {
                 case DialoguePaletteItemType.TextNode:
                     _graphView?.CreateTextNode(_graphView.GetCanvasCenter());
+                    break;
+                case DialoguePaletteItemType.Choice:
+                    _graphView?.CreateChoiceNode(_graphView.GetCanvasCenter());
                     break;
                 case DialoguePaletteItemType.Comment:
                     _graphView?.CreateCommentNode(_graphView.GetCanvasCenter());
@@ -3148,6 +3375,7 @@ namespace NewDial.DialogueEditor
 
         private void BeginPaletteShortcutRebind(DialoguePaletteItemType itemType)
         {
+            CancelPendingPaletteClicks();
             _activePaletteShortcutRebind = itemType;
             RefreshPaletteShortcutBadges();
         }
@@ -3213,6 +3441,14 @@ namespace NewDial.DialogueEditor
                 var listening = _activePaletteShortcutRebind == pair.Key;
                 var shortcut = DialoguePaletteShortcutSettings.GetShortcut(pair.Key);
                 pair.Value.SetShortcutText(DialoguePaletteShortcutSettings.FormatShortcut(shortcut), listening);
+            }
+        }
+
+        private void CancelPendingPaletteClicks()
+        {
+            foreach (var item in _paletteItems.Values)
+            {
+                item.CancelPendingClick();
             }
         }
 
@@ -3723,7 +3959,7 @@ namespace NewDial.DialogueEditor
         private sealed class PaletteItem : VisualElement
         {
             private const float DragThreshold = 6f;
-            private const long SingleClickDelayMs = 180;
+            private const long SingleClickDelayMs = 300;
 
             private readonly DialogueEditorWindow _owner;
             private readonly DialoguePaletteItemType _itemType;
@@ -3767,7 +4003,7 @@ namespace NewDial.DialogueEditor
             public void SetShortcutText(string shortcutText, bool listening)
             {
                 _shortcutLabel.text = listening
-                    ? DialogueEditorLocalization.Text("Press shortcut...")
+                    ? DialogueEditorLocalization.Text("Press")
                     : shortcutText;
                 _shortcutLabel.tooltip = listening
                     ? DialogueEditorLocalization.Text("Esc to cancel, Delete to clear")
@@ -3845,6 +4081,7 @@ namespace NewDial.DialogueEditor
                 }
                 else
                 {
+                    CancelPendingClick();
                     _owner.BeginPaletteShortcutRebind(_itemType);
                     Focus();
                 }
@@ -3867,12 +4104,17 @@ namespace NewDial.DialogueEditor
                 _pendingClick = schedule.Execute(() =>
                 {
                     _pendingClick = null;
+                    if (_owner.IsPaletteShortcutRebinding)
+                    {
+                        return;
+                    }
+
                     _owner.CreateNodeFromPalette(_itemType);
                 });
                 _pendingClick.ExecuteLater(SingleClickDelayMs);
             }
 
-            private void CancelPendingClick()
+            public void CancelPendingClick()
             {
                 _pendingClick?.Pause();
                 _pendingClick = null;
@@ -3899,6 +4141,7 @@ namespace NewDial.DialogueEditor
                 return itemType switch
                 {
                     DialoguePaletteItemType.TextNode => "textnode",
+                    DialoguePaletteItemType.Choice => "choice",
                     DialoguePaletteItemType.Comment => "comment",
                     DialoguePaletteItemType.Function => "function",
                     DialoguePaletteItemType.Scene => "scene",

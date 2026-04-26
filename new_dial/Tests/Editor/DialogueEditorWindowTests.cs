@@ -244,6 +244,7 @@ namespace NewDial.DialogueEditor.Tests
                 Assert.That(GetPaletteShortcutText(window, "function"), Is.EqualTo("Alt+3"));
                 Assert.That(GetPaletteShortcutText(window, "scene"), Is.EqualTo("Alt+4"));
                 Assert.That(GetPaletteShortcutText(window, "debug"), Is.EqualTo("Alt+5"));
+                Assert.That(GetPaletteShortcutText(window, "choice"), Is.EqualTo("Alt+6"));
             }
             finally
             {
@@ -269,6 +270,33 @@ namespace NewDial.DialogueEditor.Tests
 
                 Assert.That(handled, Is.True);
                 Assert.That(dialogue.Graph.Nodes.OfType<DialogueTextNodeData>(), Has.Count.EqualTo(2));
+                Assert.That(dialogue.Graph.Nodes.OfType<DialogueTextNodeData>().Last().Title, Is.EqualTo("Text Node_2"));
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void PaletteShortcut_ChoiceCreatesAnswerNode()
+        {
+            var database = CreateDatabase("PaletteShortcutChoice");
+            var dialogue = database.Npcs[0].Dialogues[0];
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                var graphView = window.GraphViewForTests;
+                graphView.FocusCanvas();
+
+                var handled = graphView.TryHandlePaletteShortcut(new DialoguePaletteShortcut(KeyCode.Alpha6, alt: true));
+
+                Assert.That(handled, Is.True);
+                Assert.That(dialogue.Graph.Nodes.OfType<DialogueChoiceNodeData>(), Has.Count.EqualTo(1));
+                Assert.That(dialogue.Graph.Nodes.OfType<DialogueChoiceNodeData>().Single().Title, Is.EqualTo("Answer_2"));
             }
             finally
             {
@@ -296,6 +324,7 @@ namespace NewDial.DialogueEditor.Tests
                 Assert.That(database.Npcs, Has.Count.EqualTo(1));
                 Assert.That(database.Npcs[0].Dialogues, Has.Count.EqualTo(1));
                 Assert.That(database.Npcs[0].Dialogues[0].Graph.Nodes.OfType<DialogueTextNodeData>(), Has.Count.EqualTo(1));
+                Assert.That(database.Npcs[0].Dialogues[0].Graph.Nodes[0].Title, Is.EqualTo("Text Node_1"));
             }
             finally
             {
@@ -366,6 +395,7 @@ namespace NewDial.DialogueEditor.Tests
                 Assert.That(functionItem, Is.Not.Null);
 
                 DoubleClick(functionItem);
+                Assert.That(GetPaletteShortcutText(window, "function"), Is.EqualTo("Press"));
                 SendKeyDown(functionItem, KeyCode.F, EventModifiers.Alt | EventModifiers.Shift);
 
                 Assert.That(GetPaletteShortcutText(window, "function"), Is.EqualTo("Shift+Alt+F"));
@@ -375,6 +405,33 @@ namespace NewDial.DialogueEditor.Tests
                 window.InitializeForTests(database);
 
                 Assert.That(GetPaletteShortcutText(window, "function"), Is.EqualTo("Shift+Alt+F"));
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void PaletteShortcut_RebindClickDoesNotCreatePaletteNode()
+        {
+            var database = CreateDatabase("PaletteShortcutNoCreateOnRebind");
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                var graph = database.Npcs[0].Dialogues[0].Graph;
+                var initialFunctionCount = graph.Nodes.OfType<FunctionNodeData>().Count();
+                var functionItem = window.rootVisualElement.Q<VisualElement>("palette-item-function");
+                Assert.That(functionItem, Is.Not.Null);
+
+                Click(functionItem);
+                DoubleClick(functionItem);
+
+                Assert.That(GetPaletteShortcutText(window, "function"), Is.EqualTo("Press"));
+                Assert.That(graph.Nodes.OfType<FunctionNodeData>().Count(), Is.EqualTo(initialFunctionCount));
             }
             finally
             {
@@ -524,12 +581,11 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
-        public void UndoRedo_RestoresLinkChoiceTextAndOrder()
+        public void UndoRedo_RestoresLinkOrder()
         {
             var database = CreateDatabaseWithLinks("LinkUndo");
             var dialogue = database.Npcs[0].Dialogues[0];
             var startNode = (DialogueTextNodeData)dialogue.Graph.Nodes[0];
-            startNode.UseOutputsAsChoices = true;
             var originalFirstLinkId = DialogueGraphUtility.GetOutgoingLinks(dialogue.Graph, startNode.Id)[0].Id;
             var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
 
@@ -538,16 +594,6 @@ namespace NewDial.DialogueEditor.Tests
                 window.InitializeForTests(database);
                 window.SaveBaselineForTests();
                 Assert.That(window.FocusDialogueNode(dialogue, startNode.Id), Is.True);
-
-                var choiceField = window.rootVisualElement.Query<TextField>("link-choice-field").ToList()[0];
-                choiceField.value = "Updated Choice";
-
-                Assert.That(DialogueGraphUtility.GetOutgoingLinks(database.Npcs[0].Dialogues[0].Graph, startNode.Id)[0].ChoiceText, Is.EqualTo("Updated Choice"));
-
-                Undo.PerformUndo();
-
-                Assert.That(window.rootVisualElement.Query<TextField>("link-choice-field").ToList()[0].value, Is.EqualTo("Go Left"));
-                Assert.That(DialogueGraphUtility.GetOutgoingLinks(database.Npcs[0].Dialogues[0].Graph, startNode.Id)[0].ChoiceText, Is.EqualTo("Go Left"));
 
                 var orderField = window.rootVisualElement.Query<IntegerField>("link-order-field").ToList()[0];
                 orderField.value = 5;
@@ -567,9 +613,9 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
-        public void LinkInspector_ShowsChoiceTextOnlyForChoiceModeNodes()
+        public void NodeInspector_AddChoiceCreatesAnswerBranchAndSelectsAnswer()
         {
-            var database = CreateDatabaseWithLinks("ChoiceTextVisibility");
+            var database = CreateDatabase("AddAnswerBranch");
             var dialogue = database.Npcs[0].Dialogues[0];
             var startNode = (DialogueTextNodeData)dialogue.Graph.Nodes[0];
             var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
@@ -577,15 +623,66 @@ namespace NewDial.DialogueEditor.Tests
             try
             {
                 window.InitializeForTests(database);
+                window.SaveBaselineForTests();
                 Assert.That(window.FocusDialogueNode(dialogue, startNode.Id), Is.True);
-                Assert.That(window.rootVisualElement.Q<TextField>("link-choice-field"), Is.Null);
 
-                var choiceToggle = window.rootVisualElement.Q<Toggle>("node-choice-toggle");
-                Assert.That(choiceToggle, Is.Not.Null);
-                choiceToggle.value = true;
+                var addButton = window.rootVisualElement.Q<Button>("node-add-choice-button");
+                Assert.That(addButton, Is.Not.Null);
+                Click(addButton);
 
+                var choiceNode = dialogue.Graph.Nodes.OfType<DialogueChoiceNodeData>().Single();
                 Assert.That(startNode.UseOutputsAsChoices, Is.True);
-                Assert.That(window.rootVisualElement.Q<TextField>("link-choice-field"), Is.Not.Null);
+                Assert.That(dialogue.Graph.Nodes.OfType<DialogueTextNodeData>(), Has.Count.EqualTo(1));
+                Assert.That(dialogue.Graph.Links, Has.Count.EqualTo(1));
+                Assert.That(DialogueGraphUtility.GetOutgoingLinks(dialogue.Graph, startNode.Id).Single().ToNodeId, Is.EqualTo(choiceNode.Id));
+                Assert.That(DialogueGraphUtility.GetOutgoingLinks(dialogue.Graph, choiceNode.Id), Is.Empty);
+
+                var answerField = window.rootVisualElement.Q<TextField>("choice-button-text-field");
+                Assert.That(answerField, Is.Not.Null);
+                answerField.value = "Ask about work";
+                Assert.That(choiceNode.ChoiceText, Is.EqualTo("Ask about work"));
+                var bodyField = window.rootVisualElement.Q<TextField>("choice-body-field");
+                Assert.That(bodyField, Is.Not.Null);
+                bodyField.value = "There is plenty to do.";
+                Assert.That(choiceNode.BodyText, Is.EqualTo("There is plenty to do."));
+                Assert.That(window.HasUnsavedChangesForTests, Is.True);
+
+                Assert.That(window.FocusDialogueNode(dialogue, startNode.Id), Is.True);
+                Assert.That(window.rootVisualElement.Q<VisualElement>("node-answers-list"), Is.Not.Null);
+                Assert.That(window.rootVisualElement.Q<VisualElement>("answer-card"), Is.Not.Null);
+                Assert.That(window.rootVisualElement.Q<TextField>("link-choice-field"), Is.Null);
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void NodeInspector_ShowsManualAnswerLinksWithoutChoiceMode()
+        {
+            var database = CreateDatabase("ManualAnswerLinkInspector");
+            var dialogue = database.Npcs[0].Dialogues[0];
+            var startNode = (DialogueTextNodeData)dialogue.Graph.Nodes[0];
+            var answer = new DialogueChoiceNodeData
+            {
+                ChoiceText = "Manual answer",
+                Position = new Vector2(360f, 120f)
+            };
+            dialogue.Graph.Nodes.Add(answer);
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = startNode.Id, ToNodeId = answer.Id, Order = 0 });
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                Assert.That(window.FocusDialogueNode(dialogue, startNode.Id), Is.True);
+
+                Assert.That(startNode.UseOutputsAsChoices, Is.False);
+                Assert.That(window.rootVisualElement.Q<VisualElement>("node-answers-list"), Is.Not.Null);
+                Assert.That(window.rootVisualElement.Q<VisualElement>("answer-card"), Is.Not.Null);
+                Assert.That(window.rootVisualElement.Q<TextField>("link-choice-field"), Is.Null);
             }
             finally
             {
@@ -609,8 +706,7 @@ namespace NewDial.DialogueEditor.Tests
 
                 Assert.That(window.rootVisualElement.Q<Toggle>("node-start-toggle")
                     ?.ClassListContains("dialogue-editor__node-toggle"), Is.True);
-                Assert.That(window.rootVisualElement.Q<Toggle>("node-choice-toggle")
-                    ?.ClassListContains("dialogue-editor__node-toggle"), Is.True);
+                Assert.That(window.rootVisualElement.Q<Button>("node-add-choice-button"), Is.Not.Null);
             }
             finally
             {
@@ -874,15 +970,18 @@ namespace NewDial.DialogueEditor.Tests
                 bodyField.cursorIndex = 0;
                 bodyField.selectIndex = 6;
                 customColorField.value = "ff6b6b";
+                var swatchButton = window.rootVisualElement.Q<Button>("rich-text-color-field-swatch-0");
+                Assert.That(swatchButton, Is.Not.Null);
+                Assert.That(customColorField.value, Is.EqualTo("#FF6B6B"));
+
+                customColorField.value = "#ff6b6b80";
                 Click(applyButton);
 
                 Assert.That(node.BodyText, Is.EqualTo("Danger"));
                 Assert.That(customColorField.ClassListContains("dialogue-editor__rich-text-color-field--invalid"), Is.True);
 
                 customColorField.value = "#ff6b6b";
-                var swatchButton = window.rootVisualElement.Q<Button>("rich-text-color-field-swatch-0");
-                Assert.That(swatchButton, Is.Not.Null);
-                Assert.That(customColorField.value, Is.EqualTo("#FF6B6B"));
+                Assert.That(customColorField.ClassListContains("dialogue-editor__rich-text-color-field--invalid"), Is.False);
 
                 Click(swatchButton);
                 Assert.That(node.BodyText, Is.EqualTo("Danger"));

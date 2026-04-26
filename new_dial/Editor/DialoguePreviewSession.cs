@@ -24,21 +24,27 @@ namespace NewDial.DialogueEditor
 
         public DialogueTextNodeData CurrentNode => _player.CurrentNode;
 
+        public BaseNodeData CurrentLineNode => _player.CurrentLineNode;
+
         public IReadOnlyList<DialogueChoice> CurrentChoices => _player.CurrentChoices;
 
         public IReadOnlyList<DialoguePreviewBlockedChoice> BlockedChoices => _blockedChoices;
 
         public IReadOnlyList<DialoguePreviewTranscriptEntry> Transcript => _transcript;
 
-        public bool CanAdvance => CurrentNode != null && !CurrentNode.UseOutputsAsChoices;
+        public bool CanAdvance => CurrentLineNode != null &&
+                                  (CurrentLineNode is not DialogueTextNodeData textNode ||
+                                   !DialogueGraphUtility.UsesChoices(Dialogue?.Graph, textNode));
 
-        public bool CanChoose => CurrentNode != null && CurrentNode.UseOutputsAsChoices && CurrentChoices.Count > 0;
+        public bool CanChoose => CurrentLineNode is DialogueTextNodeData textNode &&
+                                 DialogueGraphUtility.UsesChoices(Dialogue?.Graph, textNode) &&
+                                 CurrentChoices.Count > 0;
 
         public bool CanGoBack => _actions.Count > 0;
 
-        public bool IsEnded => Dialogue != null && CurrentNode == null && _transcript.Count > 0;
+        public bool IsEnded => Dialogue != null && CurrentLineNode == null && _transcript.Count > 0;
 
-        public string CurrentNodeId => CurrentNode?.Id;
+        public string CurrentNodeId => CurrentLineNode?.Id;
 
         public string CurrentSpeakerName => _player.CurrentSpeakerName;
 
@@ -138,9 +144,9 @@ namespace NewDial.DialogueEditor
 
             _player.Start(Dialogue);
 
-            if (_player.CurrentNode != null)
+            if (_player.CurrentLineNode != null)
             {
-                _transcript.Add(DialoguePreviewTranscriptEntry.Node(_player.CurrentNode, _player.CurrentSpeakerName));
+                _transcript.Add(DialoguePreviewTranscriptEntry.Node(_player.CurrentLineNode, _player.CurrentSpeakerName));
             }
             else
             {
@@ -150,7 +156,7 @@ namespace NewDial.DialogueEditor
 
             foreach (var action in _actions)
             {
-                if (_player.CurrentNode == null)
+                if (_player.CurrentLineNode == null)
                 {
                     break;
                 }
@@ -158,11 +164,11 @@ namespace NewDial.DialogueEditor
                 switch (action.Kind)
                 {
                     case DialoguePreviewActionKind.Advance:
-                        var advanceReason = PredictAdvanceEndReason(_player.CurrentNode, variableStore);
+                        var advanceReason = PredictAdvanceEndReason(_player.CurrentLineNode, variableStore);
                         _player.Next();
-                        if (_player.CurrentNode != null)
+                        if (_player.CurrentLineNode != null)
                         {
-                            _transcript.Add(DialoguePreviewTranscriptEntry.Node(_player.CurrentNode, _player.CurrentSpeakerName));
+                            _transcript.Add(DialoguePreviewTranscriptEntry.Node(_player.CurrentLineNode, _player.CurrentSpeakerName));
                         }
                         else
                         {
@@ -178,14 +184,14 @@ namespace NewDial.DialogueEditor
 
                         var choice = _player.CurrentChoices[action.ChoiceIndex];
                         _player.Choose(action.ChoiceIndex);
-                        _transcript.Add(DialoguePreviewTranscriptEntry.Choice(choice.Text, _player.CurrentNode, _player.CurrentSpeakerName));
+                        _transcript.Add(DialoguePreviewTranscriptEntry.Choice(choice.Text, _player.CurrentLineNode, _player.CurrentSpeakerName));
                         break;
                 }
             }
 
             RebuildBlockedChoices(variableStore);
-            if (_player.CurrentNode != null &&
-                _player.CurrentNode.UseOutputsAsChoices &&
+            if (_player.CurrentLineNode is DialogueTextNodeData currentTextNode &&
+                DialogueGraphUtility.UsesChoices(Dialogue.Graph, currentTextNode) &&
                 _player.CurrentChoices.Count == 0 &&
                 _blockedChoices.Count > 0)
             {
@@ -196,8 +202,9 @@ namespace NewDial.DialogueEditor
         public string GetChoiceExplanation(DialogueChoice choice)
         {
             if (choice.Link != null &&
+                string.IsNullOrWhiteSpace(choice.ChoiceNode?.ChoiceText) &&
                 string.IsNullOrWhiteSpace(choice.Link.ChoiceText) &&
-                string.IsNullOrWhiteSpace(choice.Target?.Title))
+                string.IsNullOrWhiteSpace(choice.TargetNode?.Title))
             {
                 return DialogueEditorLocalization.Text("Generic fallback label is being used.");
             }
@@ -208,17 +215,32 @@ namespace NewDial.DialogueEditor
         private void RebuildBlockedChoices(IDialogueVariableStore variableStore)
         {
             _blockedChoices.Clear();
-            if (_player.CurrentNode == null || !_player.CurrentNode.UseOutputsAsChoices)
+            if (_player.CurrentLineNode is not DialogueTextNodeData currentTextNode ||
+                !DialogueGraphUtility.UsesChoices(Dialogue.Graph, currentTextNode))
             {
                 return;
             }
 
-            foreach (var link in GetOutgoingLinks(Dialogue.Graph, _player.CurrentNode.Id))
+            foreach (var link in DialogueGraphUtility.GetChoiceCandidateLinks(Dialogue.Graph, currentTextNode))
             {
-                var target = GetTextNode(Dialogue.Graph, link.ToNodeId);
-                if (target == null)
+                var target = GetNode(Dialogue.Graph, link.ToNodeId);
+                if (target == null || !DialogueGraphUtility.IsRuntimeNode(target))
                 {
                     _blockedChoices.Add(new DialoguePreviewBlockedChoice(GetChoiceLabel(link, target), DialogueEditorLocalization.Text("Missing valid target node.")));
+                    continue;
+                }
+
+                if (target is DialogueChoiceNodeData choiceNode)
+                {
+                    var label = GetChoiceLabel(link, choiceNode);
+                    if (!_conditionEvaluator.Evaluate(choiceNode.Condition, variableStore))
+                    {
+                        _blockedChoices.Add(new DialoguePreviewBlockedChoice(
+                            label,
+                            DialogueEditorLocalization.Format("Choice unavailable because condition is not met: {0}", DescribeCondition(choiceNode.Condition))));
+                        continue;
+                    }
+
                     continue;
                 }
 
@@ -231,7 +253,7 @@ namespace NewDial.DialogueEditor
             }
         }
 
-        private string PredictAdvanceEndReason(DialogueTextNodeData node, IDialogueVariableStore variableStore)
+        private string PredictAdvanceEndReason(BaseNodeData node, IDialogueVariableStore variableStore)
         {
             var links = GetOutgoingLinks(Dialogue.Graph, node?.Id);
             if (links.Count == 0)
@@ -243,8 +265,8 @@ namespace NewDial.DialogueEditor
             var hasBrokenLink = false;
             foreach (var link in links)
             {
-                var target = GetTextNode(Dialogue.Graph, link.ToNodeId);
-                if (target == null)
+                var target = GetNode(Dialogue.Graph, link.ToNodeId);
+                if (target == null || !DialogueGraphUtility.IsRuntimeNode(target))
                 {
                     hasBrokenLink = true;
                     continue;
@@ -288,18 +310,23 @@ namespace NewDial.DialogueEditor
                 .ToList();
         }
 
-        private static DialogueTextNodeData GetTextNode(DialogueGraphData graph, string nodeId)
+        private static BaseNodeData GetNode(DialogueGraphData graph, string nodeId)
         {
             if (graph?.Nodes == null || string.IsNullOrWhiteSpace(nodeId))
             {
                 return null;
             }
 
-            return graph.Nodes.FirstOrDefault(node => node != null && node.Id == nodeId) as DialogueTextNodeData;
+            return graph.Nodes.FirstOrDefault(node => node != null && node.Id == nodeId);
         }
 
-        private static string GetChoiceLabel(NodeLinkData link, DialogueTextNodeData target)
+        private static string GetChoiceLabel(NodeLinkData link, BaseNodeData target)
         {
+            if (target is DialogueChoiceNodeData choiceNode && !string.IsNullOrWhiteSpace(choiceNode.ChoiceText))
+            {
+                return choiceNode.ChoiceText;
+            }
+
             if (!string.IsNullOrWhiteSpace(link?.ChoiceText))
             {
                 return link.ChoiceText;
@@ -404,7 +431,7 @@ namespace NewDial.DialogueEditor
 
         public string ChoiceText { get; }
 
-        public static DialoguePreviewTranscriptEntry Node(DialogueTextNodeData node, string speakerName)
+        public static DialoguePreviewTranscriptEntry Node(BaseNodeData node, string speakerName)
         {
             return new DialoguePreviewTranscriptEntry(
                 DialoguePreviewTranscriptEntryKind.Node,
@@ -415,7 +442,7 @@ namespace NewDial.DialogueEditor
                 node?.Id);
         }
 
-        public static DialoguePreviewTranscriptEntry Choice(string choiceText, DialogueTextNodeData node, string speakerName)
+        public static DialoguePreviewTranscriptEntry Choice(string choiceText, BaseNodeData node, string speakerName)
         {
             var localizedBody = DialogueTextLocalizationUtility.GetBodyText(node, DialogueContentLanguageSettings.CurrentLanguageCode);
             var body = string.IsNullOrWhiteSpace(localizedBody)

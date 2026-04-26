@@ -30,12 +30,15 @@ namespace NewDial.DialogueEditor
         }
 
         public event Action<DialogueTextNodeData> NodeChanged;
+        public event Action<BaseNodeData> LineChanged;
         public event Action DialogueEnded;
         public event Action<string> RuntimeError;
 
         public DialogueEntry CurrentDialogue => _currentDialogue;
 
         public DialogueTextNodeData CurrentNode { get; private set; }
+
+        public BaseNodeData CurrentLineNode { get; private set; }
 
         public DialogueSpeakerEntry CurrentSpeaker { get; private set; }
 
@@ -58,6 +61,7 @@ namespace NewDial.DialogueEditor
         {
             _currentDialogue = dialogue;
             _currentDataNode = null;
+            CurrentLineNode = null;
             _pendingExecutionNode = null;
             _choices.Clear();
             IsWaitingForExecution = false;
@@ -67,6 +71,7 @@ namespace NewDial.DialogueEditor
             if (dialogue == null || dialogue.Graph == null)
             {
                 CurrentNode = null;
+                CurrentLineNode = null;
                 CurrentSpeaker = null;
                 return false;
             }
@@ -75,6 +80,7 @@ namespace NewDial.DialogueEditor
             if (startNode == null)
             {
                 CurrentNode = null;
+                CurrentLineNode = null;
                 CurrentSpeaker = null;
                 return false;
             }
@@ -84,34 +90,43 @@ namespace NewDial.DialogueEditor
 
         public bool Next()
         {
-            if (CurrentNode == null || IsWaitingForExecution)
+            if (CurrentLineNode == null || IsWaitingForExecution)
             {
                 return false;
             }
 
-            if (CurrentNode.UseOutputsAsChoices && _choices.Count > 0)
+            if (CurrentLineNode is DialogueTextNodeData textNode &&
+                DialogueGraphUtility.UsesChoices(_currentDialogue?.Graph, textNode) &&
+                _choices.Count > 0)
             {
                 return false;
             }
 
-            return AdvanceFromNode(CurrentNode);
+            return AdvanceFromNode(CurrentLineNode);
         }
 
         public bool Choose(int index)
         {
-            if (CurrentNode == null || IsWaitingForExecution || !CurrentNode.UseOutputsAsChoices || index < 0 || index >= _choices.Count)
+            if (CurrentLineNode is not DialogueTextNodeData textNode ||
+                IsWaitingForExecution ||
+                !DialogueGraphUtility.UsesChoices(_currentDialogue?.Graph, textNode) ||
+                index < 0 ||
+                index >= _choices.Count)
             {
                 return false;
             }
 
             var choice = _choices[index];
-            if (choice.Target == null)
+            var destination = choice.ChoiceNode != null
+                ? choice.ChoiceNode
+                : choice.TargetNode;
+            if (destination == null)
             {
                 EndDialogue();
                 return false;
             }
 
-            return EnterNode(choice.Target);
+            return EnterNode(destination);
         }
 
         public bool CompletePendingExecution(DialogueExecutionResult result)
@@ -147,6 +162,13 @@ namespace NewDial.DialogueEditor
                 return true;
             }
 
+            if (node is DialogueChoiceNodeData choiceNode)
+            {
+                SetCurrentChoiceNode(choiceNode);
+                return true;
+            }
+
+            CurrentLineNode = null;
             CurrentNode = null;
             CurrentSpeaker = null;
             _choices.Clear();
@@ -156,24 +178,47 @@ namespace NewDial.DialogueEditor
         private void SetCurrentTextNode(DialogueTextNodeData node)
         {
             _currentDataNode = node;
+            CurrentLineNode = node;
             CurrentNode = node;
             CurrentSpeaker = DialogueSpeakerUtility.ResolveSpeaker(_currentDialogue, node);
             RebuildChoices();
             NodeChanged?.Invoke(CurrentNode);
+            LineChanged?.Invoke(CurrentLineNode);
+        }
+
+        private void SetCurrentChoiceNode(DialogueChoiceNodeData node)
+        {
+            _currentDataNode = node;
+            CurrentLineNode = node;
+            CurrentNode = null;
+            CurrentSpeaker = DialogueSpeakerUtility.ResolveSpeaker(_currentDialogue, node);
+            _choices.Clear();
+            LineChanged?.Invoke(CurrentLineNode);
         }
 
         private void RebuildChoices()
         {
             _choices.Clear();
-            if (CurrentNode == null || !CurrentNode.UseOutputsAsChoices)
+            if (CurrentNode == null || !DialogueGraphUtility.UsesChoices(_currentDialogue?.Graph, CurrentNode))
             {
                 return;
             }
 
-            foreach (var link in DialogueGraphUtility.GetOutgoingLinks(_currentDialogue.Graph, CurrentNode.Id))
+            foreach (var link in DialogueGraphUtility.GetChoiceCandidateLinks(_currentDialogue.Graph, CurrentNode))
             {
-                var target = DialogueGraphUtility.GetTextNode(_currentDialogue.Graph, link.ToNodeId);
-                if (target != null && CanEnterNode(target))
+                var target = DialogueGraphUtility.GetNode(_currentDialogue.Graph, link.ToNodeId);
+                if (target is DialogueChoiceNodeData choiceNode)
+                {
+                    if (!CanEnterNode(choiceNode))
+                    {
+                        continue;
+                    }
+
+                    _choices.Add(new DialogueChoice(link, choiceNode, choiceNode));
+                    continue;
+                }
+
+                if (target != null && DialogueGraphUtility.IsRuntimeNode(target) && CanEnterNode(target))
                 {
                     _choices.Add(new DialogueChoice(link, target));
                 }
@@ -358,6 +403,7 @@ namespace NewDial.DialogueEditor
         private void EndDialogue()
         {
             _currentDataNode = null;
+            CurrentLineNode = null;
             CurrentNode = null;
             CurrentSpeaker = null;
             _choices.Clear();

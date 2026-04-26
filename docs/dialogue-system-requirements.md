@@ -11,8 +11,9 @@
 - `DialogueEntry`: хранит `Id`, `Name`, `StartCondition`, `Graph`.
 - `DialogueGraphData`: хранит `Nodes` и `Links`.
 - `DialogueTextNodeData`: основной playable node, содержит `BodyText`, опциональный `VoiceKey`, `IsStartNode`, `UseOutputsAsChoices`.
+- `DialogueChoiceNodeData`: playable answer node, хранит `ChoiceText` для кнопки выбора, собственный `BodyText`, metadata реплики, локализацию и опциональное условие.
 - `CommentNodeData`: editor-only сущность для заметок и группировки, не является runtime-репликой.
-- `NodeLinkData`: связь между узлами, содержит `FromNodeId`, `ToNodeId`, `Order`, `ChoiceText`.
+- `NodeLinkData`: связь между узлами, содержит `FromNodeId`, `ToNodeId`, `Order`; `ChoiceText` остается legacy fallback для старых direct-choice графов.
 - `ConditionData`: легковесное описание условия с `Type`, `Key`, `Operator`, `Value`.
 - `DialoguePlayer`: базовый traversal helper для `CanStart`, `Start`, `Next`, `Choose`.
 - `IDialogueVariableStore`: контракт чтения значений переменных.
@@ -57,12 +58,15 @@
    - сначала `DialogueTextNodeData` с `IsStartNode == true`;
    - если такого нет, используется первый `DialogueTextNodeData` в графе.
 3. Линейный переход идет по первому валидному `NodeLinkData` из исходящих links, отсортированных по `Order`, затем по `Id`.
-4. Если `DialogueTextNodeData.UseOutputsAsChoices == true`, узел работает как узел выбора:
+4. Узел `DialogueTextNodeData` работает как узел выбора, если у него есть исходящие `Text -> Answer` links или legacy-флаг `UseOutputsAsChoices == true`:
    - автоматический `Next` не должен молча выбирать ветку вместо игрока, пока есть доступные choices;
-   - choices строятся только из валидных целевых `DialogueTextNodeData`, прошедших проверку условий.
+   - новые choices строятся из валидных `DialogueChoiceNodeData`, прошедших проверку условий; после `Choose()` runtime входит в сам answer node;
+   - `Next()` из answer node идет по его первому валидному исходящему runtime target, если он есть;
+   - legacy direct-choice links без answer node остаются поддержанными для старых данных.
 5. Текст выбора определяется так же, как в `DialogueChoice.Text`:
-   - сначала `NodeLinkData.ChoiceText`, если он не пустой;
-   - иначе `Target.Title`;
+   - сначала `DialogueChoiceNodeData.ChoiceText`, если choice идет через answer node;
+   - затем legacy `NodeLinkData.ChoiceText`, если он не пустой;
+   - иначе `TargetNode.Title`;
    - если `Target` отсутствует, допустим runtime fallback уровня `"Choice"` или эквивалентное безопасное значение.
 6. Условия узлов и диалогов обязаны уважать `IDialogueConditionEvaluator`.
 7. Базовая condition semantics должна оставаться совместимой с текущим `DefaultDialogueConditionEvaluator`:
@@ -330,17 +334,19 @@ Project-side сервис озвучки. Минимум:
 ### Работа с графом
 
 - Никогда не считать `CommentNodeData` игровым узлом.
-- При traversal переходить только в `DialogueTextNodeData`.
+- При traversal показывать `DialogueTextNodeData` и выбранный `DialogueChoiceNodeData` как playable line nodes; executable nodes остаются мгновенными runtime-переходами.
 - Всегда фильтровать исходящие links по валидности target node.
 - Всегда уважать сортировку по `Order`.
 - Пустой или сломанный target должен приводить к безопасному пропуску ссылки или завершению сессии с диагностикой.
+- В editor graph `Title` редактируется в header ноды для text, answer, executable и comment nodes; отдельное body-поле title не является основным UX.
+- Inline text boxes в нодах должны переносить длинные строки визуально по ширине карточки, не вставляя автоматические `\n` в сохраненные данные.
 
 ### Работа с choices
 
-- Choices должны пересобираться каждый раз при входе в choice-node.
-- В choices должны попадать только ветки с валидным target и выполненным node condition.
+- Choices должны пересобираться каждый раз при входе в text node с outgoing answer links или legacy choice-mode flag.
+- В choices должны попадать только ветки с валидным answer node или legacy target и выполненными conditions на самой choice-ветке; conditions следующего target проверяются при `Next()` из answer node.
 - UI не должна сама вычислять валидность choices; это ответственность runtime.
-- Если choice-node не имеет доступных валидных choices, система должна безопасно завершать диалог или переводить его в диагностируемое terminal state, но не зависать.
+- Если text node в режиме выбора не имеет доступных валидных choices, система должна безопасно завершать диалог или переводить его в диагностируемое terminal state, но не зависать.
 
 ### Работа с текстом и display
 
@@ -349,11 +355,12 @@ Project-side сервис озвучки. Минимум:
 - `Title` не должен считаться полноценной репликой; это служебный display field, который можно показывать как secondary label или fallback.
 - Пустой `BodyText` не должен ломать UI.
 - Пустой `VoiceKey` не должен ломать UI или traversal и не должен считаться ошибкой.
-- Пустой `ChoiceText` должен корректно падать в fallback через semantics `DialogueChoice`.
+- Пустой answer `ChoiceText` должен корректно падать в fallback через semantics `DialogueChoice`.
+- Answer node после выбора показывает свой `BodyText`; дальнейшая ветка начинается только после `Next()` из этой answer-ноды.
 
 ### Работа с озвучкой
 
-- Core runtime должен только переносить `VoiceKey` из активной `DialogueTextNodeData` в state/events.
+- Core runtime должен только переносить `VoiceKey` из активной text/answer line node в state/events.
 - Audio playback должен жить в отдельном project-side сервисе, подключенном к lifecycle events.
 - `VoiceKey` не переводится между локалями; переводятся текст, аудио asset/event и локализационные таблицы, которые на него ссылаются.
 - Не использовать числовые ids для production voice keys, если проект не имеет отдельной стабильной таблицы миграций.
@@ -407,7 +414,7 @@ Project-side сервис озвучки. Минимум:
 - Проверка доступности диалога по `StartCondition`.
 - Проверка выбора стартового узла.
 - Проверка линейного перехода к первому валидному target по `Order`.
-- Проверка choice-mode на `UseOutputsAsChoices`.
+- Проверка auto-choice для `Text -> Answer` links без `UseOutputsAsChoices` и legacy choice-mode на `UseOutputsAsChoices`.
 - Проверка fallback-логики текста choice.
 - Проверка игнорирования `CommentNodeData`.
 - Проверка завершения диалога без исходящих валидных links.

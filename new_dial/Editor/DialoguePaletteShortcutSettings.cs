@@ -78,7 +78,8 @@ namespace NewDial.DialogueEditor
             DialoguePaletteItemType.Comment,
             DialoguePaletteItemType.Function,
             DialoguePaletteItemType.Scene,
-            DialoguePaletteItemType.Debug
+            DialoguePaletteItemType.Debug,
+            DialoguePaletteItemType.Choice
         };
 
         private static readonly HashSet<KeyCode> UnbindableKeys = new()
@@ -250,7 +251,8 @@ namespace NewDial.DialogueEditor
                 [DialoguePaletteItemType.Comment] = new(KeyCode.Alpha2, alt: true),
                 [DialoguePaletteItemType.Function] = new(KeyCode.Alpha3, alt: true),
                 [DialoguePaletteItemType.Scene] = new(KeyCode.Alpha4, alt: true),
-                [DialoguePaletteItemType.Debug] = new(KeyCode.Alpha5, alt: true)
+                [DialoguePaletteItemType.Debug] = new(KeyCode.Alpha5, alt: true),
+                [DialoguePaletteItemType.Choice] = new(KeyCode.Alpha6, alt: true)
             };
         }
 

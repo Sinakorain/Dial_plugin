@@ -444,15 +444,15 @@ namespace NewDial.DialogueEditor
                 return report;
             }
 
-            var textNodesByKey = dialogue.Graph.Nodes
-                .OfType<DialogueTextNodeData>()
-                .Where(node => !string.IsNullOrWhiteSpace(node.LocalizationKey))
-                .GroupBy(node => node.LocalizationKey, StringComparer.OrdinalIgnoreCase)
+            var lineNodesByKey = dialogue.Graph.Nodes
+                .Where(IsLocalizableLineNode)
+                .Where(node => !string.IsNullOrWhiteSpace(GetLocalizationKey(node)))
+                .GroupBy(GetLocalizationKey, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
 
             foreach (var row in conversation.Rows)
             {
-                if (!textNodesByKey.TryGetValue(row.Key, out var node))
+                if (!lineNodesByKey.TryGetValue(row.Key, out var node))
                 {
                     report.Missing++;
                     report.Messages.Add($"Missing node for {row.Key}");
@@ -473,12 +473,12 @@ namespace NewDial.DialogueEditor
         {
             var report = new DialogueLocalizationExportReport();
             var rows = new List<DialogueLocalizationTableRow>();
-            var textNodes = dialogue?.Graph?.Nodes?.OfType<DialogueTextNodeData>().ToList() ?? new List<DialogueTextNodeData>();
+            var lineNodes = dialogue?.Graph?.Nodes?.Where(IsLocalizableLineNode).ToList() ?? new List<BaseNodeData>();
             var generatedEntryIndex = 1;
 
-            foreach (var node in textNodes)
+            foreach (var node in lineNodes)
             {
-                var key = node.LocalizationKey;
+                var key = GetLocalizationKey(node);
                 if (string.IsNullOrWhiteSpace(key))
                 {
                     if (string.IsNullOrWhiteSpace(conversationIdOrPrefix))
@@ -534,10 +534,10 @@ namespace NewDial.DialogueEditor
             }
         }
 
-        private static void ApplyRowToNode(DialogueTextNodeData node, DialogueLocalizationTableRow row)
+        private static void ApplyRowToNode(BaseNodeData node, DialogueLocalizationTableRow row)
         {
-            node.LocalizationKey = row.Key;
-            node.LocalizedBodyText = row.TextByLanguage
+            SetLocalizationKey(node, row.Key);
+            var localizedBodyText = row.TextByLanguage
                 .OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
                 .Select(pair => new DialogueLocalizedTextEntry
                 {
@@ -545,18 +545,22 @@ namespace NewDial.DialogueEditor
                     Text = pair.Value ?? string.Empty
                 })
                 .ToList();
+            SetLocalizedBodyText(node, localizedBodyText);
 
             if (row.TryGetText(DialogueTextLocalizationUtility.DefaultLanguageCode, out var defaultText))
             {
-                node.BodyText = defaultText;
+                DialogueTextLocalizationUtility.SetBodyText(node, DialogueTextLocalizationUtility.DefaultLanguageCode, defaultText);
             }
-            else if (string.IsNullOrEmpty(node.BodyText))
+            else if (string.IsNullOrEmpty(DialogueTextLocalizationUtility.GetBodyText(node, DialogueTextLocalizationUtility.DefaultLanguageCode)))
             {
-                node.BodyText = row.TextByLanguage.Values.FirstOrDefault(value => !string.IsNullOrEmpty(value)) ?? string.Empty;
+                DialogueTextLocalizationUtility.SetBodyText(
+                    node,
+                    DialogueTextLocalizationUtility.DefaultLanguageCode,
+                    row.TextByLanguage.Values.FirstOrDefault(value => !string.IsNullOrEmpty(value)) ?? string.Empty);
             }
         }
 
-        private static DialogueLocalizationTableRow CreateRowFromNode(DialogueTextNodeData node, string key)
+        private static DialogueLocalizationTableRow CreateRowFromNode(BaseNodeData node, string key)
         {
             var row = new DialogueLocalizationTableRow
             {
@@ -565,7 +569,7 @@ namespace NewDial.DialogueEditor
                 EntryIndex = TryParseEntryIndex(key, out var entryIndex) ? entryIndex : 0
             };
 
-            foreach (var entry in node.LocalizedBodyText ?? Enumerable.Empty<DialogueLocalizedTextEntry>())
+            foreach (var entry in GetLocalizedBodyText(node) ?? Enumerable.Empty<DialogueLocalizedTextEntry>())
             {
                 if (entry == null || string.IsNullOrWhiteSpace(entry.LanguageCode) || string.IsNullOrEmpty(entry.Text))
                 {
@@ -576,12 +580,64 @@ namespace NewDial.DialogueEditor
             }
 
             if (!row.TextByLanguage.ContainsKey(DialogueTextLocalizationUtility.DefaultLanguageCode) &&
-                !string.IsNullOrEmpty(node.BodyText))
+                !string.IsNullOrEmpty(DialogueTextLocalizationUtility.GetBodyText(node, DialogueTextLocalizationUtility.DefaultLanguageCode)))
             {
-                row.TextByLanguage[DialogueTextLocalizationUtility.DefaultLanguageCode] = node.BodyText;
+                row.TextByLanguage[DialogueTextLocalizationUtility.DefaultLanguageCode] =
+                    DialogueTextLocalizationUtility.GetBodyText(node, DialogueTextLocalizationUtility.DefaultLanguageCode);
             }
 
             return row;
+        }
+
+        private static bool IsLocalizableLineNode(BaseNodeData node)
+        {
+            return node is DialogueTextNodeData or DialogueChoiceNodeData;
+        }
+
+        private static string GetLocalizationKey(BaseNodeData node)
+        {
+            return node switch
+            {
+                DialogueTextNodeData textNode => textNode.LocalizationKey,
+                DialogueChoiceNodeData choiceNode => choiceNode.LocalizationKey,
+                _ => string.Empty
+            };
+        }
+
+        private static void SetLocalizationKey(BaseNodeData node, string key)
+        {
+            switch (node)
+            {
+                case DialogueTextNodeData textNode:
+                    textNode.LocalizationKey = key ?? string.Empty;
+                    break;
+                case DialogueChoiceNodeData choiceNode:
+                    choiceNode.LocalizationKey = key ?? string.Empty;
+                    break;
+            }
+        }
+
+        private static List<DialogueLocalizedTextEntry> GetLocalizedBodyText(BaseNodeData node)
+        {
+            return node switch
+            {
+                DialogueTextNodeData textNode => textNode.LocalizedBodyText,
+                DialogueChoiceNodeData choiceNode => choiceNode.LocalizedBodyText,
+                _ => null
+            };
+        }
+
+        private static void SetLocalizedBodyText(BaseNodeData node, List<DialogueLocalizedTextEntry> entries)
+        {
+            switch (node)
+            {
+                case DialogueTextNodeData textNode:
+                    textNode.LocalizedBodyText = entries ?? new List<DialogueLocalizedTextEntry>();
+                    break;
+                case DialogueChoiceNodeData choiceNode:
+                    choiceNode.LocalizedBodyText = entries ?? new List<DialogueLocalizedTextEntry>();
+                    break;
+            }
         }
 
         private static string BuildLocalizationKey(string conversationIdOrPrefix, int entryIndex)

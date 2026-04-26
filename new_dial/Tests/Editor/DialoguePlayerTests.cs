@@ -127,6 +127,262 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
+        public void Choose_EntersAnswerNodeThenNextUsesAnswerTarget()
+        {
+            var dialogue = new DialogueEntry { Name = "Answer Node Test" };
+            var start = new DialogueTextNodeData
+            {
+                Title = "Question",
+                IsStartNode = true,
+                UseOutputsAsChoices = true
+            };
+            var answer = new DialogueChoiceNodeData
+            {
+                Title = "Answer",
+                ChoiceText = "Ask about work",
+                BodyText = "What work is available?"
+            };
+            var target = new DialogueTextNodeData
+            {
+                Title = "Work",
+                BodyText = "There is plenty to do."
+            };
+            dialogue.Graph.Nodes.Add(start);
+            dialogue.Graph.Nodes.Add(answer);
+            dialogue.Graph.Nodes.Add(target);
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = start.Id, ToNodeId = answer.Id, Order = 0 });
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = answer.Id, ToNodeId = target.Id, Order = 0 });
+
+            var player = new DialoguePlayer();
+
+            Assert.That(player.Start(dialogue), Is.True);
+            Assert.That(player.CurrentChoices, Has.Count.EqualTo(1));
+            Assert.That(player.CurrentChoices[0].Text, Is.EqualTo("Ask about work"));
+            Assert.That(player.Choose(0), Is.True);
+            Assert.That(player.CurrentLineNode, Is.EqualTo(answer));
+            Assert.That(player.CurrentNode, Is.Null);
+            Assert.That(DialogueTextLocalizationUtility.GetBodyText(player.CurrentLineNode, "ru"), Is.EqualTo("What work is available?"));
+            Assert.That(player.Next(), Is.True);
+            Assert.That(player.CurrentNode, Is.EqualTo(target));
+        }
+
+        [Test]
+        public void Choose_TextToAnswerLinkWithoutChoiceMode_IsAvailableAsChoice()
+        {
+            var dialogue = new DialogueEntry { Name = "Manual Answer Link" };
+            var start = new DialogueTextNodeData
+            {
+                Title = "Question",
+                IsStartNode = true
+            };
+            var answer = new DialogueChoiceNodeData
+            {
+                ChoiceText = "Manual answer",
+                BodyText = "Answer body."
+            };
+            var target = new DialogueTextNodeData { Title = "Next" };
+            dialogue.Graph.Nodes.Add(start);
+            dialogue.Graph.Nodes.Add(answer);
+            dialogue.Graph.Nodes.Add(target);
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = start.Id, ToNodeId = answer.Id, Order = 0 });
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = answer.Id, ToNodeId = target.Id, Order = 0 });
+
+            var player = new DialoguePlayer();
+
+            Assert.That(player.Start(dialogue), Is.True);
+            Assert.That(player.CurrentChoices, Has.Count.EqualTo(1));
+            Assert.That(player.CurrentChoices[0].Text, Is.EqualTo("Manual answer"));
+            Assert.That(player.Next(), Is.False);
+            Assert.That(player.Choose(0), Is.True);
+            Assert.That(player.CurrentLineNode, Is.EqualTo(answer));
+            Assert.That(player.Next(), Is.True);
+            Assert.That(player.CurrentNode, Is.EqualTo(target));
+        }
+
+        [Test]
+        public void Choose_TextToTextLinkWithoutChoiceMode_RemainsLinear()
+        {
+            var dialogue = new DialogueEntry { Name = "Linear Link" };
+            var start = new DialogueTextNodeData
+            {
+                Title = "Start",
+                IsStartNode = true
+            };
+            var target = new DialogueTextNodeData { Title = "Next" };
+            dialogue.Graph.Nodes.Add(start);
+            dialogue.Graph.Nodes.Add(target);
+            dialogue.Graph.Links.Add(new NodeLinkData
+            {
+                FromNodeId = start.Id,
+                ToNodeId = target.Id,
+                Order = 0,
+                ChoiceText = "Should not become a choice"
+            });
+
+            var player = new DialoguePlayer();
+
+            Assert.That(player.Start(dialogue), Is.True);
+            Assert.That(player.CurrentChoices, Is.Empty);
+            Assert.That(player.Choose(0), Is.False);
+            Assert.That(player.Next(), Is.True);
+            Assert.That(player.CurrentNode, Is.EqualTo(target));
+        }
+
+        [Test]
+        public void Choose_BlockedAnswerLinkWithoutChoiceMode_IsHidden()
+        {
+            var dialogue = new DialogueEntry { Name = "Manual Blocked Answer" };
+            var start = new DialogueTextNodeData
+            {
+                Title = "Question",
+                IsStartNode = true
+            };
+            var blockedAnswer = new DialogueChoiceNodeData
+            {
+                ChoiceText = "Secret",
+                Condition = new ConditionData
+                {
+                    Type = ConditionType.VariableCheck,
+                    Key = "has_secret",
+                    Operator = "==",
+                    Value = "true"
+                }
+            };
+            dialogue.Graph.Nodes.Add(start);
+            dialogue.Graph.Nodes.Add(blockedAnswer);
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = start.Id, ToNodeId = blockedAnswer.Id, Order = 0 });
+
+            var player = new DialoguePlayer(
+                new DefaultDialogueConditionEvaluator(),
+                new DictionaryDialogueVariableStore(new Dictionary<string, string>()));
+
+            Assert.That(player.Start(dialogue), Is.True);
+            Assert.That(player.CurrentChoices, Is.Empty);
+            Assert.That(player.Next(), Is.False);
+            Assert.That(player.CurrentLineNode, Is.Null);
+        }
+
+        [Test]
+        public void Choose_HidesAnswerNodeWhenAnswerConditionIsBlockedAndKeepsTargetConditionForNext()
+        {
+            var dialogue = new DialogueEntry { Name = "Answer Conditions" };
+            var start = new DialogueTextNodeData
+            {
+                Title = "Question",
+                IsStartNode = true,
+                UseOutputsAsChoices = true
+            };
+            var blockedAnswer = new DialogueChoiceNodeData
+            {
+                ChoiceText = "Secret",
+                Condition = new ConditionData
+                {
+                    Type = ConditionType.VariableCheck,
+                    Key = "has_secret",
+                    Operator = "==",
+                    Value = "true"
+                }
+            };
+            var blockedTargetAnswer = new DialogueChoiceNodeData { ChoiceText = "Locked target" };
+            var availableAnswer = new DialogueChoiceNodeData { ChoiceText = "Open" };
+            var secretTarget = new DialogueTextNodeData { Title = "Secret" };
+            var lockedTarget = new DialogueTextNodeData
+            {
+                Title = "Locked",
+                Condition = new ConditionData
+                {
+                    Type = ConditionType.VariableCheck,
+                    Key = "door_open",
+                    Operator = "==",
+                    Value = "true"
+                }
+            };
+            var openTarget = new DialogueTextNodeData { Title = "Open" };
+            dialogue.Graph.Nodes.Add(start);
+            dialogue.Graph.Nodes.Add(blockedAnswer);
+            dialogue.Graph.Nodes.Add(blockedTargetAnswer);
+            dialogue.Graph.Nodes.Add(availableAnswer);
+            dialogue.Graph.Nodes.Add(secretTarget);
+            dialogue.Graph.Nodes.Add(lockedTarget);
+            dialogue.Graph.Nodes.Add(openTarget);
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = start.Id, ToNodeId = blockedAnswer.Id, Order = 0 });
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = blockedAnswer.Id, ToNodeId = secretTarget.Id, Order = 0 });
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = start.Id, ToNodeId = blockedTargetAnswer.Id, Order = 1 });
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = blockedTargetAnswer.Id, ToNodeId = lockedTarget.Id, Order = 0 });
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = start.Id, ToNodeId = availableAnswer.Id, Order = 2 });
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = availableAnswer.Id, ToNodeId = openTarget.Id, Order = 0 });
+
+            var player = new DialoguePlayer(
+                new DefaultDialogueConditionEvaluator(),
+                new DictionaryDialogueVariableStore(new Dictionary<string, string>()));
+
+            Assert.That(player.Start(dialogue), Is.True);
+            Assert.That(player.CurrentChoices.Select(choice => choice.Text), Is.EqualTo(new[] { "Locked target", "Open" }));
+            Assert.That(player.Choose(0), Is.True);
+            Assert.That(player.CurrentLineNode, Is.EqualTo(blockedTargetAnswer));
+            Assert.That(player.Next(), Is.False);
+            Assert.That(player.CurrentLineNode, Is.Null);
+        }
+
+        [Test]
+        public void Choose_AnswerNodeCanRouteThroughExecutableNode()
+        {
+            var dialogue = new DialogueEntry { Name = "Answer Executes" };
+            var start = new DialogueTextNodeData
+            {
+                Title = "Question",
+                IsStartNode = true,
+                UseOutputsAsChoices = true
+            };
+            var answer = new DialogueChoiceNodeData { ChoiceText = "Continue" };
+            var debug = new DebugNodeData { Title = "Debug", MessageTemplate = "answer route" };
+            var end = new DialogueTextNodeData { Title = "End" };
+            dialogue.Graph.Nodes.Add(start);
+            dialogue.Graph.Nodes.Add(answer);
+            dialogue.Graph.Nodes.Add(debug);
+            dialogue.Graph.Nodes.Add(end);
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = start.Id, ToNodeId = answer.Id, Order = 0 });
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = answer.Id, ToNodeId = debug.Id, Order = 0 });
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = debug.Id, ToNodeId = end.Id, Order = 0 });
+
+            var player = new DialoguePlayer();
+
+            Assert.That(player.Start(dialogue), Is.True);
+            Assert.That(player.Choose(0), Is.True);
+            Assert.That(player.CurrentLineNode, Is.EqualTo(answer));
+            LogAssert.Expect(LogType.Log, "answer route");
+            Assert.That(player.Next(), Is.True);
+            Assert.That(player.CurrentNode, Is.EqualTo(end));
+        }
+
+        [Test]
+        public void Next_FromTerminalAnswerNodeEndsDialogue()
+        {
+            var dialogue = new DialogueEntry { Name = "Terminal Answer" };
+            var start = new DialogueTextNodeData
+            {
+                IsStartNode = true,
+                UseOutputsAsChoices = true
+            };
+            var answer = new DialogueChoiceNodeData
+            {
+                ChoiceText = "Goodbye",
+                BodyText = "Safe travels."
+            };
+            dialogue.Graph.Nodes.Add(start);
+            dialogue.Graph.Nodes.Add(answer);
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = start.Id, ToNodeId = answer.Id, Order = 0 });
+
+            var player = new DialoguePlayer();
+
+            Assert.That(player.Start(dialogue), Is.True);
+            Assert.That(player.Choose(0), Is.True);
+            Assert.That(player.CurrentLineNode, Is.EqualTo(answer));
+            Assert.That(player.Next(), Is.False);
+            Assert.That(player.CurrentLineNode, Is.Null);
+        }
+
+        [Test]
         public void GraphUtility_DeleteNode_RemovesConnectedLinks()
         {
             var graph = new DialogueGraphData();
@@ -395,6 +651,43 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
+        public void ChoiceNodeClone_PreservesAnswerText()
+        {
+            var node = new DialogueChoiceNodeData
+            {
+                Title = "Answer",
+                ChoiceText = "Tell me more",
+                BodyText = "There is more to tell.",
+                LocalizationKey = "Conversation/Test/Entry/2/Dialogue Text",
+                LocalizedBodyText = new List<DialogueLocalizedTextEntry>
+                {
+                    new() { LanguageCode = "en", Text = "There is more to tell." }
+                },
+                VoiceKey = "answer.more",
+                SpeakerId = "speaker",
+                Condition = new ConditionData
+                {
+                    Type = ConditionType.VariableCheck,
+                    Key = "curious",
+                    Operator = "==",
+                    Value = "true"
+                }
+            };
+
+            var clone = (DialogueChoiceNodeData)node.Clone();
+
+            Assert.That(clone.ChoiceText, Is.EqualTo("Tell me more"));
+            Assert.That(clone.BodyText, Is.EqualTo("There is more to tell."));
+            Assert.That(clone.LocalizationKey, Is.EqualTo("Conversation/Test/Entry/2/Dialogue Text"));
+            Assert.That(clone.LocalizedBodyText[0].Text, Is.EqualTo("There is more to tell."));
+            Assert.That(clone.LocalizedBodyText[0], Is.Not.SameAs(node.LocalizedBodyText[0]));
+            Assert.That(clone.VoiceKey, Is.EqualTo("answer.more"));
+            Assert.That(clone.SpeakerId, Is.EqualTo("speaker"));
+            Assert.That(clone.Condition, Is.Not.SameAs(node.Condition));
+            Assert.That(clone.Condition.Key, Is.EqualTo("curious"));
+        }
+
+        [Test]
         public void CurrentSpeakerName_ResolvesExplicitSpeakerAndDefaultFallback()
         {
             var dialogue = new DialogueEntry
@@ -489,8 +782,17 @@ namespace NewDial.DialogueEditor.Tests
                     IsStartNode = true,
                     Position = new Vector2(12f, 34f)
                 };
+                var answer = new DialogueChoiceNodeData
+                {
+                    Title = "Answer",
+                    ChoiceText = "Show me",
+                    BodyText = "Here are the wares.",
+                    VoiceKey = "merchant.show",
+                    Position = new Vector2(320f, 34f)
+                };
 
                 dialogue.Graph.Nodes.Add(node);
+                dialogue.Graph.Nodes.Add(answer);
                 npc.Dialogues.Add(dialogue);
                 database.Npcs.Add(npc);
 
@@ -502,7 +804,11 @@ namespace NewDial.DialogueEditor.Tests
                 var restored = DialogueEditorAutosaveStore.TryLoadSnapshot(database, "autosave-test", root);
                 Assert.That(restored, Is.True);
                 Assert.That(database.Npcs, Has.Count.EqualTo(1));
-                Assert.That(database.Npcs[0].Dialogues[0].Graph.Nodes, Has.Count.EqualTo(1));
+                Assert.That(database.Npcs[0].Dialogues[0].Graph.Nodes, Has.Count.EqualTo(2));
+                var restoredAnswer = database.Npcs[0].Dialogues[0].Graph.Nodes.OfType<DialogueChoiceNodeData>().Single();
+                Assert.That(restoredAnswer.ChoiceText, Is.EqualTo("Show me"));
+                Assert.That(restoredAnswer.BodyText, Is.EqualTo("Here are the wares."));
+                Assert.That(restoredAnswer.VoiceKey, Is.EqualTo("merchant.show"));
             }
             finally
             {

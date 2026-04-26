@@ -31,37 +31,39 @@ namespace NewDial.DialogueEditor
         {
             var diagnostics = new List<DialogueChoiceFlowDiagnostic>();
             var graph = dialogue?.Graph;
-            if (graph == null || node == null || !node.UseOutputsAsChoices)
+            if (graph == null || node == null || !DialogueGraphUtility.UsesChoices(graph, node))
             {
                 return diagnostics;
             }
 
-            var links = graph.Links?
-                .Where(link => link != null && link.FromNodeId == node.Id)
-                .OrderBy(link => link.Order)
-                .ThenBy(link => link.Id)
-                .ToList() ?? new List<NodeLinkData>();
+            var links = DialogueGraphUtility.GetChoiceCandidateLinks(graph, node);
 
             if (links.Count == 0)
             {
                 diagnostics.Add(new DialogueChoiceFlowDiagnostic(
                     DialogueChoiceFlowSeverity.Error,
-                    DialogueEditorLocalization.Text("Choice node has no outgoing links.")));
+                    DialogueEditorLocalization.Text("Text node has no answers.")));
                 return diagnostics;
             }
 
             AddOrderingDiagnostics(diagnostics, links);
 
-            var reachableNodeIds = GetReachableTextNodeIds(dialogue);
+            var reachableNodeIds = GetReachableRuntimeNodeIds(dialogue);
             foreach (var link in links)
             {
-                var target = GetTextNode(graph, link.ToNodeId);
-                if (target == null)
+                var target = GetNode(graph, link.ToNodeId);
+                if (target == null || !DialogueGraphUtility.IsRuntimeNode(target))
                 {
                     diagnostics.Add(new DialogueChoiceFlowDiagnostic(
                         DialogueChoiceFlowSeverity.Error,
                         DialogueEditorLocalization.Text("Choice target is missing or invalid."),
                         link));
+                    continue;
+                }
+
+                if (target is DialogueChoiceNodeData choiceNode)
+                {
+                    AnalyzeChoiceNodeTarget(diagnostics, graph, reachableNodeIds, link, choiceNode);
                     continue;
                 }
 
@@ -84,9 +86,66 @@ namespace NewDial.DialogueEditor
                         DialogueEditorLocalization.Text("Choice target is not reachable from the dialogue start."),
                         link));
                 }
+
+                diagnostics.Add(new DialogueChoiceFlowDiagnostic(
+                    DialogueChoiceFlowSeverity.Warning,
+                    DialogueEditorLocalization.Text("Legacy answer link. Use Add Choice to create an answer node."),
+                    link));
             }
 
             return diagnostics;
+        }
+
+        private static void AnalyzeChoiceNodeTarget(
+            ICollection<DialogueChoiceFlowDiagnostic> diagnostics,
+            DialogueGraphData graph,
+            HashSet<string> reachableNodeIds,
+            NodeLinkData parentLink,
+            DialogueChoiceNodeData choiceNode)
+        {
+            if (string.IsNullOrWhiteSpace(choiceNode.ChoiceText))
+            {
+                diagnostics.Add(new DialogueChoiceFlowDiagnostic(
+                    DialogueChoiceFlowSeverity.Error,
+                    DialogueEditorLocalization.Text("Button text is empty."),
+                    parentLink));
+            }
+
+            var links = graph.Links?
+                .Where(link => link != null && link.FromNodeId == choiceNode.Id)
+                .OrderBy(link => link.Order)
+                .ThenBy(link => link.Id)
+                .ToList() ?? new List<NodeLinkData>();
+
+            if (reachableNodeIds.Count > 0 && !reachableNodeIds.Contains(choiceNode.Id))
+            {
+                diagnostics.Add(new DialogueChoiceFlowDiagnostic(
+                    DialogueChoiceFlowSeverity.Warning,
+                    DialogueEditorLocalization.Text("Choice target is not reachable from the dialogue start."),
+                    parentLink));
+            }
+
+            AddOrderingDiagnostics(diagnostics, links);
+            foreach (var link in links)
+            {
+                var target = GetNode(graph, link.ToNodeId);
+                if (target == null || !DialogueGraphUtility.IsRuntimeNode(target))
+                {
+                    diagnostics.Add(new DialogueChoiceFlowDiagnostic(
+                        DialogueChoiceFlowSeverity.Error,
+                        DialogueEditorLocalization.Text("Choice target is missing or invalid."),
+                        parentLink));
+                    continue;
+                }
+
+                if (reachableNodeIds.Count > 0 && !reachableNodeIds.Contains(target.Id))
+                {
+                    diagnostics.Add(new DialogueChoiceFlowDiagnostic(
+                        DialogueChoiceFlowSeverity.Warning,
+                        DialogueEditorLocalization.Text("Choice target is not reachable from the dialogue start."),
+                        parentLink));
+                }
+            }
         }
 
         private static void AddOrderingDiagnostics(
@@ -113,7 +172,7 @@ namespace NewDial.DialogueEditor
             }
         }
 
-        private static HashSet<string> GetReachableTextNodeIds(DialogueEntry dialogue)
+        private static HashSet<string> GetReachableRuntimeNodeIds(DialogueEntry dialogue)
         {
             var result = new HashSet<string>();
             var graph = dialogue?.Graph;
@@ -146,8 +205,11 @@ namespace NewDial.DialogueEditor
                     .ThenBy(link => link.Id) ?? Enumerable.Empty<NodeLinkData>();
                 foreach (var link in outgoingLinks)
                 {
-                    var target = GetTextNode(graph, link.ToNodeId);
-                    if (target != null && !string.IsNullOrWhiteSpace(target.Id) && !result.Contains(target.Id))
+                    var target = GetNode(graph, link.ToNodeId);
+                    if (target != null &&
+                        DialogueGraphUtility.IsRuntimeNode(target) &&
+                        !string.IsNullOrWhiteSpace(target.Id) &&
+                        !result.Contains(target.Id))
                     {
                         pending.Enqueue(target.Id);
                     }
@@ -157,14 +219,14 @@ namespace NewDial.DialogueEditor
             return result;
         }
 
-        private static DialogueTextNodeData GetTextNode(DialogueGraphData graph, string nodeId)
+        private static BaseNodeData GetNode(DialogueGraphData graph, string nodeId)
         {
             if (graph?.Nodes == null || string.IsNullOrWhiteSpace(nodeId))
             {
                 return null;
             }
 
-            return graph.Nodes.FirstOrDefault(node => node != null && node.Id == nodeId) as DialogueTextNodeData;
+            return graph.Nodes.FirstOrDefault(node => node != null && node.Id == nodeId);
         }
     }
 }

@@ -15,14 +15,19 @@
 - Added text-node localization keys, per-language body text storage, content-language switching, and TSV/CSV dialogue localization import/export tooling.
 - Added batch TSV/CSV localization import for selected conversations or all conversations in a loaded table.
 - Added saved, customizable palette shortcuts for creating graph nodes from the focused canvas.
+- Added visible answer nodes plus an `Add Choice` text-node action that creates playable `Text question -> Answer line` branches.
+- Added editable graph header titles for text, answer, function, scene, debug, and comment nodes.
+- Added inline graph editing for text-node body and answer-node button/body text.
 
 ### Changed
 
 - Dialogue editor can now be opened from `Tools/New Dial/Dialogue Editor` while retaining the existing `Window/New Dial/Dialogue Editor` entry point.
 - NPC, dialogue, and node identifiers can now be edited explicitly in the editor, with guarded generation actions and immediate empty/duplicate warnings.
 - Node identifier changes now update internal graph links that reference the old node id.
-- Choice-mode nodes now surface authoring diagnostics for missing outputs, broken targets, fallback labels, order conflicts, and unreachable choice targets.
-- Link `ChoiceText` fields now appear only when a text node uses outputs as choices.
+- Choice-mode nodes now surface authoring diagnostics for missing answers, broken targets, fallback labels, legacy answer links, order conflicts, and unreachable choice targets.
+- Choice text is now edited on answer nodes; answer nodes now show their own body text after `Choose()`, and legacy link-level `ChoiceText` remains readable for older direct-choice graphs.
+- Text nodes now automatically expose outgoing `Answer` nodes as choices even when the legacy `UseOutputsAsChoices` flag is off.
+- Single-clicking node headers and inline fields now selects for graph editing; double-clicking non-field node areas opens the details inspector.
 - Condition editing now uses guided operator choices, generic variable-check hints, and optional project-provided key suggestions.
 - Removed game-specific condition types (`QuestState`, `TrustLevel`, `Fact`, and `GlobalVariableCheck`); conditions now use generic `VariableCheck` or project-defined `Custom`.
 - Dialogue preview now includes test variables and explains blocked starts, unavailable choices, missing targets, branch ends, and fallback labels.
@@ -33,6 +38,7 @@
 - Graph canvas now uses a large, low-contrast grid slightly lighter than the canvas background.
 - Graph zoom now uses a single content zoom manipulator so node positions and relative layout no longer drift while changing scale.
 - Graph links are now slightly thicker, highlight subtly on hover, and can be removed with `Cmd`/`Ctrl` + left click on the link.
+- Graph links now use restrained smoothed curves instead of large S-shaped waves.
 - Graph link hover and click hit-testing now uses panel-space pointer coordinates so the interactive zone matches the visual link more closely.
 - `Cmd`/`Ctrl` + `Delete`/`Backspace` on the graph canvas now uses the same comment-delete prompt as plain `Delete`/`Backspace`.
 - Selected NPC and dialogue metadata in the project panel now uses compact inline rows instead of nested cards.
@@ -44,8 +50,12 @@
 - Cutting a selected root comment group removes the full nested hierarchy after copying it to the clipboard payload.
 - Native Unity undo/redo now covers node-scope graph edits, comment resize, link edits, and node inspector changes on both macOS (`Cmd+Z`) and Windows (`Ctrl+Z`).
 - Undo/redo now refreshes graph selection, preview sessions, and autosave dirty-state against the last saved database snapshot.
-- Text and executable nodes now select from any non-button part of the node while preserving lower-half link dragging.
-- Text node graph previews now keep the initial node width and wrap long uninterrupted text downward instead of expanding sideways.
+- Text, answer, executable, and comment nodes now edit their display title from the node header instead of a separate graph-body title field.
+- Editable node header titles now use a compact field background with hover/focus feedback.
+- Newly created graph nodes now get globally numbered default titles such as `Text Node_1` and `Answer_2`.
+- Text and answer nodes now select from any non-field part of the node while preserving lower-half link dragging outside inline editors.
+- Inline text and answer fields now soft-wrap visually, keep the initial node width, and grow downward without inserting automatic newline characters.
+- Graph node meta hints are now shorter and clipped cleanly inside node cards.
 - Scene node inspectors now write the first available Known Scene into an empty `SceneKey` instead of only showing it as the dropdown default.
 - The editor left dock now keeps the NPC/dialogue project area at a fixed height and shows the full compact node palette without palette scrolling.
 - Existing dialogues without speakers now receive a default speaker from their owning NPC when opened in the editor.
@@ -54,7 +64,8 @@
 - Text-node inspectors now keep the localization key near the bottom so core authoring fields stay prominent.
 - Text-node body fields now place the label above the multiline editor so the text box uses the full inspector width.
 - Text-node inspector checkboxes now align by using fixed-width wrapping labels.
-- Palette shortcuts now create nodes at the cursor when it is over the canvas or near the current viewport center otherwise, clamping them into view even if they overlap existing nodes.
+- Palette shortcuts now create nodes near the cursor when it is over the canvas or near the current viewport center otherwise, clamping them into view.
+- Palette shortcut node creation now searches nearby visible positions so new nodes do not spawn directly on top of existing nodes.
 - Palette shortcuts now create the first NPC and dialogue in an empty database before adding the requested node, matching palette drag/drop behavior.
 - The start window is now a compact floating launcher and no longer mentions cutscenes.
 - Localization import/export now lives in a collapsed advanced section of the unified dialogue launcher instead of a separate menu item.
@@ -66,19 +77,22 @@
 - Rich-text color slots now keep hex editing visible and include an inline circular color palette with a brightness gradient bar.
 - Rich-text color picker now uses a smoother color wheel edge and a brightness gradient bar.
 - Removed rich-text highlight authoring and `<mark>` support; highlight tags now render as unsupported plain text.
-- Localization imports update existing text-node data by `LocalizationKey` without rebuilding graph links, positions, executable nodes, conditions, speakers, or choice flags.
+- Localization imports update existing text-node and answer-node body data by `LocalizationKey` without rebuilding graph links, positions, executable nodes, conditions, speakers, or choice flags.
 - Localization imports now update existing dialogues by matching `Dialogue.Id` to the imported conversation id, creating only missing dialogues.
 - First-time localization imports now create a vertical top-to-bottom text-node chain instead of a horizontal row.
-- WASD graph panning now uses zoom-independent screen-space speed and clamps delayed editor ticks to avoid jumps on large graphs.
-- WASD graph panning now keeps a mouse-dragged selected node under the cursor instead of letting it drift during the drag.
-- WASD graph panning during node drag now uses a drag-start baseline to avoid snapping selected nodes back after keyboard pan.
+- WASD graph panning is restored for focused canvas navigation while remaining blocked during inline field editing.
+- WASD graph panning now clears movement state on focus changes, inline fields, mouse leave, and modifier-key combinations, and preserves the current zoom while panning, including left and diagonal movement on zoomed-out graphs.
+- WASD graph panning now consumes handled key events so Unity GraphView shortcuts such as `A` cannot trigger frame or zoom changes while navigating the canvas.
+- Inline Text and Answer node text boxes now apply soft wrapping directly to their UI Toolkit text input internals.
+- Palette shortcut rebinding now shows the compact `Press` prompt so it fits inside the shortcut pill.
+- Palette shortcut rebinding now cancels pending palette clicks so double-clicking a palette item does not also create that node.
 - Content-language choices now refresh after localization import, including when the editor UI language is Russian.
 - Where Used reference details are now collapsed by default in editor inspectors.
 - Rich-text previews now preserve visible spaces at formatting boundaries.
 
 ### Tests
 
-- Expanded `DialogueGraphViewTests` to cover empty-state visibility, nested comment ownership, direct parent resolution, nested group cutting, and focus-based keyboard pan behavior.
+- Expanded `DialogueGraphViewTests` to cover empty-state visibility, nested comment ownership, direct parent resolution, nested group cutting, and WASD focus recovery behavior.
 - Added undo/redo coverage for node creation, link changes, node movement, comment-group movement, comment resize, and grouped cut behavior.
 - Added `DialogueEditorWindowTests` for selection restoration, inspector refresh, and dirty/autosave reset after undo.
 - Added text-node voice-key clone and inspector editing coverage.
@@ -89,7 +103,7 @@
 - Added coverage for rich-text wrapping, sanitizing, stripping, parsing, user color-list persistence, inline color picking, strict color validation, inspector preview refresh, toolbar selection formatting, and graph preview rendering.
 - Added coverage for localization table parsing, first-import linear node creation/layout, repeat-import data-only updates, TSV export, and content-language editing.
 - Added coverage for batch localization import and Russian UI content-language refresh after import.
-- Added coverage for vertical localization import layout and smoothed WASD graph panning.
+- Added coverage for vertical localization import layout and WASD graph panning.
 
 ### Docs
 

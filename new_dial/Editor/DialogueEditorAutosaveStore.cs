@@ -291,6 +291,7 @@ namespace NewDial.DialogueEditor
             public string SpeakerId;
             public bool IsStartNode;
             public bool UseOutputsAsChoices;
+            public string ChoiceText;
             public Rect Area;
             public string Comment;
             public Color Tint;
@@ -329,6 +330,15 @@ namespace NewDial.DialogueEditor
                         snapshot.SpeakerId = textNode.SpeakerId;
                         snapshot.IsStartNode = textNode.IsStartNode;
                         snapshot.UseOutputsAsChoices = textNode.UseOutputsAsChoices;
+                        break;
+                    case DialogueChoiceNodeData choiceNode:
+                        snapshot.NodeType = nameof(DialogueChoiceNodeData);
+                        snapshot.ChoiceText = choiceNode.ChoiceText;
+                        snapshot.BodyText = choiceNode.BodyText;
+                        snapshot.LocalizationKey = choiceNode.LocalizationKey;
+                        snapshot.LocalizedBodyText = CloneLocalizedText(choiceNode.LocalizedBodyText);
+                        snapshot.VoiceKey = choiceNode.VoiceKey;
+                        snapshot.SpeakerId = choiceNode.SpeakerId;
                         break;
                     case CommentNodeData commentNode:
                         snapshot.NodeType = nameof(CommentNodeData);
@@ -380,6 +390,23 @@ namespace NewDial.DialogueEditor
                         Area = Area,
                         Comment = Comment,
                         Tint = Tint
+                    };
+                }
+
+                if (NodeType == nameof(DialogueChoiceNodeData))
+                {
+                    return new DialogueChoiceNodeData
+                    {
+                        Id = Id,
+                        Title = Title,
+                        Position = Position,
+                        Condition = Condition?.Clone() ?? new ConditionData(),
+                        ChoiceText = ChoiceText,
+                        BodyText = BodyText,
+                        LocalizationKey = LocalizationKey,
+                        LocalizedBodyText = CloneLocalizedText(LocalizedBodyText),
+                        VoiceKey = VoiceKey,
+                        SpeakerId = SpeakerId
                     };
                 }
 

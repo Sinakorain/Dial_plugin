@@ -342,9 +342,9 @@ namespace NewDial.DialogueEditor
             _restartButton.SetEnabled(true);
             _backButton.SetEnabled(_session.CanGoBack);
             _nextButton.SetEnabled(_session.CanAdvance);
-            _jumpButton.SetEnabled(_ownerWindow != null && _session.CurrentNode != null);
+            _jumpButton.SetEnabled(_ownerWindow != null && _session.CurrentLineNode != null);
 
-            if (_session.CurrentNode == null)
+            if (_session.CurrentLineNode == null)
             {
                 _statusLabel.text = _session.IsEnded
                     ? DialogueEditorLocalization.Text("Run complete. History remains above, and Back can rewind the latest action.")
@@ -366,18 +366,19 @@ namespace NewDial.DialogueEditor
             }
             else
             {
-                _statusLabel.text = _session.CurrentNode.UseOutputsAsChoices
+                _statusLabel.text = _session.CurrentLineNode is DialogueTextNodeData textNode &&
+                                    DialogueGraphUtility.UsesChoices(_dialogue?.Graph, textNode)
                     ? DialogueEditorLocalization.Text("Choice mode: pick a response below while the upper rail keeps the full conversation history.")
                     : DialogueEditorLocalization.Text("Linear mode: use Back and Next to move through the current run.");
                 _historyHintLabel.text = DialogueEditorLocalization.Text("Newest entries collect at the bottom, like a running case log.");
                 _currentNodeLabel.text = string.IsNullOrWhiteSpace(_session.CurrentSpeakerName)
-                    ? string.IsNullOrWhiteSpace(_session.CurrentNode.Title)
+                    ? string.IsNullOrWhiteSpace(_session.CurrentLineNode.Title)
                         ? DialogueEditorLocalization.Text("Untitled Node")
-                        : _session.CurrentNode.Title
+                        : _session.CurrentLineNode.Title
                     : _session.CurrentSpeakerName;
                 DialogueRichTextRenderer.SetText(
                     _bodyLabel,
-                    DialogueTextLocalizationUtility.GetBodyText(_session.CurrentNode, DialogueContentLanguageSettings.CurrentLanguageCode),
+                    DialogueTextLocalizationUtility.GetBodyText(_session.CurrentLineNode, DialogueContentLanguageSettings.CurrentLanguageCode),
                     DialogueEditorLocalization.Text("This node has no dialogue text yet."));
                 _bodyLabel.style.display = DisplayStyle.Flex;
                 _sceneEmptyLabel.style.display = DisplayStyle.None;

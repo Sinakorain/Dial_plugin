@@ -12,7 +12,7 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
-        public void Analyze_ReportsNoOutgoingLinksForChoiceNode()
+        public void Analyze_ReportsNoAnswersForChoiceModeTextNode()
         {
             var dialogue = new DialogueEntry();
             var node = new DialogueTextNodeData
@@ -26,7 +26,7 @@ namespace NewDial.DialogueEditor.Tests
 
             Assert.That(diagnostics.Any(diagnostic =>
                 diagnostic.Severity == DialogueChoiceFlowSeverity.Error &&
-                diagnostic.Message == "Choice node has no outgoing links."), Is.True);
+                diagnostic.Message == "Text node has no answers."), Is.True);
         }
 
         [Test]
@@ -66,6 +66,58 @@ namespace NewDial.DialogueEditor.Tests
             Assert.That(diagnostics.Any(diagnostic =>
                 diagnostic.Severity == DialogueChoiceFlowSeverity.Error &&
                 diagnostic.Message == "Choice text and target title are both empty."), Is.True);
+            Assert.That(diagnostics.Any(diagnostic =>
+                diagnostic.Severity == DialogueChoiceFlowSeverity.Warning &&
+                diagnostic.Message == "Legacy answer link. Use Add Choice to create an answer node."), Is.True);
+        }
+
+        [Test]
+        public void Analyze_ReportsAnswerNodeTextButAllowsTerminalAnswerNodes()
+        {
+            var dialogue = new DialogueEntry();
+            var parent = new DialogueTextNodeData
+            {
+                IsStartNode = true
+            };
+            var answer = new DialogueChoiceNodeData { ChoiceText = string.Empty };
+            dialogue.Graph.Nodes.Add(parent);
+            dialogue.Graph.Nodes.Add(answer);
+            dialogue.Graph.Links.Add(new NodeLinkData
+            {
+                FromNodeId = parent.Id,
+                ToNodeId = answer.Id,
+                Order = 0
+            });
+
+            var diagnostics = DialogueChoiceFlowDiagnostics.Analyze(dialogue, parent);
+
+            Assert.That(diagnostics.Any(diagnostic =>
+                diagnostic.Severity == DialogueChoiceFlowSeverity.Error &&
+                diagnostic.Message == "Button text is empty."), Is.True);
+            Assert.That(diagnostics.Any(diagnostic =>
+                diagnostic.Message == "Answer node has no target."), Is.False);
+        }
+
+        [Test]
+        public void Analyze_ReportsAnswerNodeInvalidOutgoingTarget()
+        {
+            var dialogue = new DialogueEntry();
+            var parent = new DialogueTextNodeData
+            {
+                IsStartNode = true,
+                UseOutputsAsChoices = true
+            };
+            var answer = new DialogueChoiceNodeData { ChoiceText = "Continue" };
+            dialogue.Graph.Nodes.Add(parent);
+            dialogue.Graph.Nodes.Add(answer);
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = parent.Id, ToNodeId = answer.Id, Order = 0 });
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = answer.Id, ToNodeId = "missing-target", Order = 0 });
+
+            var diagnostics = DialogueChoiceFlowDiagnostics.Analyze(dialogue, parent);
+
+            Assert.That(diagnostics.Any(diagnostic =>
+                diagnostic.Severity == DialogueChoiceFlowSeverity.Error &&
+                diagnostic.Message == "Choice target is missing or invalid."), Is.True);
         }
 
         [Test]

@@ -301,7 +301,128 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
-        public void CreateNodeFromPaletteShortcut_AllowsOverlapAtFallbackPoint()
+        public void CreateNodes_AssignsGlobalNumberedDefaultTitles()
+        {
+            var graph = new DialogueGraphData();
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+
+            view.CreateTextNode(new Vector2(100f, 100f));
+            view.CreateFunctionNode(new Vector2(420f, 100f));
+            view.CreateSceneNode(new Vector2(740f, 100f));
+            view.CreateDebugNode(new Vector2(1060f, 100f));
+            view.CreateCommentNode(new Vector2(1380f, 100f));
+            view.CreateChoiceNode(new Vector2(1700f, 100f));
+
+            Assert.That(graph.Nodes[0].Title, Is.EqualTo("Text Node_1"));
+            Assert.That(graph.Nodes[1].Title, Is.EqualTo("Function_2"));
+            Assert.That(graph.Nodes[2].Title, Is.EqualTo("Scene_3"));
+            Assert.That(graph.Nodes[3].Title, Is.EqualTo("Debug_4"));
+            Assert.That(graph.Nodes[4].Title, Is.EqualTo("Comment_5"));
+            Assert.That(graph.Nodes[5].Title, Is.EqualTo("Answer_6"));
+        }
+
+        [Test]
+        public void CreateChoiceNode_AddsRenderableAnswerNode()
+        {
+            var graph = new DialogueGraphData();
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+
+            view.CreateChoiceNode(new Vector2(100f, 100f));
+
+            Assert.That(graph.Nodes.OfType<DialogueChoiceNodeData>(), Has.Count.EqualTo(1));
+            Assert.That(view.graphElements.OfType<DialogueExecutableNodeView>(), Has.Count.EqualTo(1));
+        }
+
+        [Test]
+        public void CreateChoiceBranch_CreatesOnlyPlayableAnswerNode()
+        {
+            var graph = new DialogueGraphData();
+            var start = new DialogueTextNodeData { Title = "Question" };
+            graph.Nodes.Add(start);
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+
+            view.CreateChoiceBranch(start);
+
+            var answer = graph.Nodes.OfType<DialogueChoiceNodeData>().Single();
+            Assert.That(start.UseOutputsAsChoices, Is.True);
+            Assert.That(answer.Title, Is.EqualTo("Answer_2"));
+            Assert.That(graph.Nodes.OfType<DialogueTextNodeData>(), Has.Count.EqualTo(1));
+            Assert.That(graph.Links, Has.Count.EqualTo(1));
+            Assert.That(graph.Links[0].FromNodeId, Is.EqualTo(start.Id));
+            Assert.That(graph.Links[0].ToNodeId, Is.EqualTo(answer.Id));
+        }
+
+        [Test]
+        public void AnswerNodeVisuals_EditButtonTextAndBodyInline()
+        {
+            var graph = new DialogueGraphData();
+            var answer = new DialogueChoiceNodeData
+            {
+                Title = "Answer",
+                ChoiceText = "Ask",
+                BodyText = "What happened?"
+            };
+            graph.Nodes.Add(answer);
+            var view = new DialogueGraphView();
+            view.SpeakerNameResolver = _ => "NPC 1";
+            view.LoadGraph(graph);
+
+            var nodeView = view.graphElements.OfType<DialogueExecutableNodeView>().Single();
+            var titleField = nodeView.Q<TextField>("runtime-node-header-title-field");
+            var buttonField = nodeView.Q<TextField>("answer-node-inline-button-text-field");
+            var bodyField = nodeView.Q<TextField>("answer-node-inline-body-field");
+            var metaLabel = nodeView.Q<Label>(className: "dialogue-node__meta");
+            Assert.That(titleField, Is.Not.Null);
+            Assert.That(buttonField, Is.Not.Null);
+            Assert.That(bodyField, Is.Not.Null);
+            Assert.That(metaLabel, Is.Not.Null);
+            Assert.That(titleField.value, Is.EqualTo("Answer"));
+            Assert.That(buttonField.value, Is.EqualTo("Ask"));
+            Assert.That(bodyField.value, Is.EqualTo("What happened?"));
+            Assert.That(metaLabel.text, Is.EqualTo("NPC 1 | No next"));
+
+            titleField.value = "Answer Header";
+            buttonField.value = "Ask about work";
+            bodyField.value = "The mill needs help.";
+            Assert.That(answer.Title, Is.EqualTo("Answer Header"));
+            Assert.That(answer.ChoiceText, Is.EqualTo("Ask about work"));
+            Assert.That(answer.BodyText, Is.EqualTo("The mill needs help."));
+            Assert.That(nodeView.GetPosition().width, Is.EqualTo(DialogueGraphView.TextNodeInitialSize.x));
+        }
+
+        [Test]
+        public void AnswerNodeVisuals_LongButtonTextSoftWrapsWithoutStoredNewlines()
+        {
+            var graph = new DialogueGraphData();
+            var longButtonText = new string('a', 90);
+            var answer = new DialogueChoiceNodeData
+            {
+                Title = "Answer",
+                ChoiceText = longButtonText,
+                BodyText = "Body"
+            };
+            graph.Nodes.Add(answer);
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+
+            var nodeView = view.graphElements.OfType<DialogueExecutableNodeView>().Single();
+            var buttonField = nodeView.Q<TextField>("answer-node-inline-button-text-field");
+
+            Assert.That(buttonField, Is.Not.Null);
+            Assert.That(buttonField.multiline, Is.True);
+            Assert.That(buttonField.style.whiteSpace.value, Is.EqualTo(WhiteSpace.Normal));
+            Assert.That(buttonField.value, Is.EqualTo(longButtonText));
+            Assert.That(answer.ChoiceText, Is.EqualTo(longButtonText));
+            Assert.That(answer.ChoiceText, Does.Not.Contain("\n"));
+            Assert.That(nodeView.GetPosition().width, Is.EqualTo(DialogueGraphView.TextNodeInitialSize.x));
+            Assert.That(nodeView.GetPosition().height, Is.GreaterThanOrEqualTo(DialogueGraphView.TextNodeInitialSize.y));
+        }
+
+        [Test]
+        public void CreateNodeFromPaletteShortcut_OffsetsFromOccupiedFallbackPoint()
         {
             var graph = new DialogueGraphData();
             var existingNode = new DialogueTextNodeData
@@ -317,7 +438,11 @@ namespace NewDial.DialogueEditor.Tests
 
             var createdNode = graph.Nodes.OfType<DialogueTextNodeData>().Last();
             Assert.That(createdNode.Id, Is.Not.EqualTo(existingNode.Id));
-            Assert.That(createdNode.Position, Is.EqualTo(existingNode.Position));
+            Assert.That(createdNode.Position, Is.Not.EqualTo(existingNode.Position));
+            Assert.That(
+                new Rect(createdNode.Position, DialogueGraphView.TextNodeInitialSize)
+                    .Overlaps(new Rect(existingNode.Position, DialogueGraphView.TextNodeInitialSize)),
+                Is.False);
         }
 
         [Test]
@@ -329,6 +454,53 @@ namespace NewDial.DialogueEditor.Tests
                 new Rect(0f, 0f, 1000f, 800f));
 
             Assert.That(clamped, Is.EqualTo(new Vector2(720f, 630f)));
+        }
+
+        [Test]
+        public void PaletteShortcutPlacement_FindsVisibleOffsetAroundOccupiedPosition()
+        {
+            var size = DialogueGraphView.TextNodeInitialSize;
+            var occupied = new[]
+            {
+                new Rect(new Vector2(360f, 300f), size)
+            };
+
+            var placement = DialogueGraphView.FindVisibleNonOverlappingPaletteShortcutPlacement(
+                new Vector2(360f, 300f),
+                size,
+                new Rect(0f, 0f, 1000f, 800f),
+                occupied);
+
+            var placementRect = new Rect(placement, size);
+            Assert.That(placementRect.Overlaps(occupied[0]), Is.False);
+            Assert.That(placementRect.xMin, Is.GreaterThanOrEqualTo(0f));
+            Assert.That(placementRect.yMin, Is.GreaterThanOrEqualTo(0f));
+            Assert.That(placementRect.xMax, Is.LessThanOrEqualTo(1000f));
+            Assert.That(placementRect.yMax, Is.LessThanOrEqualTo(800f));
+        }
+
+        [Test]
+        public void PaletteShortcutPlacement_NearViewportEdgeOffsetsInVisibleDirection()
+        {
+            var size = DialogueGraphView.TextNodeInitialSize;
+            var preferred = new Vector2(720f, 630f);
+            var occupied = new[]
+            {
+                new Rect(preferred, size)
+            };
+
+            var placement = DialogueGraphView.FindVisibleNonOverlappingPaletteShortcutPlacement(
+                preferred,
+                size,
+                new Rect(0f, 0f, 1000f, 800f),
+                occupied);
+
+            var placementRect = new Rect(placement, size);
+            Assert.That(placementRect.Overlaps(occupied[0]), Is.False);
+            Assert.That(placementRect.xMin, Is.GreaterThanOrEqualTo(0f));
+            Assert.That(placementRect.yMin, Is.GreaterThanOrEqualTo(0f));
+            Assert.That(placementRect.xMax, Is.LessThanOrEqualTo(1000f));
+            Assert.That(placementRect.yMax, Is.LessThanOrEqualTo(800f));
         }
 
         [Test]
@@ -367,6 +539,248 @@ namespace NewDial.DialogueEditor.Tests
 
             Assert.That(view.selection, Does.Contain(nodeView));
             Assert.That(selected, Is.SameAs(node));
+        }
+
+        [Test]
+        public void RuntimeNodeDoubleClickRequestsInspectorButSingleClickOnlySelects()
+        {
+            var graph = new DialogueGraphData();
+            var node = new DialogueTextNodeData { Title = "Selectable" };
+            graph.Nodes.Add(node);
+
+            var view = new DialogueGraphView();
+            BaseNodeData requested = null;
+            view.NodeInspectorRequestedAction = nodeData => requested = nodeData;
+            view.LoadGraph(graph);
+            var nodeView = view.graphElements.OfType<DialogueTextNodeView>().Single();
+            var titleField = nodeView.Q<TextField>("text-node-header-title-field");
+
+            SendMouseDown(titleField, 1);
+            Assert.That(requested, Is.Null);
+
+            SendMouseDown(nodeView, 1);
+            Assert.That(requested, Is.Null);
+
+            SendMouseDown(nodeView, 2);
+            Assert.That(requested, Is.SameAs(node));
+        }
+
+        [Test]
+        public void InlineTitleAndTextFields_DoNotStartLinkDrag()
+        {
+            var graph = new DialogueGraphData();
+            var node = new DialogueTextNodeData { Title = "Source", BodyText = "Body" };
+            graph.Nodes.Add(node);
+
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+            var nodeView = view.graphElements.OfType<DialogueTextNodeView>().Single();
+            var titleField = nodeView.Q<TextField>("text-node-header-title-field");
+            var bodyField = nodeView.Q<TextField>("text-node-inline-body-field");
+
+            SendMouseDown(titleField, 1);
+            Assert.That(view.IsLinkDragActiveForTests, Is.False);
+
+            SendMouseDown(bodyField, 1);
+            Assert.That(view.IsLinkDragActiveForTests, Is.False);
+        }
+
+        [Test]
+        public void InlineTextFieldWASD_DoesNotPanCanvas()
+        {
+            var graph = new DialogueGraphData();
+            var node = new DialogueTextNodeData { Title = "Source", BodyText = "Body" };
+            graph.Nodes.Add(node);
+
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+            view.FocusCanvas();
+            var nodeView = view.graphElements.OfType<DialogueTextNodeView>().Single();
+            var bodyField = nodeView.Q<TextField>("text-node-inline-body-field");
+
+            SendKeyDown(bodyField, KeyCode.W);
+            view.StepKeyboardPan(1f);
+
+            Assert.That(view.viewTransform.position.y, Is.EqualTo(0f));
+        }
+
+        [Test]
+        public void WasdKeyDown_OnFocusedCanvas_StartsGraphPan()
+        {
+            var view = new DialogueGraphView();
+            view.LoadGraph(new DialogueGraphData());
+            view.FocusCanvas();
+            view.UpdateViewTransform(Vector3.zero, Vector3.one * 0.5f);
+            var initialScale = view.viewTransform.scale;
+
+            SendKeyDown(view, KeyCode.W);
+            view.StepKeyboardPan(1f);
+
+            Assert.That(view.viewTransform.position.y, Is.GreaterThan(0f));
+            Assert.That(view.viewTransform.scale, Is.EqualTo(initialScale));
+        }
+
+        [Test]
+        public void WasdRepeatedKeyDown_DoesNotChangeZoom()
+        {
+            var view = new DialogueGraphView();
+            view.LoadGraph(new DialogueGraphData());
+            view.FocusCanvas();
+            view.UpdateViewTransform(Vector3.zero, Vector3.one * 1.75f);
+            var initialScale = view.viewTransform.scale;
+
+            SendKeyDown(view, KeyCode.W);
+            SendKeyDown(view, KeyCode.W);
+            view.StepKeyboardPan(1f);
+            view.StepKeyboardPan(1f);
+
+            Assert.That(view.viewTransform.position.y, Is.GreaterThan(0f));
+            Assert.That(view.viewTransform.scale, Is.EqualTo(initialScale));
+        }
+
+        [Test]
+        public void WasdLeft_OnZoomedOutCanvas_PansWithoutChangingZoom()
+        {
+            var view = new DialogueGraphView();
+            view.LoadGraph(new DialogueGraphData());
+            view.FocusCanvas();
+            view.UpdateViewTransform(Vector3.zero, Vector3.one * 0.5f);
+            var initialScale = view.viewTransform.scale;
+
+            var keyState = SendKeyDownWithState(view, KeyCode.A);
+            view.StepKeyboardPan(1f);
+
+            Assert.That(keyState.DefaultPrevented, Is.True);
+            Assert.That(keyState.ImmediatePropagationStopped, Is.True);
+            Assert.That(view.viewTransform.position.x, Is.GreaterThan(0f));
+            Assert.That(view.viewTransform.scale, Is.EqualTo(initialScale));
+        }
+
+        [Test]
+        public void WasdLeftDown_OnZoomedOutCanvas_PansDiagonallyWithoutChangingZoom()
+        {
+            var view = new DialogueGraphView();
+            view.LoadGraph(new DialogueGraphData());
+            view.FocusCanvas();
+            view.UpdateViewTransform(Vector3.zero, Vector3.one * 0.5f);
+            var initialScale = view.viewTransform.scale;
+
+            var leftKeyState = SendKeyDownWithState(view, KeyCode.A);
+            var downKeyState = SendKeyDownWithState(view, KeyCode.S);
+            view.StepKeyboardPan(1f);
+            view.StepKeyboardPan(1f);
+
+            Assert.That(leftKeyState.DefaultPrevented, Is.True);
+            Assert.That(downKeyState.DefaultPrevented, Is.True);
+            Assert.That(view.viewTransform.position.x, Is.GreaterThan(0f));
+            Assert.That(view.viewTransform.position.y, Is.LessThan(0f));
+            Assert.That(view.viewTransform.scale, Is.EqualTo(initialScale));
+        }
+
+        [Test]
+        public void WasdLeftRepeatedKeyDown_OnZoomedOutCanvas_DoesNotChangeZoom()
+        {
+            var view = new DialogueGraphView();
+            view.LoadGraph(new DialogueGraphData());
+            view.FocusCanvas();
+            view.UpdateViewTransform(Vector3.zero, Vector3.one * 0.5f);
+            var initialScale = view.viewTransform.scale;
+
+            var firstKeyState = SendKeyDownWithState(view, KeyCode.A);
+            var secondKeyState = SendKeyDownWithState(view, KeyCode.A);
+            view.StepKeyboardPan(1f);
+            view.StepKeyboardPan(1f);
+
+            Assert.That(firstKeyState.DefaultPrevented, Is.True);
+            Assert.That(secondKeyState.DefaultPrevented, Is.True);
+            Assert.That(view.viewTransform.position.x, Is.GreaterThan(0f));
+            Assert.That(view.viewTransform.scale, Is.EqualTo(initialScale));
+        }
+
+        [Test]
+        public void WasdLeftKeyUp_AfterZoomedOutPan_StopsFurtherMovement()
+        {
+            var view = new DialogueGraphView();
+            view.LoadGraph(new DialogueGraphData());
+            view.FocusCanvas();
+            view.UpdateViewTransform(Vector3.zero, Vector3.one * 0.5f);
+            var initialScale = view.viewTransform.scale;
+
+            SendKeyDown(view, KeyCode.A);
+            view.StepKeyboardPan(1f);
+            var panAfterKeyDown = view.viewTransform.position.x;
+
+            var keyState = SendKeyUpWithState(view, KeyCode.A);
+            view.StepKeyboardPan(1f);
+
+            Assert.That(keyState.DefaultPrevented, Is.True);
+            Assert.That(keyState.ImmediatePropagationStopped, Is.True);
+            Assert.That(panAfterKeyDown, Is.GreaterThan(0f));
+            Assert.That(view.viewTransform.position.x, Is.EqualTo(panAfterKeyDown).Within(0.01f));
+            Assert.That(view.viewTransform.scale, Is.EqualTo(initialScale));
+        }
+
+        [TestCase(EventModifiers.Alt)]
+        [TestCase(EventModifiers.Command)]
+        [TestCase(EventModifiers.Control)]
+        [TestCase(EventModifiers.Shift)]
+        public void WasdWithModifiers_ClearsMovementStateConsumesEventAndDoesNotPan(EventModifiers modifiers)
+        {
+            var view = new DialogueGraphView();
+            view.LoadGraph(new DialogueGraphData());
+            view.FocusCanvas();
+            view.SetMovementKeyState(KeyCode.W, true);
+
+            var keyState = SendKeyDownWithState(view, KeyCode.W, modifiers);
+            view.StepKeyboardPan(1f);
+
+            Assert.That(keyState.DefaultPrevented, Is.True);
+            Assert.That(keyState.ImmediatePropagationStopped, Is.True);
+            Assert.That(view.viewTransform.position.y, Is.EqualTo(0f));
+        }
+
+        [Test]
+        public void WasdKeyDown_AfterInlineFieldFocus_ReturnsWhenCanvasFocuses()
+        {
+            var graph = new DialogueGraphData();
+            var node = new DialogueTextNodeData { Title = "Source", BodyText = "Body" };
+            graph.Nodes.Add(node);
+
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+            view.FocusCanvas();
+            var nodeView = view.graphElements.OfType<DialogueTextNodeView>().Single();
+            var bodyField = nodeView.Q<TextField>("text-node-inline-body-field");
+
+            SendKeyDown(bodyField, KeyCode.W);
+            view.StepKeyboardPan(1f);
+            Assert.That(view.viewTransform.position.y, Is.EqualTo(0f));
+
+            view.FocusCanvas();
+            SendKeyDown(view, KeyCode.W);
+            view.StepKeyboardPan(1f);
+
+            Assert.That(view.viewTransform.position.y, Is.GreaterThan(0f));
+        }
+
+        [Test]
+        public void WasdKeyUp_FromInlineFieldClearsMovementState()
+        {
+            var graph = new DialogueGraphData();
+            var node = new DialogueTextNodeData { Title = "Source", BodyText = "Body" };
+            graph.Nodes.Add(node);
+
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+            view.FocusCanvas();
+            view.SetMovementKeyState(KeyCode.W, true);
+            var nodeView = view.graphElements.OfType<DialogueTextNodeView>().Single();
+            var bodyField = nodeView.Q<TextField>("text-node-inline-body-field");
+
+            SendKeyUp(bodyField, KeyCode.W);
+            view.StepKeyboardPan(1f);
+
+            Assert.That(view.viewTransform.position.y, Is.EqualTo(0f));
         }
 
         [Test]
@@ -424,7 +838,7 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
-        public void TextNodeVisuals_SanitizeRichTextBodyPreview()
+        public void TextNodeVisuals_ShowEditableHeaderTitleAndInlineBody()
         {
             var graph = new DialogueGraphData();
             var node = new DialogueTextNodeData
@@ -438,21 +852,105 @@ namespace NewDial.DialogueEditor.Tests
             view.LoadGraph(graph);
             var nodeView = view.graphElements.OfType<DialogueTextNodeView>().Single();
 
-            var preview = nodeView.Q<VisualElement>(className: "dialogue-node__body-preview");
-            Assert.That(preview, Is.Not.Null);
-            var runs = preview.Query<Label>(className: "dialogue-rich-text-run").ToList();
-            Assert.That(string.Concat(runs.Select(label => label.text.Replace('\u00A0', ' '))),
-                Is.EqualTo("Hello friend green <mark=#FFE06680>clue</mark>"));
-            Assert.That(runs, Has.Count.GreaterThanOrEqualTo(3));
-            Assert.That(runs[0].text, Is.EqualTo("Hello\u00A0"));
-            Assert.That(runs.Any(label => label.text == "green" && label.style.color.value == new Color(0f, 1f, 0f, 1f)), Is.True);
-            Assert.That(runs.Any(label => label.text.Contains("<mark=#FFE06680>clue</mark>")), Is.True);
-            Assert.That(runs
-                .Any(label => label.text == "friend" && label.style.unityFontStyleAndWeight.value == FontStyle.Bold), Is.True);
+            var bodyTitleField = nodeView.Q<TextField>("text-node-inline-title-field");
+            var titleField = nodeView.Q<TextField>("text-node-header-title-field");
+            var bodyField = nodeView.Q<TextField>("text-node-inline-body-field");
+            Assert.That(bodyTitleField, Is.Null);
+            Assert.That(titleField, Is.Not.Null);
+            Assert.That(titleField.ClassListContains("dialogue-node__header-title-field"), Is.True);
+            Assert.That(bodyField, Is.Not.Null);
+            Assert.That(titleField.value, Is.EqualTo("Rich"));
+            Assert.That(bodyField.value, Is.EqualTo("Hello <b>friend</b> <color=#00ff00>green</color> <mark=#FFE06680>clue</mark>"));
+
+            titleField.value = "Updated";
+            bodyField.value = "Updated <b>body</b>";
+            Assert.That(node.Title, Is.EqualTo("Updated"));
+            Assert.That(node.BodyText, Is.EqualTo("Updated <b>body</b>"));
         }
 
         [Test]
-        public void TextNodeVisuals_InsertSoftBreaksForLongPreviewWords()
+        public void TextNodeVisuals_AnswerLinkWithoutChoiceModeShowsAnswerSummary()
+        {
+            var graph = new DialogueGraphData();
+            var node = new DialogueTextNodeData
+            {
+                Title = "Question"
+            };
+            var answer = new DialogueChoiceNodeData
+            {
+                ChoiceText = "Ask"
+            };
+            graph.Nodes.Add(node);
+            graph.Nodes.Add(answer);
+            graph.Links.Add(new NodeLinkData { FromNodeId = node.Id, ToNodeId = answer.Id, Order = 0 });
+
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+
+            var nodeView = view.graphElements.OfType<DialogueTextNodeView>().Single();
+            var metaLabel = nodeView.Q<Label>(className: "dialogue-node__meta");
+
+            Assert.That(metaLabel, Is.Not.Null);
+            Assert.That(metaLabel.text, Is.EqualTo("1 answer"));
+        }
+
+        [Test]
+        public void RuntimeNodeHeaderTitleEdits_AllExecutableTypes()
+        {
+            var graph = new DialogueGraphData();
+            var nodes = new BaseNodeData[]
+            {
+                new FunctionNodeData { Title = "Function" },
+                new SceneNodeData { Title = "Scene" },
+                new DebugNodeData { Title = "Debug" }
+            };
+            graph.Nodes.AddRange(nodes);
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+
+            foreach (var node in nodes)
+            {
+                var nodeView = view.graphElements
+                    .OfType<DialogueExecutableNodeView>()
+                    .Single(element => element.Data.Id == node.Id);
+                var titleField = nodeView.Q<TextField>("runtime-node-header-title-field");
+
+                Assert.That(titleField, Is.Not.Null);
+                Assert.That(titleField.value, Is.EqualTo(node.Title));
+
+                titleField.value = $"{node.Title} Updated";
+
+                Assert.That(node.Title, Does.EndWith(" Updated"));
+            }
+        }
+
+        [Test]
+        public void CommentNodeVisuals_EditHeaderTitleInline()
+        {
+            var graph = new DialogueGraphData();
+            var comment = new CommentNodeData
+            {
+                Title = "Group",
+                Position = new Vector2(100f, 100f),
+                Area = new Rect(100f, 100f, 420f, 260f)
+            };
+            graph.Nodes.Add(comment);
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+
+            var commentView = view.graphElements.OfType<DialogueCommentNodeView>().Single();
+            var titleField = commentView.Q<TextField>("comment-node-header-title-field");
+
+            Assert.That(titleField, Is.Not.Null);
+            Assert.That(titleField.value, Is.EqualTo("Group"));
+
+            titleField.value = "Updated Group";
+
+            Assert.That(comment.Title, Is.EqualTo("Updated Group"));
+        }
+
+        [Test]
+        public void TextNodeVisuals_LongInlineBodyGrowsDownWithoutChangingWidth()
         {
             var graph = new DialogueGraphData();
             var longWord = new string('a', 80);
@@ -467,12 +965,15 @@ namespace NewDial.DialogueEditor.Tests
             view.LoadGraph(graph);
             var nodeView = view.graphElements.OfType<DialogueTextNodeView>().Single();
 
-            var preview = nodeView.Q<VisualElement>(className: "dialogue-node__body-preview");
-            Assert.That(preview, Is.Not.Null);
-            var previewText = string.Concat(preview.Query<Label>(className: "dialogue-rich-text-run").ToList().Select(label => label.text));
-
-            Assert.That(previewText, Does.Contain("\u200B"));
+            var bodyField = nodeView.Q<TextField>("text-node-inline-body-field");
+            Assert.That(bodyField, Is.Not.Null);
+            Assert.That(bodyField.multiline, Is.True);
+            Assert.That(bodyField.style.whiteSpace.value, Is.EqualTo(WhiteSpace.Normal));
+            Assert.That(bodyField.value, Is.EqualTo(longWord));
+            Assert.That(nodeView.GetPosition().width, Is.EqualTo(DialogueGraphView.TextNodeInitialSize.x));
+            Assert.That(nodeView.GetPosition().height, Is.GreaterThanOrEqualTo(DialogueGraphView.TextNodeInitialSize.y));
             Assert.That(node.BodyText, Is.EqualTo(longWord));
+            Assert.That(node.BodyText, Does.Not.Contain("\n"));
         }
 
         [Test]
@@ -1511,6 +2012,96 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
+        public void EdgeGeometry_NearVerticalLinkUsesStraightControls()
+        {
+            var graph = new DialogueGraphData();
+            var source = new DialogueTextNodeData
+            {
+                Title = "Source",
+                Position = new Vector2(100f, 100f)
+            };
+            var target = new DialogueTextNodeData
+            {
+                Title = "Target",
+                Position = new Vector2(112f, 420f)
+            };
+            graph.Nodes.Add(source);
+            graph.Nodes.Add(target);
+            graph.Links.Add(new NodeLinkData { FromNodeId = source.Id, ToNodeId = target.Id, Order = 0 });
+
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+
+            var geometry = view.GetEdgeGeometriesForTests().Single();
+
+            Assert.That(Mathf.Abs(geometry.End.x - geometry.Start.x), Is.LessThanOrEqualTo(36f));
+            Assert.That(geometry.ControlA.x, Is.EqualTo(geometry.Start.x).Within(0.01f));
+            Assert.That(geometry.ControlB.x, Is.EqualTo(geometry.End.x).Within(0.01f));
+            Assert.That(geometry.ControlA.y, Is.InRange(geometry.Start.y, geometry.End.y));
+            Assert.That(geometry.ControlB.y, Is.InRange(geometry.Start.y, geometry.End.y));
+        }
+
+        [Test]
+        public void EdgeGeometry_DiagonalLinkKeepsControlsBetweenEndpoints()
+        {
+            var graph = new DialogueGraphData();
+            var source = new DialogueTextNodeData
+            {
+                Title = "Source",
+                Position = new Vector2(100f, 100f)
+            };
+            var target = new DialogueTextNodeData
+            {
+                Title = "Target",
+                Position = new Vector2(780f, 460f)
+            };
+            graph.Nodes.Add(source);
+            graph.Nodes.Add(target);
+            graph.Links.Add(new NodeLinkData { FromNodeId = source.Id, ToNodeId = target.Id, Order = 0 });
+
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+
+            var geometry = view.GetEdgeGeometriesForTests().Single();
+
+            Assert.That(geometry.ControlA.x, Is.InRange(geometry.Start.x, geometry.End.x));
+            Assert.That(geometry.ControlB.x, Is.InRange(geometry.Start.x, geometry.End.x));
+            Assert.That(geometry.ControlA.y, Is.InRange(geometry.Start.y, geometry.End.y));
+            Assert.That(geometry.ControlB.y, Is.InRange(geometry.Start.y, geometry.End.y));
+            Assert.That(geometry.ControlA.x, Is.LessThan(geometry.ControlB.x));
+            Assert.That(geometry.ControlA.y, Is.LessThan(geometry.ControlB.y));
+        }
+
+        [Test]
+        public void LinkHitTesting_UsesSmoothedEdgeControls()
+        {
+            var graph = new DialogueGraphData();
+            var source = new DialogueTextNodeData
+            {
+                Title = "Source",
+                Position = new Vector2(100f, 100f)
+            };
+            var target = new DialogueTextNodeData
+            {
+                Title = "Target",
+                Position = new Vector2(780f, 460f)
+            };
+            var link = new NodeLinkData { FromNodeId = source.Id, ToNodeId = target.Id, Order = 0 };
+            graph.Nodes.Add(source);
+            graph.Nodes.Add(target);
+            graph.Links.Add(link);
+
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+            var geometry = view.GetEdgeGeometriesForTests().Single();
+            var sample = EvaluateBezierForTests(geometry.Start, geometry.ControlA, geometry.ControlB, geometry.End, 0.25f) +
+                         view.EdgeLayerCanvasBoundsForTests.position;
+
+            Assert.That(view.UpdateHoveredLinkForTests(sample), Is.True);
+            Assert.That(view.HoveredLinkIdForTests, Is.EqualTo(link.Id));
+        }
+
+        [Test]
         public void StepKeyboardPan_ClampsLargeFrameDelta()
         {
             var view = new DialogueGraphView();
@@ -1648,6 +2239,8 @@ namespace NewDial.DialogueEditor.Tests
             var view = new DialogueGraphView();
             view.LoadGraph(new DialogueGraphData());
             view.FocusCanvas();
+            view.UpdateViewTransform(Vector3.zero, Vector3.one * 0.75f);
+            var initialScale = view.viewTransform.scale;
             view.SetMovementKeyState(KeyCode.D, true);
             view.ReleaseCanvasFocus();
 
@@ -1655,6 +2248,7 @@ namespace NewDial.DialogueEditor.Tests
 
             Assert.That(view.HasCanvasFocus, Is.False);
             Assert.That(view.viewTransform.position.x, Is.EqualTo(0f));
+            Assert.That(view.viewTransform.scale, Is.EqualTo(initialScale));
         }
 
         [Test]
@@ -1934,12 +2528,26 @@ namespace NewDial.DialogueEditor.Tests
             return new Vector2(x, targetRect.yMin + 2f);
         }
 
+        private static Vector2 EvaluateBezierForTests(Vector2 start, Vector2 controlA, Vector2 controlB, Vector2 end, float t)
+        {
+            var oneMinusT = 1f - t;
+            return (oneMinusT * oneMinusT * oneMinusT * start) +
+                   (3f * oneMinusT * oneMinusT * t * controlA) +
+                   (3f * oneMinusT * t * t * controlB) +
+                   (t * t * t * end);
+        }
+
         private static DialogueGraphData GetResolvedGraph(DialogueDatabaseAsset database)
         {
             return database.Npcs[0].Dialogues[0].Graph;
         }
 
         private static void SendKeyDown(VisualElement target, KeyCode keyCode, EventModifiers modifiers = EventModifiers.None)
+        {
+            SendKeyDownWithState(target, keyCode, modifiers);
+        }
+
+        private static KeyEventState SendKeyDownWithState(VisualElement target, KeyCode keyCode, EventModifiers modifiers = EventModifiers.None)
         {
             var keyEvent = new Event
             {
@@ -1952,6 +2560,65 @@ namespace NewDial.DialogueEditor.Tests
             {
                 keyDown.target = target;
                 target.SendEvent(keyDown);
+                return KeyEventState.From(keyDown);
+            }
+        }
+
+        private static void SendKeyUp(VisualElement target, KeyCode keyCode, EventModifiers modifiers = EventModifiers.None)
+        {
+            SendKeyUpWithState(target, keyCode, modifiers);
+        }
+
+        private static KeyEventState SendKeyUpWithState(VisualElement target, KeyCode keyCode, EventModifiers modifiers = EventModifiers.None)
+        {
+            var keyEvent = new Event
+            {
+                type = EventType.KeyUp,
+                keyCode = keyCode,
+                modifiers = modifiers
+            };
+
+            using (var keyUp = KeyUpEvent.GetPooled(keyEvent))
+            {
+                keyUp.target = target;
+                target.SendEvent(keyUp);
+                return KeyEventState.From(keyUp);
+            }
+        }
+
+        private readonly struct KeyEventState
+        {
+            private KeyEventState(bool defaultPrevented, bool immediatePropagationStopped)
+            {
+                DefaultPrevented = defaultPrevented;
+                ImmediatePropagationStopped = immediatePropagationStopped;
+            }
+
+            public bool DefaultPrevented { get; }
+            public bool ImmediatePropagationStopped { get; }
+
+            public static KeyEventState From(EventBase evt)
+            {
+#pragma warning disable 618
+                return new KeyEventState(evt.isDefaultPrevented, evt.isImmediatePropagationStopped);
+#pragma warning restore 618
+            }
+        }
+
+        private static void SendMouseDown(VisualElement target, int clickCount)
+        {
+            var mouseEvent = new Event
+            {
+                type = EventType.MouseDown,
+                button = 0,
+                clickCount = clickCount,
+                mousePosition = new Vector2(8f, 8f)
+            };
+
+            using (var mouseDown = MouseDownEvent.GetPooled(mouseEvent))
+            {
+                mouseDown.target = target;
+                target.SendEvent(mouseDown);
             }
         }
 

@@ -7,8 +7,8 @@ This sample adds a menu item that creates a playable `DialogueDatabaseAsset` for
 - 1 NPC: `Innkeeper`
 - 2 dialogues: `Greeting` and `After Hours`
 - an `Innkeeper` speaker entry on each dialogue
-- branching choices driven by `ChoiceText` links
-- a start node that uses outputs as explicit player choices
+- branching choices driven by visible answer nodes with header-editable titles plus inline button text and reply text
+- a start node that routes explicit player choices into playable answer lines
 - a trust-gated branch using a simple numeric condition
 - a dialogue-level start condition for an after-hours branch
 - a comment node used as an in-editor design note
@@ -24,7 +24,7 @@ This sample adds a menu item that creates a playable `DialogueDatabaseAsset` for
 ## What it demonstrates
 
 - basic package onboarding
-- a branching dialogue authored with graph links
+- a branching dialogue authored as text question -> answer line
 - text lines using dialogue speaker fallback
 - simple node and dialogue conditions
 - comment-node annotations in the editor
