@@ -110,11 +110,20 @@ namespace NewDial.DialogueEditor
         [Serializable]
         private class DialogueDatabaseSnapshot
         {
+            public List<DialogueVariableDefinition> Variables = new();
             public List<NpcSnapshot> Npcs = new();
 
             public static DialogueDatabaseSnapshot FromDatabase(DialogueDatabaseAsset database)
             {
                 var snapshot = new DialogueDatabaseSnapshot();
+                foreach (var variable in database.Variables ?? new List<DialogueVariableDefinition>())
+                {
+                    if (variable != null)
+                    {
+                        snapshot.Variables.Add(variable.Clone());
+                    }
+                }
+
                 foreach (var npc in database.Npcs)
                 {
                     if (npc != null)
@@ -128,6 +137,16 @@ namespace NewDial.DialogueEditor
 
             public void ApplyTo(DialogueDatabaseAsset database)
             {
+                database.Variables ??= new List<DialogueVariableDefinition>();
+                database.Variables.Clear();
+                foreach (var variable in Variables ?? new List<DialogueVariableDefinition>())
+                {
+                    if (variable != null)
+                    {
+                        database.Variables.Add(variable.Clone());
+                    }
+                }
+
                 database.Npcs.Clear();
                 foreach (var npc in Npcs)
                 {

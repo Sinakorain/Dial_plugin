@@ -36,6 +36,7 @@ namespace NewDial.DialogueEditor
 
         private DialogueGraphView _graphView;
         private ScrollView _projectView;
+        private ScrollView _variablesView;
         private ScrollView _inspectorView;
         private Label _statusLabel;
         private Label _detailsTitleLabel;
@@ -53,6 +54,7 @@ namespace NewDial.DialogueEditor
         }
 
         internal DialogueGraphView GraphViewForTests => _graphView;
+        internal DialogueDatabaseAsset CurrentDatabase => _database;
         internal bool HasUnsavedChangesForTests => _hasUnsavedChanges;
         internal string SelectedNodeIdForTests => _selectedNode?.Id;
         internal bool SuppressIdentifierWarningsForTests { get; set; }
@@ -309,27 +311,55 @@ namespace NewDial.DialogueEditor
 
         private VisualElement BuildLeftDock()
         {
-            var dock = new VisualElement();
+            var dock = new ScrollView();
             dock.AddToClassList("dialogue-editor__left-dock");
+            dock.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
             AttachGraphBlurOnInteraction(dock);
 
-            var projectSection = new VisualElement();
-            projectSection.AddToClassList("dialogue-editor__panel");
-            projectSection.AddToClassList("dialogue-editor__project-panel");
-            projectSection.name = "project-panel";
-            projectSection.Add(BuildPanelHeader(DialogueEditorLocalization.Text("Project")));
-            projectSection.Add(BuildProjectActionsRow());
-
-            _projectView = new ScrollView();
-            _projectView.AddToClassList("dialogue-editor__project-scroll");
-            _projectView.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
-            projectSection.Add(_projectView);
-            dock.Add(projectSection);
-
+            dock.Add(BuildProjectPanel());
             var paletteSection = BuildPalette();
             dock.Add(paletteSection);
+            dock.Add(BuildVariablesPanel());
 
             return dock;
+        }
+
+        private VisualElement BuildProjectPanel()
+        {
+            return BuildCollapsibleDockPanel(
+                DialogueEditorLocalization.Text("Project"),
+                "project-panel",
+                "dialogue-editor__project-panel",
+                "project-foldout",
+                "dialogue-editor__project-content",
+                content =>
+                {
+                    content.Add(BuildProjectActionsRow());
+
+                    _projectView = new ScrollView();
+                    _projectView.AddToClassList("dialogue-editor__project-scroll");
+                    _projectView.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
+                    content.Add(_projectView);
+                });
+        }
+
+        private VisualElement BuildVariablesPanel()
+        {
+            return BuildCollapsibleDockPanel(
+                DialogueEditorLocalization.Text("Variables"),
+                "variables-panel",
+                "dialogue-editor__variables-panel",
+                "variables-foldout",
+                "dialogue-editor__variables-content",
+                content =>
+                {
+                    content.Add(BuildVariablesActionsRow());
+
+                    _variablesView = new ScrollView();
+                    _variablesView.AddToClassList("dialogue-editor__project-scroll");
+                    _variablesView.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
+                    content.Add(_variablesView);
+                });
         }
 
         private VisualElement BuildPalette()
@@ -337,24 +367,56 @@ namespace NewDial.DialogueEditor
             _paletteItems.Clear();
             _activePaletteShortcutRebind = null;
 
+            return BuildCollapsibleDockPanel(
+                DialogueEditorLocalization.Text("Palette"),
+                "palette-panel",
+                "dialogue-editor__palette-panel",
+                "palette-foldout",
+                "dialogue-editor__palette-content",
+                content =>
+                {
+                    var paletteContent = new VisualElement();
+                    paletteContent.AddToClassList("dialogue-editor__palette");
+                    paletteContent.name = "palette-content";
+
+                    AddPaletteItem(paletteContent, DialoguePaletteItemType.TextNode, DialogueEditorLocalization.Text("Text Node"), DialogueEditorLocalization.Text("Click to add at center. Drag onto the graph to place."));
+                    AddPaletteItem(paletteContent, DialoguePaletteItemType.Choice, DialogueEditorLocalization.Text("Answer"), DialogueEditorLocalization.Text("A player answer button. Use Add Choice on a text node for the guided flow."));
+                    AddPaletteItem(paletteContent, DialoguePaletteItemType.Comment, DialogueEditorLocalization.Text("Comment"), DialogueEditorLocalization.Text("Click to add at center. Drag onto the graph to place."));
+                    AddPaletteItem(paletteContent, DialoguePaletteItemType.Function, DialogueEditorLocalization.Text("Function"), DialogueEditorLocalization.Text("Execute a project-provided function and continue."));
+                    AddPaletteItem(paletteContent, DialoguePaletteItemType.Scene, DialogueEditorLocalization.Text("Scene"), DialogueEditorLocalization.Text("Request project scene loading and continue."));
+                    AddPaletteItem(paletteContent, DialoguePaletteItemType.Debug, DialogueEditorLocalization.Text("Debug"), DialogueEditorLocalization.Text("Write a diagnostic log entry and continue."));
+
+                    content.Add(paletteContent);
+                });
+        }
+
+        private VisualElement BuildCollapsibleDockPanel(
+            string title,
+            string panelName,
+            string panelClass,
+            string foldoutName,
+            string contentClass,
+            Action<VisualElement> buildContent)
+        {
             var panel = new VisualElement();
             panel.AddToClassList("dialogue-editor__panel");
-            panel.AddToClassList("dialogue-editor__palette-panel");
-            panel.name = "palette-panel";
-            panel.Add(BuildPanelHeader(DialogueEditorLocalization.Text("Palette")));
+            panel.AddToClassList(panelClass);
+            panel.name = panelName;
+
+            var foldout = new Foldout
+            {
+                text = title,
+                value = true,
+                name = foldoutName
+            };
+            foldout.AddToClassList("dialogue-editor__dock-foldout");
 
             var content = new VisualElement();
-            content.AddToClassList("dialogue-editor__palette");
-            content.name = "palette-content";
-
-            AddPaletteItem(content, DialoguePaletteItemType.TextNode, DialogueEditorLocalization.Text("Text Node"), DialogueEditorLocalization.Text("Click to add at center. Drag onto the graph to place."));
-            AddPaletteItem(content, DialoguePaletteItemType.Choice, DialogueEditorLocalization.Text("Answer"), DialogueEditorLocalization.Text("A player answer button. Use Add Choice on a text node for the guided flow."));
-            AddPaletteItem(content, DialoguePaletteItemType.Comment, DialogueEditorLocalization.Text("Comment"), DialogueEditorLocalization.Text("Click to add at center. Drag onto the graph to place."));
-            AddPaletteItem(content, DialoguePaletteItemType.Function, DialogueEditorLocalization.Text("Function"), DialogueEditorLocalization.Text("Execute a project-provided function and continue."));
-            AddPaletteItem(content, DialoguePaletteItemType.Scene, DialogueEditorLocalization.Text("Scene"), DialogueEditorLocalization.Text("Request project scene loading and continue."));
-            AddPaletteItem(content, DialoguePaletteItemType.Debug, DialogueEditorLocalization.Text("Debug"), DialogueEditorLocalization.Text("Write a diagnostic log entry and continue."));
-
-            panel.Add(content);
+            content.AddToClassList("dialogue-editor__dock-foldout-content");
+            content.AddToClassList(contentClass);
+            buildContent?.Invoke(content);
+            foldout.Add(content);
+            panel.Add(foldout);
             return panel;
         }
 
@@ -377,6 +439,16 @@ namespace NewDial.DialogueEditor
             var createDialogueButton = CreateProjectActionButton(DialogueEditorLocalization.Text("Create Dialogue"), CreateDialogue);
             row.Add(createDialogueButton);
 
+            return row;
+        }
+
+        private VisualElement BuildVariablesActionsRow()
+        {
+            var row = new VisualElement();
+            row.AddToClassList("dialogue-editor__project-actions-row");
+            var addVariableButton = CreateProjectActionButton(DialogueEditorLocalization.Text("Add Variable"), AddVariable);
+            addVariableButton.name = "variable-add-button";
+            row.Add(addVariableButton);
             return row;
         }
 
@@ -579,6 +651,7 @@ namespace NewDial.DialogueEditor
 
             RefreshStatus();
             RefreshProjectPanel();
+            RefreshVariablesPanel();
             var selectedNodeId = _selectedNode?.Id;
             _graphView.SpeakerNameResolver = node => DialogueSpeakerUtility.ResolveSpeakerName(_selectedDialogue, node);
             _graphView.LoadGraph(_selectedDialogue?.Graph);
@@ -705,6 +778,108 @@ namespace NewDial.DialogueEditor
             }
         }
 
+        private void RefreshVariablesPanel()
+        {
+            if (_variablesView == null)
+            {
+                return;
+            }
+
+            _variablesView.Clear();
+            if (_database == null)
+            {
+                _variablesView.Add(CreateEmptyPanelMessage(DialogueEditorLocalization.Text("Load or create a dialogue database to begin.")));
+                return;
+            }
+
+            _database.Variables ??= new List<DialogueVariableDefinition>();
+            if (_database.Variables.Count == 0)
+            {
+                _variablesView.Add(CreateInlineHelp(DialogueEditorLocalization.Text("No variables yet.")));
+                return;
+            }
+
+            var duplicateKeys = _database.Variables
+                .Where(variable => variable != null && !string.IsNullOrWhiteSpace(variable.Key))
+                .GroupBy(variable => variable.Key, StringComparer.Ordinal)
+                .Where(group => group.Count() > 1)
+                .Select(group => group.Key)
+                .ToHashSet(StringComparer.Ordinal);
+
+            for (var index = 0; index < _database.Variables.Count; index++)
+            {
+                var variableIndex = index;
+                var variable = _database.Variables[index] ?? new DialogueVariableDefinition();
+                _database.Variables[index] = variable;
+                variable.DefaultValue ??= new DialogueArgumentValue { Type = variable.Type };
+                variable.DefaultValue.Type = variable.Type;
+
+                var box = new Box();
+                box.AddToClassList("dialogue-editor__project-card");
+                box.name = "variable-card";
+
+                var keyField = new TextField(DialogueEditorLocalization.Text("Key"))
+                {
+                    value = variable.Key,
+                    name = "variable-key-field",
+                    isDelayed = true
+                };
+                keyField.RegisterValueChangedCallback(evt =>
+                {
+                    PerformDatabaseScopedChange("Edit Variable Key", () => variable.Key = evt.newValue, refreshVariables: true, refreshInspector: true);
+                });
+                box.Add(keyField);
+
+                var displayNameField = new TextField(DialogueEditorLocalization.Text("Display Name"))
+                {
+                    value = variable.DisplayName,
+                    name = "variable-display-name-field",
+                    isDelayed = true
+                };
+                displayNameField.RegisterValueChangedCallback(evt =>
+                {
+                    PerformDatabaseScopedChange("Edit Variable Display Name", () => variable.DisplayName = evt.newValue, refreshVariables: true, refreshInspector: true);
+                });
+                box.Add(displayNameField);
+
+                var typeField = new EnumField(DialogueEditorLocalization.Text("Type"), variable.Type)
+                {
+                    name = "variable-type-field"
+                };
+                typeField.RegisterValueChangedCallback(evt =>
+                {
+                    PerformDatabaseScopedChange("Edit Variable Type", () =>
+                    {
+                        variable.Type = (DialogueArgumentType)evt.newValue;
+                        variable.DefaultValue = new DialogueArgumentValue { Type = variable.Type };
+                    }, refreshVariables: true, refreshInspector: true);
+                });
+                box.Add(typeField);
+
+                AddVariableValueField(box, variable, "Default Value", "Edit Variable Default Value", namePrefix: "variable-default");
+
+                foreach (var issue in GetVariableIssues(variable, duplicateKeys))
+                {
+                    var label = new Label(issue);
+                    label.AddToClassList("dialogue-editor__id-issue");
+                    box.Add(label);
+                }
+
+                var removeButton = new Button(() =>
+                {
+                    PerformDatabaseScopedChange("Remove Variable", () => _database.Variables.RemoveAt(variableIndex), refreshVariables: true, refreshInspector: true);
+                })
+                {
+                    text = DialogueEditorLocalization.Text("Remove Variable"),
+                    name = "variable-remove-button"
+                };
+                removeButton.AddToClassList("dialogue-editor__danger-button");
+                box.Add(removeButton);
+
+                _variablesView.Add(box);
+            }
+        }
+
         private void RefreshInspector()
         {
             if (_inspectorView == null)
@@ -796,7 +971,24 @@ namespace NewDial.DialogueEditor
             BuildSpeakerRosterEditor(dialogue);
             _inspectorView.Add(BuildDialogueIdEditor(dialogue));
             _inspectorView.Add(BuildWhereUsedSection(DialogueWhereUsedUtility.GetWhereUsed(_database, _selectedNpc, dialogue)));
-            BuildConditionEditor(dialogue.StartCondition, DialogueEditorLocalization.Text("Start Condition"));
+            BuildConditionEditor(dialogue.StartCondition, DialogueEditorLocalization.Text("Dialogue Start Gate"));
+            var clearStartGateButton = new Button(() =>
+            {
+                PerformDialogueScopedChange("Clear Dialogue Start Gate", () =>
+                {
+                    dialogue.StartCondition.Type = ConditionType.None;
+                    dialogue.StartCondition.Key = string.Empty;
+                    dialogue.StartCondition.Operator = "==";
+                    dialogue.StartCondition.Value = string.Empty;
+                }, refreshInspector: true);
+            })
+            {
+                text = DialogueEditorLocalization.Text("Clear Start Gate"),
+                name = "dialogue-start-gate-clear-button"
+            };
+            clearStartGateButton.AddToClassList("dialogue-editor__mini-button");
+            clearStartGateButton.SetEnabled(dialogue.StartCondition != null && dialogue.StartCondition.Type != ConditionType.None);
+            _inspectorView.Add(clearStartGateButton);
             _inspectorView.Add(CreateInlineHelp(DialogueEditorLocalization.Text("Click empty graph space to return here after editing a node.")));
         }
 
@@ -2068,7 +2260,15 @@ namespace NewDial.DialogueEditor
             });
             _inspectorView.Add(policyField);
 
-            BuildArgumentsEditor(DialogueEditorLocalization.Text("Arguments"), node.Arguments, descriptor.Parameters, DialogueEditorLocalization.Text("Function Arguments"));
+            if (node.FunctionId == DialogueBuiltInFunctions.SetVariableFunctionId)
+            {
+                BuildSetVariableArgumentsEditor(node);
+            }
+            else
+            {
+                BuildArgumentsEditor(DialogueEditorLocalization.Text("Arguments"), node.Arguments, descriptor.Parameters, DialogueEditorLocalization.Text("Function Arguments"));
+            }
+
             BuildExecutableValidation(node);
             BuildConditionEditor(node.Condition, DialogueEditorLocalization.Text("Condition"), "Edit Function Condition");
             BuildLinksInspector(node);
@@ -2387,6 +2587,139 @@ namespace NewDial.DialogueEditor
             _inspectorView.Add(addButton);
         }
 
+        private void BuildSetVariableArgumentsEditor(FunctionNodeData node)
+        {
+            _inspectorView.Add(CreateSectionTitle(DialogueEditorLocalization.Text("Arguments")));
+            node.Arguments ??= new List<DialogueArgumentEntry>();
+            EnsureDescriptorArguments(node.Arguments, DialogueBuiltInFunctions.SetVariableDescriptor.Parameters);
+
+            var keyArgument = GetOrCreateArgument(node.Arguments, DialogueBuiltInFunctions.VariableKeyArgument, DialogueArgumentType.String);
+            var valueArgument = GetOrCreateArgument(node.Arguments, DialogueBuiltInFunctions.VariableValueArgument, DialogueArgumentType.String);
+            var variables = GetDatabaseVariables().Where(variable => !string.IsNullOrWhiteSpace(variable.Key)).ToList();
+            if (variables.Count > 0 && string.IsNullOrWhiteSpace(keyArgument.Value.StringValue))
+            {
+                keyArgument.Value = DialogueArgumentValue.FromString(variables[0].Key);
+                valueArgument.Value = DialogueArgumentValue.FromString(variables[0].DefaultValue?.GetDisplayValue() ?? string.Empty);
+            }
+
+            var selectedVariable = variables.FirstOrDefault(variable => variable.Key == keyArgument.Value.StringValue);
+
+            var box = new Box();
+            box.AddToClassList("dialogue-editor__inspector-card");
+
+            if (variables.Count > 0)
+            {
+                var labels = variables
+                    .Select(variable => string.IsNullOrWhiteSpace(variable.DisplayName)
+                        ? variable.Key
+                        : $"{variable.DisplayName} ({variable.Key})")
+                    .ToList();
+                var selectedIndex = Mathf.Max(0, variables.FindIndex(variable => variable.Key == keyArgument.Value.StringValue));
+                var keyField = new PopupField<string>(DialogueEditorLocalization.Text("Variable"), labels, selectedIndex)
+                {
+                    name = "set-variable-key-field"
+                };
+                keyField.RegisterValueChangedCallback(evt =>
+                {
+                    var index = labels.IndexOf(evt.newValue);
+                    if (index < 0 || index >= variables.Count)
+                    {
+                        return;
+                    }
+
+                    PerformNodeScopedChange("Select Variable", () =>
+                    {
+                        keyArgument.Value = DialogueArgumentValue.FromString(variables[index].Key);
+                        valueArgument.Value = DialogueArgumentValue.FromString(variables[index].DefaultValue?.GetDisplayValue() ?? string.Empty);
+                    }, refreshNodeVisuals: true, refreshInspector: true);
+                });
+                box.Add(keyField);
+            }
+            else
+            {
+                box.Add(CreateInlineHelp(DialogueEditorLocalization.Text("No variables yet.")));
+                var keyTextField = new TextField(DialogueEditorLocalization.Text("Key"))
+                {
+                    value = keyArgument.Value.StringValue,
+                    name = "set-variable-key-text-field"
+                };
+                keyTextField.RegisterValueChangedCallback(evt =>
+                {
+                    PerformNodeScopedChange("Edit Variable Key", () => keyArgument.Value = DialogueArgumentValue.FromString(evt.newValue), refreshNodeVisuals: true);
+                });
+                box.Add(keyTextField);
+            }
+
+            AddSetVariableValueField(box, valueArgument, selectedVariable);
+            _inspectorView.Add(box);
+        }
+
+        private void AddSetVariableValueField(Box box, DialogueArgumentEntry valueArgument, DialogueVariableDefinition selectedVariable)
+        {
+            valueArgument.Value ??= DialogueArgumentValue.FromString(string.Empty);
+            var currentValue = valueArgument.Value.GetDisplayValue();
+            switch (selectedVariable?.Type)
+            {
+                case DialogueArgumentType.Int:
+                    var intValue = int.TryParse(currentValue, out var parsedInt) ? parsedInt : 0;
+                    var intField = new IntegerField(DialogueEditorLocalization.Text("Value")) { value = intValue, name = "set-variable-int-value-field" };
+                    intField.RegisterValueChangedCallback(evt =>
+                    {
+                        PerformNodeScopedChange("Edit Variable Value", () => valueArgument.Value = DialogueArgumentValue.FromString(evt.newValue.ToString(System.Globalization.CultureInfo.InvariantCulture)), refreshNodeVisuals: true);
+                    });
+                    box.Add(intField);
+                    break;
+                case DialogueArgumentType.Float:
+                    var floatValue = float.TryParse(currentValue, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var parsedFloat)
+                        ? parsedFloat
+                        : 0f;
+                    var floatField = new FloatField(DialogueEditorLocalization.Text("Value")) { value = floatValue, name = "set-variable-float-value-field" };
+                    floatField.RegisterValueChangedCallback(evt =>
+                    {
+                        PerformNodeScopedChange("Edit Variable Value", () => valueArgument.Value = DialogueArgumentValue.FromString(evt.newValue.ToString(System.Globalization.CultureInfo.InvariantCulture)), refreshNodeVisuals: true);
+                    });
+                    box.Add(floatField);
+                    break;
+                case DialogueArgumentType.Bool:
+                    var boolValue = string.Equals(currentValue, "true", StringComparison.OrdinalIgnoreCase) ||
+                                    string.Equals(currentValue, "yes", StringComparison.OrdinalIgnoreCase) ||
+                                    string.Equals(currentValue, "1", StringComparison.OrdinalIgnoreCase);
+                    var boolField = new Toggle(DialogueEditorLocalization.Text("Value")) { value = boolValue, name = "set-variable-bool-value-field" };
+                    boolField.RegisterValueChangedCallback(evt =>
+                    {
+                        PerformNodeScopedChange("Edit Variable Value", () => valueArgument.Value = DialogueArgumentValue.FromString(evt.newValue ? "true" : "false"), refreshNodeVisuals: true);
+                    });
+                    box.Add(boolField);
+                    break;
+                default:
+                    var stringField = new TextField(DialogueEditorLocalization.Text("Value")) { value = currentValue, name = "set-variable-string-value-field" };
+                    stringField.RegisterValueChangedCallback(evt =>
+                    {
+                        PerformNodeScopedChange("Edit Variable Value", () => valueArgument.Value = DialogueArgumentValue.FromString(evt.newValue), refreshNodeVisuals: true);
+                    });
+                    box.Add(stringField);
+                    break;
+            }
+        }
+
+        private static DialogueArgumentEntry GetOrCreateArgument(IList<DialogueArgumentEntry> arguments, string name, DialogueArgumentType type)
+        {
+            var argument = arguments.FirstOrDefault(item => item != null && item.Name == name);
+            if (argument != null)
+            {
+                argument.Value ??= new DialogueArgumentValue { Type = type };
+                return argument;
+            }
+
+            argument = new DialogueArgumentEntry
+            {
+                Name = name,
+                Value = new DialogueArgumentValue { Type = type }
+            };
+            arguments.Add(argument);
+            return argument;
+        }
+
         private void AddArgumentValueField(VisualElement box, DialogueArgumentEntry argument, string undoLabel)
         {
             argument.Value ??= new DialogueArgumentValue();
@@ -2421,6 +2754,68 @@ namespace NewDial.DialogueEditor
                     stringField.RegisterValueChangedCallback(evt =>
                     {
                         PerformNodeScopedChange($"Edit {undoLabel} Value", () => argument.Value.StringValue = evt.newValue);
+                    });
+                    box.Add(stringField);
+                    break;
+            }
+        }
+
+        private void AddVariableValueField(
+            VisualElement box,
+            DialogueVariableDefinition variable,
+            string label,
+            string undoLabel,
+            string namePrefix)
+        {
+            variable.DefaultValue ??= new DialogueArgumentValue { Type = variable.Type };
+            variable.DefaultValue.Type = variable.Type;
+            switch (variable.Type)
+            {
+                case DialogueArgumentType.Int:
+                    var intField = new IntegerField(DialogueEditorLocalization.Text(label))
+                    {
+                        value = variable.DefaultValue.IntValue,
+                        name = $"{namePrefix}-int-value-field"
+                    };
+                    intField.RegisterValueChangedCallback(evt =>
+                    {
+                        PerformDatabaseScopedChange(undoLabel, () => variable.DefaultValue.IntValue = evt.newValue, refreshInspector: true);
+                    });
+                    box.Add(intField);
+                    break;
+                case DialogueArgumentType.Float:
+                    var floatField = new FloatField(DialogueEditorLocalization.Text(label))
+                    {
+                        value = variable.DefaultValue.FloatValue,
+                        name = $"{namePrefix}-float-value-field"
+                    };
+                    floatField.RegisterValueChangedCallback(evt =>
+                    {
+                        PerformDatabaseScopedChange(undoLabel, () => variable.DefaultValue.FloatValue = evt.newValue, refreshInspector: true);
+                    });
+                    box.Add(floatField);
+                    break;
+                case DialogueArgumentType.Bool:
+                    var boolField = new Toggle(DialogueEditorLocalization.Text(label))
+                    {
+                        value = variable.DefaultValue.BoolValue,
+                        name = $"{namePrefix}-bool-value-field"
+                    };
+                    boolField.RegisterValueChangedCallback(evt =>
+                    {
+                        PerformDatabaseScopedChange(undoLabel, () => variable.DefaultValue.BoolValue = evt.newValue, refreshInspector: true);
+                    });
+                    box.Add(boolField);
+                    break;
+                default:
+                    var stringField = new TextField(DialogueEditorLocalization.Text(label))
+                    {
+                        value = variable.DefaultValue.StringValue,
+                        name = $"{namePrefix}-string-value-field"
+                    };
+                    stringField.RegisterValueChangedCallback(evt =>
+                    {
+                        PerformDatabaseScopedChange(undoLabel, () => variable.DefaultValue.StringValue = evt.newValue, refreshInspector: true);
                     });
                     box.Add(stringField);
                     break;
@@ -2771,9 +3166,14 @@ namespace NewDial.DialogueEditor
                 return;
             }
 
-            var keySuggestions = DialogueConditionMetadataRegistry.GetKeySuggestions(condition.Type);
+            var keySuggestions = GetConditionKeySuggestions(condition.Type);
             if (keySuggestions.Count > 0)
             {
+                if (string.IsNullOrWhiteSpace(condition.Key))
+                {
+                    ApplyConditionChange(undoActionPrefix, "Key", () => condition.Key = keySuggestions[0].Key);
+                }
+
                 var suggestionLabels = keySuggestions
                     .Select(suggestion => string.IsNullOrWhiteSpace(suggestion.Category)
                         ? suggestion.Label
@@ -2807,15 +3207,23 @@ namespace NewDial.DialogueEditor
             keyField.RegisterValueChangedCallback(evt =>
             {
                 ApplyConditionChange(undoActionPrefix, "Key", () => condition.Key = evt.newValue);
+                RefreshInspector();
             });
             _inspectorView.Add(keyField);
 
-            if (metadata.ShowOperator && metadata.Operators.Count > 0)
+            var operators = GetConditionOperators(condition, metadata);
+            if (operators.Count > 0 && !operators.Contains(condition.Operator))
             {
-                var operators = metadata.Operators.ToList();
+                ApplyConditionChange(undoActionPrefix, "Operator", () => condition.Operator = operators[0]);
+            }
+
+            NormalizeTypedConditionValue(condition, undoActionPrefix);
+
+            if (metadata.ShowOperator && operators.Count > 0)
+            {
                 var selectedOperator = operators.Contains(condition.Operator)
                     ? condition.Operator
-                    : metadata.DefaultOperator;
+                    : operators[0];
                 var operatorField = new PopupField<string>(
                     DialogueEditorLocalization.Text("Operator"),
                     operators,
@@ -2837,12 +3245,108 @@ namespace NewDial.DialogueEditor
                 return;
             }
 
-            var valueField = new TextField(DialogueEditorLocalization.Text("Value")) { value = condition.Value, name = "condition-value-field" };
-            valueField.RegisterValueChangedCallback(evt =>
+            AddConditionValueField(condition, undoActionPrefix);
+        }
+
+        private void NormalizeTypedConditionValue(ConditionData condition, string undoActionPrefix)
+        {
+            if (condition?.Type != ConditionType.VariableCheck)
             {
-                ApplyConditionChange(undoActionPrefix, "Value", () => condition.Value = evt.newValue);
-            });
-            _inspectorView.Add(valueField);
+                return;
+            }
+
+            var variable = FindDatabaseVariable(condition.Key);
+            if (variable == null ||
+                variable.Type != DialogueArgumentType.Bool ||
+                string.Equals(condition.Operator, "Truthy", StringComparison.Ordinal) ||
+                !string.IsNullOrWhiteSpace(condition.Value))
+            {
+                return;
+            }
+
+            ApplyConditionChange(undoActionPrefix, "Value", () => condition.Value = "true");
+        }
+
+        private List<string> GetConditionOperators(ConditionData condition, DialogueConditionMetadata metadata)
+        {
+            if (condition?.Type == ConditionType.VariableCheck &&
+                FindDatabaseVariable(condition.Key)?.Type == DialogueArgumentType.Bool)
+            {
+                return new List<string> { "==", "!=" };
+            }
+
+            return metadata.Operators.ToList();
+        }
+
+        private IReadOnlyList<DialogueConditionKeySuggestion> GetConditionKeySuggestions(ConditionType type)
+        {
+            var suggestions = DialogueConditionMetadataRegistry.GetKeySuggestions(type).ToList();
+            if (type == ConditionType.VariableCheck)
+            {
+                suggestions.AddRange(GetDatabaseVariables()
+                    .Where(variable => !string.IsNullOrWhiteSpace(variable.Key))
+                    .Select(variable => new DialogueConditionKeySuggestion(
+                        variable.Key,
+                        string.IsNullOrWhiteSpace(variable.DisplayName) ? variable.Key : variable.DisplayName,
+                        DialogueEditorLocalization.Text("Variables"))));
+            }
+
+            return suggestions
+                .Where(suggestion => !string.IsNullOrWhiteSpace(suggestion.Key))
+                .GroupBy(suggestion => suggestion.Key, StringComparer.Ordinal)
+                .Select(group => group.First())
+                .OrderBy(suggestion => suggestion.Category)
+                .ThenBy(suggestion => suggestion.Label)
+                .ToList();
+        }
+
+        private void AddConditionValueField(ConditionData condition, string undoActionPrefix)
+        {
+            var variable = condition.Type == ConditionType.VariableCheck
+                ? FindDatabaseVariable(condition.Key)
+                : null;
+            switch (variable?.Type)
+            {
+                case DialogueArgumentType.Int:
+                    var intValue = int.TryParse(condition.Value, out var parsedInt) ? parsedInt : 0;
+                    var intField = new IntegerField(DialogueEditorLocalization.Text("Value")) { value = intValue, name = "condition-int-value-field" };
+                    intField.RegisterValueChangedCallback(evt =>
+                    {
+                        ApplyConditionChange(undoActionPrefix, "Value", () => condition.Value = evt.newValue.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                    });
+                    _inspectorView.Add(intField);
+                    break;
+                case DialogueArgumentType.Float:
+                    var floatValue = float.TryParse(condition.Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var parsedFloat)
+                        ? parsedFloat
+                        : 0f;
+                    var floatField = new FloatField(DialogueEditorLocalization.Text("Value")) { value = floatValue, name = "condition-float-value-field" };
+                    floatField.RegisterValueChangedCallback(evt =>
+                    {
+                        ApplyConditionChange(undoActionPrefix, "Value", () => condition.Value = evt.newValue.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                    });
+                    _inspectorView.Add(floatField);
+                    break;
+                case DialogueArgumentType.Bool:
+                    var boolValue = string.Equals(condition.Value, "true", StringComparison.OrdinalIgnoreCase) ||
+                                    string.Equals(condition.Value, "yes", StringComparison.OrdinalIgnoreCase) ||
+                                    string.Equals(condition.Value, "1", StringComparison.OrdinalIgnoreCase);
+                    var boolField = new Toggle(DialogueEditorLocalization.Text("Value")) { value = boolValue, name = "condition-bool-value-field" };
+                    boolField.RegisterValueChangedCallback(evt =>
+                    {
+                        ApplyConditionChange(undoActionPrefix, "Value", () => condition.Value = evt.newValue ? "true" : "false");
+                    });
+                    _inspectorView.Add(boolField);
+                    break;
+                default:
+                    var valueField = new TextField(DialogueEditorLocalization.Text("Value")) { value = condition.Value, name = "condition-value-field" };
+                    valueField.RegisterValueChangedCallback(evt =>
+                    {
+                        ApplyConditionChange(undoActionPrefix, "Value", () => condition.Value = evt.newValue);
+                    });
+                    _inspectorView.Add(valueField);
+                    break;
+            }
         }
 
         private Label CreateSectionTitle(string text)
@@ -2864,6 +3368,61 @@ namespace NewDial.DialogueEditor
             var label = new Label(text);
             label.AddToClassList("dialogue-editor__inline-help");
             return label;
+        }
+
+        private IEnumerable<DialogueVariableDefinition> GetDatabaseVariables()
+        {
+            return _database?.Variables?.Where(variable => variable != null) ?? Enumerable.Empty<DialogueVariableDefinition>();
+        }
+
+        private DialogueVariableDefinition FindDatabaseVariable(string key)
+        {
+            return GetDatabaseVariables().FirstOrDefault(variable => variable.Key == key);
+        }
+
+        private static IEnumerable<string> GetVariableIssues(DialogueVariableDefinition variable, ISet<string> duplicateKeys)
+        {
+            if (variable == null)
+            {
+                yield break;
+            }
+
+            if (string.IsNullOrWhiteSpace(variable.Key))
+            {
+                yield return DialogueEditorLocalization.Text("Variable key is empty.");
+            }
+            else if (duplicateKeys != null && duplicateKeys.Contains(variable.Key))
+            {
+                yield return DialogueEditorLocalization.Text("Variable key is duplicated.");
+            }
+        }
+
+        private void AddVariable()
+        {
+            if (!EnsureDatabaseLoaded())
+            {
+                return;
+            }
+
+            _database.Variables ??= new List<DialogueVariableDefinition>();
+            var nextIndex = _database.Variables.Count + 1;
+            var key = $"variable_{nextIndex}";
+            while (_database.Variables.Any(variable => variable != null && variable.Key == key))
+            {
+                nextIndex++;
+                key = $"variable_{nextIndex}";
+            }
+
+            PerformDatabaseScopedChange("Add Variable", () =>
+            {
+                _database.Variables.Add(new DialogueVariableDefinition
+                {
+                    Key = key,
+                    DisplayName = key,
+                    Type = DialogueArgumentType.String,
+                    DefaultValue = DialogueArgumentValue.FromString(string.Empty)
+                });
+            }, refreshVariables: true, refreshInspector: true);
         }
 
         private void CreateNpc()
@@ -3750,6 +4309,30 @@ namespace NewDial.DialogueEditor
                 if (refreshProjectPanel)
                 {
                     RefreshProjectPanel();
+                }
+
+                if (refreshInspector)
+                {
+                    RefreshInspector();
+                }
+            });
+        }
+
+        private void PerformDatabaseScopedChange(
+            string actionName,
+            Action mutate,
+            bool refreshVariables = false,
+            bool refreshInspector = false)
+        {
+            ApplyUndoableNodeChange(actionName, () =>
+            {
+                mutate();
+                MarkChanged();
+                DialoguePreviewWindow.RefreshOpenWindows(this);
+
+                if (refreshVariables)
+                {
+                    RefreshVariablesPanel();
                 }
 
                 if (refreshInspector)

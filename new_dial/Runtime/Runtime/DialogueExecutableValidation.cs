@@ -66,6 +66,12 @@ namespace NewDial.DialogueEditor
                 return;
             }
 
+            if (functions.All(function => function.Id == DialogueBuiltInFunctions.SetVariableFunctionId) &&
+                node.FunctionId != DialogueBuiltInFunctions.SetVariableFunctionId)
+            {
+                return;
+            }
+
             var descriptor = functions.FirstOrDefault(function => function.Id == node.FunctionId);
             if (string.IsNullOrWhiteSpace(descriptor.Id))
             {

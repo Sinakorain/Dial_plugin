@@ -542,7 +542,7 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
-        public void RuntimeNodeDoubleClickRequestsInspectorButSingleClickOnlySelects()
+        public void RuntimeNodeSingleClickRequestsInspector()
         {
             var graph = new DialogueGraphData();
             var node = new DialogueTextNodeData { Title = "Selectable" };
@@ -556,12 +556,91 @@ namespace NewDial.DialogueEditor.Tests
             var titleField = nodeView.Q<TextField>("text-node-header-title-field");
 
             SendMouseDown(titleField, 1);
-            Assert.That(requested, Is.Null);
+            Assert.That(requested, Is.SameAs(node));
 
+            requested = null;
             SendMouseDown(nodeView, 1);
-            Assert.That(requested, Is.Null);
+            Assert.That(requested, Is.SameAs(node));
+        }
 
-            SendMouseDown(nodeView, 2);
+        [Test]
+        public void ExecutableNodeSingleClickRequestsInspector()
+        {
+            var graph = new DialogueGraphData();
+            var nodes = new BaseNodeData[]
+            {
+                new DialogueChoiceNodeData { Title = "Answer", ChoiceText = "Hello" },
+                new FunctionNodeData { Title = "Function" },
+                new SceneNodeData { Title = "Scene" },
+                new DebugNodeData { Title = "Debug" }
+            };
+            graph.Nodes.AddRange(nodes);
+
+            var view = new DialogueGraphView();
+            BaseNodeData requested = null;
+            view.NodeInspectorRequestedAction = nodeData => requested = nodeData;
+            view.LoadGraph(graph);
+
+            foreach (var node in nodes)
+            {
+                requested = null;
+                var nodeView = view.graphElements
+                    .OfType<DialogueExecutableNodeView>()
+                    .Single(element => element.Data == node);
+
+                SendMouseDown(nodeView, 1);
+
+                Assert.That(requested, Is.SameAs(node));
+            }
+        }
+
+        [Test]
+        public void ExecutableInlineFieldsSingleClickRequestInspector()
+        {
+            var graph = new DialogueGraphData();
+            var node = new DialogueChoiceNodeData { Title = "Answer", ChoiceText = "Hello", BodyText = "Body" };
+            graph.Nodes.Add(node);
+
+            var view = new DialogueGraphView();
+            BaseNodeData requested = null;
+            view.NodeInspectorRequestedAction = nodeData => requested = nodeData;
+            view.LoadGraph(graph);
+            var nodeView = view.graphElements.OfType<DialogueExecutableNodeView>().Single();
+            var titleField = nodeView.Q<TextField>("runtime-node-header-title-field");
+            var choiceField = nodeView.Q<TextField>("answer-node-inline-button-text-field");
+            var bodyField = nodeView.Q<TextField>("answer-node-inline-body-field");
+
+            SendMouseDown(titleField, 1);
+            Assert.That(requested, Is.SameAs(node));
+
+            requested = null;
+            SendMouseDown(choiceField, 1);
+            Assert.That(requested, Is.SameAs(node));
+
+            requested = null;
+            SendMouseDown(bodyField, 1);
+            Assert.That(requested, Is.SameAs(node));
+        }
+
+        [Test]
+        public void CommentNodeSingleClickRequestsInspector()
+        {
+            var graph = new DialogueGraphData();
+            var node = new CommentNodeData { Title = "Comment" };
+            graph.Nodes.Add(node);
+
+            var view = new DialogueGraphView();
+            BaseNodeData requested = null;
+            view.NodeInspectorRequestedAction = nodeData => requested = nodeData;
+            view.LoadGraph(graph);
+            var nodeView = view.graphElements.OfType<DialogueCommentNodeView>().Single();
+            var titleField = nodeView.Q<TextField>("comment-node-header-title-field");
+
+            SendMouseDown(titleField, 1);
+            Assert.That(requested, Is.SameAs(node));
+
+            requested = null;
+            SendMouseDown(nodeView, 1);
             Assert.That(requested, Is.SameAs(node));
         }
 
@@ -573,6 +652,8 @@ namespace NewDial.DialogueEditor.Tests
             graph.Nodes.Add(node);
 
             var view = new DialogueGraphView();
+            BaseNodeData requested = null;
+            view.NodeInspectorRequestedAction = nodeData => requested = nodeData;
             view.LoadGraph(graph);
             var nodeView = view.graphElements.OfType<DialogueTextNodeView>().Single();
             var titleField = nodeView.Q<TextField>("text-node-header-title-field");
@@ -580,9 +661,12 @@ namespace NewDial.DialogueEditor.Tests
 
             SendMouseDown(titleField, 1);
             Assert.That(view.IsLinkDragActiveForTests, Is.False);
+            Assert.That(requested, Is.SameAs(node));
 
+            requested = null;
             SendMouseDown(bodyField, 1);
             Assert.That(view.IsLinkDragActiveForTests, Is.False);
+            Assert.That(requested, Is.SameAs(node));
         }
 
         [Test]

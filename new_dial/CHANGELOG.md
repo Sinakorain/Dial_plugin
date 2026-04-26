@@ -18,6 +18,7 @@
 - Added visible answer nodes plus an `Add Choice` text-node action that creates playable `Text question -> Answer line` branches.
 - Added editable graph header titles for text, answer, function, scene, debug, and comment nodes.
 - Added inline graph editing for text-node body and answer-node button/body text.
+- Added database-wide typed dialogue variables, mutable runtime session state, automatic condition suggestions, and a built-in `newdial.variable.set` function for Function nodes.
 
 ### Changed
 
@@ -27,10 +28,14 @@
 - Choice-mode nodes now surface authoring diagnostics for missing answers, broken targets, fallback labels, legacy answer links, order conflicts, and unreachable choice targets.
 - Choice text is now edited on answer nodes; answer nodes now show their own body text after `Choose()`, and legacy link-level `ChoiceText` remains readable for older direct-choice graphs.
 - Text nodes now automatically expose outgoing `Answer` nodes as choices even when the legacy `UseOutputsAsChoices` flag is off.
-- Single-clicking node headers and inline fields now selects for graph editing; double-clicking non-field node areas opens the details inspector.
-- Condition editing now uses guided operator choices, generic variable-check hints, and optional project-provided key suggestions.
+- Single-clicking any node area now opens the details inspector, while inline fields remain editable directly on the graph.
+- Condition editing now uses guided operator choices, generic variable-check hints, database variable suggestions, typed value controls for known variables, and optional project-provided key suggestions.
+- Bool variable checks now normalize to explicit `== true`/`!= true` comparisons and tolerate existing empty bool comparison values as `true`.
+- Dialogue start-gate conditions now use clearer editor wording, include a one-click clear action, and preview blocked-state reasons show current variable values when available.
 - Removed game-specific condition types (`QuestState`, `TrustLevel`, `Fact`, and `GlobalVariableCheck`); conditions now use generic `VariableCheck` or project-defined `Custom`.
-- Dialogue preview now includes test variables and explains blocked starts, unavailable choices, missing targets, branch ends, and fallback labels.
+- Dialogue preview now seeds variables from database defaults, applies test-variable overrides, executes built-in variable sets, and explains blocked starts, unavailable choices, missing targets, branch ends, and fallback labels.
+- Dialogue preview variable controls now list database variables automatically so their sandbox values can be toggled without manually adding matching test keys.
+- Dialogue preview variable controls now reflect runtime variable changes after built-in Set Variable execution.
 - Dialogue preview transcript choice entries now render the selected choice as an outlined chip before the target node text.
 - Added Where Used sections with internal references and a project-extensible external reference resolver registry.
 - Prompt to save or discard unsaved changes before opening another dialogue database in the editor.
@@ -42,6 +47,8 @@
 - Graph link hover and click hit-testing now uses panel-space pointer coordinates so the interactive zone matches the visual link more closely.
 - `Cmd`/`Ctrl` + `Delete`/`Backspace` on the graph canvas now uses the same comment-delete prompt as plain `Delete`/`Backspace`.
 - Selected NPC and dialogue metadata in the project panel now uses compact inline rows instead of nested cards.
+- Left dock sections now use collapsible Project, Palette, and Variables foldouts, with Palette shown before Variables.
+- Left dock foldout headers now blend into the rounded panel surface without an inner square seam.
 - Scene, function, start, and debug graph-node badges now use distinct semantic colors.
 - Nested comment-group ownership and movement behavior now follow the most specific containing comment group.
 - Dragging a comment group now keeps its drag-start membership instead of attaching newly overlapped nodes mid-drag.

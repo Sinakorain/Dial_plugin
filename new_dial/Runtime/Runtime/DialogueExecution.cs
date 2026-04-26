@@ -18,12 +18,14 @@ namespace NewDial.DialogueEditor
             DialogueEntry dialogue,
             DialogueGraphData graph,
             BaseNodeData node,
-            IDialogueVariableStore variableStore)
+            IDialogueVariableStore variableStore,
+            IDialogueVariableState variableState = null)
         {
             Dialogue = dialogue;
             Graph = graph;
             Node = node;
             VariableStore = variableStore;
+            VariableState = variableState ?? variableStore as IDialogueVariableState;
         }
 
         public DialogueEntry Dialogue { get; }
@@ -33,6 +35,27 @@ namespace NewDial.DialogueEditor
         public BaseNodeData Node { get; }
 
         public IDialogueVariableStore VariableStore { get; }
+
+        public IDialogueVariableState VariableState { get; }
+    }
+
+    public static class DialogueBuiltInFunctions
+    {
+        public const string SetVariableFunctionId = "newdial.variable.set";
+        public const string VariableKeyArgument = "Key";
+        public const string VariableValueArgument = "Value";
+
+        public static DialogueFunctionDescriptor SetVariableDescriptor => new(
+            SetVariableFunctionId,
+            "Set Variable",
+            "Variables",
+            "Sets a dialogue variable in the current runtime session.",
+            new[]
+            {
+                new DialogueParameterDescriptor(VariableKeyArgument, DialogueArgumentType.String, required: true),
+                new DialogueParameterDescriptor(VariableValueArgument, DialogueArgumentType.String, required: true)
+            },
+            defaultFailurePolicy: DialogueExecutionFailurePolicy.StopDialogue);
     }
 
     public sealed class DialogueExecutionResult
@@ -204,9 +227,10 @@ namespace NewDial.DialogueEditor
 
         public static IReadOnlyList<DialogueFunctionDescriptor> GetFunctions()
         {
-            return Registries
+            return new[] { DialogueBuiltInFunctions.SetVariableDescriptor }
+                .Concat(Registries
                 .SelectMany(registry => registry.GetFunctions() ?? Enumerable.Empty<DialogueFunctionDescriptor>())
-                .Where(descriptor => !string.IsNullOrWhiteSpace(descriptor.Id))
+                .Where(descriptor => !string.IsNullOrWhiteSpace(descriptor.Id)))
                 .GroupBy(descriptor => descriptor.Id, StringComparer.Ordinal)
                 .Select(group => group.First())
                 .OrderBy(descriptor => descriptor.Category)

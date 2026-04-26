@@ -1,5 +1,6 @@
 using NUnit.Framework;
 using System.Collections.Generic;
+using UnityEngine;
 
 namespace NewDial.DialogueEditor.Tests
 {
@@ -246,7 +247,7 @@ namespace NewDial.DialogueEditor.Tests
 
             var blockedSession = new DialoguePreviewSession(dialogue);
             Assert.That(blockedSession.CurrentNode, Is.Null);
-            Assert.That(blockedSession.CurrentReason, Does.Contain("Dialogue start blocked by condition"));
+            Assert.That(blockedSession.CurrentReason, Does.Contain("Dialogue-level start condition blocked"));
 
             var allowedSession = new DialoguePreviewSession(dialogue, new Dictionary<string, string>
             {
@@ -293,6 +294,155 @@ namespace NewDial.DialogueEditor.Tests
             Assert.That(session.BlockedChoices.Count, Is.EqualTo(1));
             Assert.That(session.BlockedChoices[0].Reason, Does.Contain("Choice unavailable because condition is not met"));
             Assert.That(session.CurrentReason, Is.EqualTo("No choices are available with the current test variables."));
+        }
+
+        [Test]
+        public void DatabaseDefaultVariables_GatePreviewChoices()
+        {
+            var database = ScriptableObject.CreateInstance<DialogueDatabaseAsset>();
+            database.Variables.Add(new DialogueVariableDefinition
+            {
+                Key = "door_open",
+                Type = DialogueArgumentType.Bool,
+                DefaultValue = DialogueArgumentValue.FromBool(true)
+            });
+            var dialogue = new DialogueEntry();
+            var start = new DialogueTextNodeData
+            {
+                IsStartNode = true,
+                UseOutputsAsChoices = true
+            };
+            var target = new DialogueTextNodeData
+            {
+                Title = "Open",
+                Condition = new ConditionData
+                {
+                    Type = ConditionType.VariableCheck,
+                    Key = "door_open",
+                    Operator = "Truthy"
+                }
+            };
+            dialogue.Graph.Nodes.Add(start);
+            dialogue.Graph.Nodes.Add(target);
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = start.Id, ToNodeId = target.Id });
+
+            var session = new DialoguePreviewSession(dialogue, database);
+
+            Assert.That(session.CurrentChoices.Count, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void TestVariables_OverrideDatabaseDefaults()
+        {
+            var database = ScriptableObject.CreateInstance<DialogueDatabaseAsset>();
+            database.Variables.Add(new DialogueVariableDefinition
+            {
+                Key = "has_key",
+                Type = DialogueArgumentType.Bool,
+                DefaultValue = DialogueArgumentValue.FromBool(false)
+            });
+            var dialogue = new DialogueEntry
+            {
+                StartCondition = new ConditionData
+                {
+                    Type = ConditionType.VariableCheck,
+                    Key = "has_key",
+                    Operator = "Truthy"
+                }
+            };
+            var start = new DialogueTextNodeData { IsStartNode = true };
+            dialogue.Graph.Nodes.Add(start);
+
+            var session = new DialoguePreviewSession(dialogue, database, new Dictionary<string, string>
+            {
+                ["has_key"] = "true"
+            });
+
+            Assert.That(session.CurrentNode, Is.EqualTo(start));
+        }
+
+        [Test]
+        public void StartConditionReason_IncludesCurrentDatabaseVariableValue()
+        {
+            var database = ScriptableObject.CreateInstance<DialogueDatabaseAsset>();
+            database.Variables.Add(new DialogueVariableDefinition
+            {
+                Key = "has_key",
+                Type = DialogueArgumentType.Bool,
+                DefaultValue = DialogueArgumentValue.FromBool(false)
+            });
+            var dialogue = new DialogueEntry
+            {
+                StartCondition = new ConditionData
+                {
+                    Type = ConditionType.VariableCheck,
+                    Key = "has_key",
+                    Operator = "==",
+                    Value = "true"
+                }
+            };
+            dialogue.Graph.Nodes.Add(new DialogueTextNodeData { IsStartNode = true });
+
+            var session = new DialoguePreviewSession(dialogue, database);
+
+            Assert.That(session.CurrentNode, Is.Null);
+            Assert.That(session.CurrentReason, Does.Contain("Dialogue-level start condition blocked"));
+            Assert.That(session.CurrentReason, Does.Contain("current value: false"));
+        }
+
+        [Test]
+        public void BuiltInSetVariable_ChangesLaterPreviewAvailability()
+        {
+            var database = ScriptableObject.CreateInstance<DialogueDatabaseAsset>();
+            database.Variables.Add(new DialogueVariableDefinition
+            {
+                Key = "unlocked",
+                Type = DialogueArgumentType.Bool,
+                DefaultValue = DialogueArgumentValue.FromBool(false)
+            });
+            var dialogue = new DialogueEntry();
+            var start = new DialogueTextNodeData { IsStartNode = true };
+            var setVariable = new FunctionNodeData
+            {
+                FunctionId = DialogueBuiltInFunctions.SetVariableFunctionId,
+                Arguments = new List<DialogueArgumentEntry>
+                {
+                    new()
+                    {
+                        Name = DialogueBuiltInFunctions.VariableKeyArgument,
+                        Value = DialogueArgumentValue.FromString("unlocked")
+                    },
+                    new()
+                    {
+                        Name = DialogueBuiltInFunctions.VariableValueArgument,
+                        Value = DialogueArgumentValue.FromString("true")
+                    }
+                }
+            };
+            var target = new DialogueTextNodeData
+            {
+                Title = "Unlocked",
+                Condition = new ConditionData
+                {
+                    Type = ConditionType.VariableCheck,
+                    Key = "unlocked",
+                    Operator = "Truthy"
+                }
+            };
+            dialogue.Graph.Nodes.Add(start);
+            dialogue.Graph.Nodes.Add(setVariable);
+            dialogue.Graph.Nodes.Add(target);
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = start.Id, ToNodeId = setVariable.Id, Order = 0 });
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = setVariable.Id, ToNodeId = target.Id, Order = 0 });
+
+            var session = new DialoguePreviewSession(dialogue, database);
+
+            Assert.That(session.TryGetCurrentVariableValue("unlocked", out var currentValue), Is.True);
+            Assert.That(currentValue, Is.EqualTo("false"));
+            Assert.That(session.Advance(), Is.True);
+            Assert.That(session.CurrentNode, Is.EqualTo(target));
+            Assert.That(session.TryGetCurrentVariableValue("unlocked", out currentValue), Is.True);
+            Assert.That(currentValue, Is.EqualTo("true"));
         }
 
         [Test]

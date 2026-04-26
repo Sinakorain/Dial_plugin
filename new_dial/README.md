@@ -12,13 +12,16 @@ The package is intentionally scoped as an MVP. It already includes a reusable ru
 
 - dialogue database asset model built around NPCs, dialogues, graphs, nodes, and links
 - graph editor for text, function, scene, debug, and comment nodes with ordered links, conditions, voice-key/localization metadata, choice-style branches, content-language switching, and an EN/RU editor language switcher
+- collapsible left-dock sections for project navigation, palette tools, and database variables
 - explicit identifier editing for NPCs, dialogues, and nodes, including empty/duplicate warnings
 - choice-flow diagnostics for choice nodes, broken targets, fallback labels, and ordering issues
 - guided condition editing with generic variable checks, hints, and project-provided key suggestions
+- database-wide variable definitions with typed defaults and a built-in Set Variable function
 - per-dialogue speaker rosters with text-node speaker binding and preview speaker labels
 - rich-text body authoring for text nodes with bold, italic, user-editable text colors, clear formatting, and formatted sanitized previews
 - TSV/CSV localization import/export for Google Sheets dialogue rows using `Conversation/<conversationId>/Entry/<n>/Dialogue Text` keys, including selected or all-conversation batch import
-- preview test variables with blocked-state explanations for conditions and broken flow
+- preview test variables with blocked-state explanations for conditions, current variable values, and broken flow
+- preview variable sessions seeded from database defaults with visible sandbox controls that reflect runtime variable changes
 - Where Used blocks with internal references and a project-extensible external reference resolver
 - native Unity undo/redo for graph-node operations and node-inspector edits
 - preview window with branching playback, transcript history, backtracking, restart, and active-node jump
@@ -63,6 +66,7 @@ The start window can create a new `DialogueDatabaseAsset` or load an existing on
 | Implemented | Runtime dialogue database model | `DialogueDatabaseAsset`, NPC/dialogue records, per-dialogue speakers, graph nodes and links |
 | Implemented | Traversal helper | `DialoguePlayer` supports start, linear advance, choice selection, executable node execution, and pending execution resume |
 | Implemented | Conditions | Lightweight start/node gating through `ConditionData` and evaluator interfaces |
+| Implemented | Variables | Database-wide typed variable definitions, mutable runtime session state, and built-in Set Variable function execution |
 | Implemented | Graph authoring | Header-editable text, answer, executable, and comment nodes; speaker binding; rich-text body markup; ordered links; voice-key metadata; and details editing |
 | Implemented | Executable nodes | Generic `Function`, `Scene`, and `Debug` nodes with primitive argument bags |
 | Implemented | Execution extension points | Project-provided registries and executors drive concrete function and scene behavior |
@@ -84,6 +88,7 @@ The start window can create a new `DialogueDatabaseAsset` or load an existing on
 ## Runtime API at a glance
 
 - `DialogueDatabaseAsset`: top-level `ScriptableObject` for serialized dialogue content
+- `DialogueVariableDefinition`: database-wide typed variable key with display name and default value
 - `NpcEntry`: NPC container with a list of dialogues
 - `DialogueEntry`: dialogue record with speakers, a start condition, and graph payload
 - `DialogueSpeakerEntry`: per-dialogue speaker id and display name
@@ -99,11 +104,14 @@ The start window can create a new `DialogueDatabaseAsset` or load an existing on
 - `ConditionData` and `ConditionType`: lightweight `None`, `VariableCheck`, and `Custom` condition metadata
 - `DialoguePlayer`: runtime traversal helper for starting, advancing, choosing branches, resolving the current line node, and resolving the current speaker
 - `DialogueExecutionResult`: result contract for success, failure, pending, and end-dialogue execution outcomes
+- `DialogueBuiltInFunctions`: built-in executable ids including `newdial.variable.set`
 - `IDialogueExecutionRegistry`, `IDialogueFunctionExecutor`, and `IDialogueSceneExecutor`: extension points for project metadata and executable behavior
 - `DialogueChoice`: resolved choice option exposed by `DialoguePlayer`
 - `IDialogueConditionEvaluator`: custom condition-evaluation extension point
 - `IDialogueVariableStore`: variable lookup extension point
-- `DictionaryDialogueVariableStore`: minimal built-in variable store
+- `IDialogueVariableState`: typed mutable variable lookup and update extension point
+- `DialogueVariableState`: built-in mutable session copy initialized from database variable defaults
+- `DictionaryDialogueVariableStore`: minimal backward-compatible string variable store
 
 These APIs are suitable for the current MVP package workflow, but they should not yet be treated as a finalized long-term public schema.
 
@@ -126,7 +134,7 @@ These APIs are suitable for the current MVP package workflow, but they should no
 - `Localization` opens a TSV/CSV import/export window. Imported tables are grouped by `Conversation`; selected conversations or all conversations can be imported in one pass. Existing dialogues with matching `Dialogue.Id` values are updated, and missing conversations create new dialogues under the selected/current NPC.
 - The first import into an empty dialogue creates a vertical top-to-bottom chain of text nodes; repeat imports match text and answer nodes by `LocalizationKey` and update text data without rebuilding links, positions, executable nodes, speakers, conditions, or choice flags.
 - WASD pans the focused graph canvas; typing in inline node fields does not move the canvas.
-- Node titles are edited directly in each graph header. Text and answer nodes expose their body/button text fields on the graph with visual soft wrapping, stable card width, and downward growth; single-click selects for inline editing, while double-clicking non-field node areas opens the details inspector. Dragging from the lower half outside inline fields still starts link creation.
+- Node titles are edited directly in each graph header. Text and answer nodes expose their body/button text fields on the graph with visual soft wrapping, stable card width, and downward growth; single-clicking any node area opens the details inspector, while inline fields stay editable directly on the graph. Dragging from the lower half outside inline fields still starts link creation.
 - Outgoing `Text -> Answer` links automatically appear as player choices. The legacy `UseOutputsAsChoices` flag is still supported for older direct `Text -> Text` choice links.
 - Each dialogue has a speaker roster. Text and answer nodes can bind to a speaker, and empty or missing speaker references fall back to the first speaker in that dialogue.
 - Text node body text supports a small Unity/TMP-like rich-text subset: `<b>`, `<i>`, and `<color=#RRGGBB>`. Unsupported tags are preserved in authored data and shown as plain text in editor previews.
@@ -136,6 +144,7 @@ These APIs are suitable for the current MVP package workflow, but they should no
 - NPC, dialogue, and node identifiers are editable in the editor. Node identifier regeneration updates internal graph links; NPC and dialogue id changes warn about possible external references, but external reference lookup is not implemented yet.
 - Text-node inspectors show authoring diagnostics for broken or unclear answer flows before entering play mode.
 - Projects can register `IDialogueConditionMetadataProvider` implementations for condition key suggestions, `IDialogueExternalReferenceResolver` implementations for external Where Used results, and `IDialogueExecutionRegistry` implementations for executable function/scene metadata.
+- Database variables are authored from the editor's `Variables` section. `VariableCheck` conditions automatically suggest those keys, and Function nodes can use the built-in `Variables: Set Variable` function (`newdial.variable.set`) to update the current runtime session.
 - Function and scene nodes intentionally use only primitive arguments. Project-specific payloads such as battles, deck state, rewards, and quest outcomes belong in project-side executors.
-- The preview variable sandbox uses the built-in editor-side condition evaluator and is not intended to exactly reproduce project runtime logic.
+- The preview variable sandbox starts from database variable defaults, shows database variables as editable sandbox controls, reflects runtime changes from built-in Set Variable nodes, lets test values override them, and uses the built-in editor-side condition evaluator; it is not intended to exactly reproduce project runtime logic.
 - For a fuller implementation snapshot, see [`../docs/current-state.md`](../docs/current-state.md).

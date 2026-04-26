@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using NUnit.Framework;
@@ -210,9 +211,32 @@ namespace NewDial.DialogueEditor.Tests
             {
                 window.InitializeForTests(database);
 
-                Assert.That(window.rootVisualElement.Q<VisualElement>("project-panel"), Is.Not.Null);
+                var projectPanel = window.rootVisualElement.Q<VisualElement>("project-panel");
+                var palettePanel = window.rootVisualElement.Q<VisualElement>("palette-panel");
+                var variablesPanel = window.rootVisualElement.Q<VisualElement>("variables-panel");
+
+                Assert.That(projectPanel, Is.Not.Null);
+                Assert.That(palettePanel, Is.Not.Null);
+                Assert.That(variablesPanel, Is.Not.Null);
+                var dockSections = projectPanel.parent.Children().ToList();
+                Assert.That(dockSections.IndexOf(projectPanel), Is.LessThan(dockSections.IndexOf(palettePanel)));
+                Assert.That(dockSections.IndexOf(palettePanel), Is.LessThan(dockSections.IndexOf(variablesPanel)));
+
+                var projectFoldout = window.rootVisualElement.Q<Foldout>("project-foldout");
+                var paletteFoldout = window.rootVisualElement.Q<Foldout>("palette-foldout");
+                var variablesFoldout = window.rootVisualElement.Q<Foldout>("variables-foldout");
+                Assert.That(projectFoldout, Is.Not.Null);
+                Assert.That(paletteFoldout, Is.Not.Null);
+                Assert.That(variablesFoldout, Is.Not.Null);
+                Assert.That(projectFoldout.value, Is.True);
+                Assert.That(paletteFoldout.value, Is.True);
+                Assert.That(variablesFoldout.value, Is.True);
+                paletteFoldout.value = false;
+                Assert.That(paletteFoldout.value, Is.False);
+                paletteFoldout.value = true;
+                Assert.That(paletteFoldout.value, Is.True);
+
                 Assert.That(window.rootVisualElement.Q<ScrollView>(className: "dialogue-editor__project-scroll"), Is.Not.Null);
-                Assert.That(window.rootVisualElement.Q<VisualElement>("palette-panel"), Is.Not.Null);
                 Assert.That(window.rootVisualElement.Q<ScrollView>(className: "dialogue-editor__palette-scroll"), Is.Null);
                 Assert.That(window.rootVisualElement.Query<VisualElement>(className: "dialogue-editor__palette-item").ToList(), Has.Count.EqualTo(5));
                 Assert.That(HasLabel(window, "Текстовый узел"), Is.True);
@@ -1104,6 +1128,45 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
+        public void DialogueInspector_ShowsDialogueStartGateAndClearButton()
+        {
+            var database = CreateDatabase("DialogueStartGate");
+            var dialogue = database.Npcs[0].Dialogues[0];
+            dialogue.StartCondition.Type = ConditionType.VariableCheck;
+            dialogue.StartCondition.Key = "has_key";
+            dialogue.StartCondition.Operator = "==";
+            dialogue.StartCondition.Value = "true";
+            var node = (DialogueTextNodeData)dialogue.Graph.Nodes[0];
+            node.Condition.Type = ConditionType.None;
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                window.SaveBaselineForTests();
+
+                Assert.That(HasLabel(window.rootVisualElement, "Dialogue Start Gate"), Is.True);
+                Assert.That(window.rootVisualElement.Q<Toggle>("node-start-toggle"), Is.Null);
+
+                var clearButton = window.rootVisualElement.Q<Button>("dialogue-start-gate-clear-button");
+                Assert.That(clearButton, Is.Not.Null);
+                Assert.That(clearButton.enabledSelf, Is.True);
+
+                Click(clearButton);
+
+                Assert.That(dialogue.StartCondition.Type, Is.EqualTo(ConditionType.None));
+                Assert.That(dialogue.StartCondition.Key, Is.Empty);
+                Assert.That(node.Condition.Type, Is.EqualTo(ConditionType.None));
+                Assert.That(window.HasUnsavedChangesForTests, Is.True);
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
         public void Autosave_PreservesSpeakersAndNodeSpeakerId()
         {
             var database = CreateDatabase("SpeakerAutosave");
@@ -1461,6 +1524,250 @@ namespace NewDial.DialogueEditor.Tests
             finally
             {
                 DialogueConditionMetadataRegistry.UnregisterProvider(provider);
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void VariablesPanel_AddsVariableAndMarksDirty()
+        {
+            var database = CreateDatabase("VariablesPanel");
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                window.SaveBaselineForTests();
+
+                typeof(DialogueEditorWindow)
+                    .GetMethod("AddVariable", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                    ?.Invoke(window, Array.Empty<object>());
+
+                Assert.That(database.Variables, Has.Count.EqualTo(1));
+                Assert.That(window.HasUnsavedChangesForTests, Is.True);
+                Assert.That(window.rootVisualElement.Q<VisualElement>("variables-panel"), Is.Not.Null);
+                Assert.That(window.rootVisualElement.Q<TextField>("variable-key-field"), Is.Not.Null);
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void ConditionEditor_IncludesDatabaseVariableSuggestionsAndTypedValue()
+        {
+            var database = CreateDatabase("ConditionDatabaseVariable");
+            database.Variables.Add(new DialogueVariableDefinition
+            {
+                Key = "trust",
+                DisplayName = "Trust",
+                Type = DialogueArgumentType.Int,
+                DefaultValue = DialogueArgumentValue.FromInt(1)
+            });
+            var dialogue = database.Npcs[0].Dialogues[0];
+            var node = (DialogueTextNodeData)dialogue.Graph.Nodes[0];
+            node.Condition.Type = ConditionType.VariableCheck;
+            node.Condition.Key = "trust";
+            node.Condition.Operator = ">=";
+            node.Condition.Value = "2";
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                Assert.That(window.FocusDialogueNode(dialogue, node.Id), Is.True);
+
+                var suggestions = window.rootVisualElement.Q<PopupField<string>>("condition-key-suggestion-field");
+                Assert.That(suggestions, Is.Not.Null);
+                Assert.That(suggestions.choices.Any(choice => choice.Contains("Trust")), Is.True);
+                Assert.That(window.rootVisualElement.Q<IntegerField>("condition-int-value-field"), Is.Not.Null);
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void ConditionEditor_BoolVariableUsesExplicitBoolValue()
+        {
+            var database = CreateDatabase("ConditionBoolVariable");
+            database.Variables.Add(new DialogueVariableDefinition
+            {
+                Key = "IsPiskaStole?",
+                DisplayName = "variable_1",
+                Type = DialogueArgumentType.Bool,
+                DefaultValue = DialogueArgumentValue.FromBool(false)
+            });
+            var dialogue = database.Npcs[0].Dialogues[0];
+            var node = (DialogueTextNodeData)dialogue.Graph.Nodes[0];
+            node.Condition.Type = ConditionType.VariableCheck;
+            node.Condition.Key = "IsPiskaStole?";
+            node.Condition.Operator = "Truthy";
+            node.Condition.Value = string.Empty;
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                Assert.That(window.FocusDialogueNode(dialogue, node.Id), Is.True);
+
+                var operatorField = window.rootVisualElement.Q<PopupField<string>>("condition-operator-field");
+                Assert.That(operatorField, Is.Not.Null);
+                Assert.That(operatorField.choices, Is.EqualTo(new[] { "==", "!=" }));
+                Assert.That(node.Condition.Operator, Is.EqualTo("=="));
+                Assert.That(node.Condition.Value, Is.EqualTo("true"));
+                Assert.That(window.rootVisualElement.Q<Toggle>("condition-bool-value-field"), Is.Not.Null);
+                Assert.That(window.rootVisualElement.Query<Label>().ToList()
+                    .Any(label => label.text == "The selected operator does not use an expected value."), Is.False);
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void PreviewWindow_DatabaseBoolVariableAppearsAndCanOverrideStartGate()
+        {
+            var database = CreateDatabase("PreviewDatabaseBoolVariable");
+            database.Variables.Add(new DialogueVariableDefinition
+            {
+                Key = "has_key",
+                Type = DialogueArgumentType.Bool,
+                DefaultValue = DialogueArgumentValue.FromBool(false)
+            });
+            var dialogue = database.Npcs[0].Dialogues[0];
+            var startNode = (DialogueTextNodeData)dialogue.Graph.Nodes[0];
+            dialogue.StartCondition.Type = ConditionType.VariableCheck;
+            dialogue.StartCondition.Key = "has_key";
+            dialogue.StartCondition.Operator = "==";
+            dialogue.StartCondition.Value = "true";
+            var owner = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+            var preview = ScriptableObject.CreateInstance<DialoguePreviewWindow>();
+
+            try
+            {
+                owner.InitializeForTests(database);
+                preview.InitializeForTests(dialogue, owner);
+
+                Assert.That(preview.SessionForTests.CurrentNode, Is.Null);
+                Assert.That(preview.SessionForTests.CurrentReason, Does.Contain("Dialogue-level start condition blocked"));
+                Assert.That(preview.SessionForTests.CurrentReason, Does.Contain("current value: false"));
+                Assert.That(preview.rootVisualElement.Query<TextField>("preview-variable-key-field").ToList()
+                    .Any(field => field.value == "has_key"), Is.True);
+
+                var boolField = preview.rootVisualElement.Q<Toggle>("preview-variable-bool-value-field");
+                Assert.That(boolField, Is.Not.Null);
+                Assert.That(boolField.value, Is.False);
+
+                boolField.value = true;
+
+                Assert.That(preview.SessionForTests.CurrentNode, Is.EqualTo(startNode));
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                preview.Close();
+                owner.Close();
+            }
+        }
+
+        [Test]
+        public void PreviewWindow_ShowsRuntimeVariableChanges()
+        {
+            var database = CreateDatabase("PreviewRuntimeVariableChange");
+            database.Variables.Add(new DialogueVariableDefinition
+            {
+                Key = "unlocked",
+                Type = DialogueArgumentType.Bool,
+                DefaultValue = DialogueArgumentValue.FromBool(false)
+            });
+            var dialogue = database.Npcs[0].Dialogues[0];
+            var startNode = (DialogueTextNodeData)dialogue.Graph.Nodes[0];
+            var functionNode = new FunctionNodeData
+            {
+                FunctionId = DialogueBuiltInFunctions.SetVariableFunctionId,
+                Arguments = new List<DialogueArgumentEntry>
+                {
+                    new()
+                    {
+                        Name = DialogueBuiltInFunctions.VariableKeyArgument,
+                        Value = DialogueArgumentValue.FromString("unlocked")
+                    },
+                    new()
+                    {
+                        Name = DialogueBuiltInFunctions.VariableValueArgument,
+                        Value = DialogueArgumentValue.FromString("true")
+                    }
+                }
+            };
+            var targetNode = new DialogueTextNodeData { Title = "Unlocked" };
+            dialogue.Graph.Nodes.Add(functionNode);
+            dialogue.Graph.Nodes.Add(targetNode);
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = startNode.Id, ToNodeId = functionNode.Id, Order = 0 });
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = functionNode.Id, ToNodeId = targetNode.Id, Order = 0 });
+            var owner = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+            var preview = ScriptableObject.CreateInstance<DialoguePreviewWindow>();
+
+            try
+            {
+                owner.InitializeForTests(database);
+                preview.InitializeForTests(dialogue, owner);
+
+                var boolField = preview.rootVisualElement.Q<Toggle>("preview-variable-bool-value-field");
+                Assert.That(boolField, Is.Not.Null);
+                Assert.That(boolField.value, Is.False);
+
+                Assert.That(preview.SessionForTests.Advance(), Is.True);
+                preview.RefreshForTests();
+
+                boolField = preview.rootVisualElement.Q<Toggle>("preview-variable-bool-value-field");
+                Assert.That(boolField, Is.Not.Null);
+                Assert.That(boolField.value, Is.True);
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                preview.Close();
+                owner.Close();
+            }
+        }
+
+        [Test]
+        public void FunctionInspector_SetVariableUsesVariableDropdown()
+        {
+            var database = CreateDatabase("SetVariableInspector");
+            database.Variables.Add(new DialogueVariableDefinition
+            {
+                Key = "door_open",
+                DisplayName = "Door Open",
+                Type = DialogueArgumentType.Bool,
+                DefaultValue = DialogueArgumentValue.FromBool(false)
+            });
+            var dialogue = database.Npcs[0].Dialogues[0];
+            var functionNode = new FunctionNodeData
+            {
+                FunctionId = DialogueBuiltInFunctions.SetVariableFunctionId
+            };
+            dialogue.Graph.Nodes.Add(functionNode);
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                Assert.That(window.FocusDialogueNode(dialogue, functionNode.Id), Is.True);
+
+                Assert.That(window.rootVisualElement.Q<PopupField<string>>("set-variable-key-field"), Is.Not.Null);
+                Assert.That(window.rootVisualElement.Q<Toggle>("set-variable-bool-value-field"), Is.Not.Null);
+            }
+            finally
+            {
                 DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
                 window.Close();
             }

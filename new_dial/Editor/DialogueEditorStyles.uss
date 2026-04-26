@@ -257,13 +257,58 @@
 .dialogue-editor__project-panel {
     flex-grow: 0;
     flex-shrink: 0;
-    height: 360px;
+}
+
+.dialogue-editor__variables-panel {
+    flex-grow: 0;
+    flex-shrink: 0;
+    margin-bottom: 0;
 }
 
 .dialogue-editor__palette-panel {
     flex-grow: 0;
     flex-shrink: 0;
+}
+
+.dialogue-editor__dock-foldout {
+    margin-top: 0;
+    margin-right: 0;
     margin-bottom: 0;
+    margin-left: 0;
+}
+
+.dialogue-editor__dock-foldout > .unity-foldout__toggle {
+    min-height: 46px;
+    padding-left: 14px;
+    padding-right: 14px;
+    background-color: rgba(0, 0, 0, 0);
+    border-top-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 0;
+    border-left-width: 0;
+}
+
+.dialogue-editor__dock-foldout > .unity-foldout__toggle:hover {
+    background-color: rgba(139, 184, 255, 0.06);
+}
+
+.dialogue-editor__dock-foldout > .unity-foldout__content {
+    background-color: rgba(0, 0, 0, 0);
+}
+
+.dialogue-editor__dock-foldout-content {
+    padding-top: 0;
+    padding-right: 0;
+    padding-bottom: 0;
+    padding-left: 0;
+}
+
+.dialogue-editor__project-content {
+    height: 360px;
+}
+
+.dialogue-editor__variables-content {
+    height: 260px;
 }
 
 .dialogue-editor__panel-header {
@@ -393,7 +438,9 @@
     flex-grow: 1;
     flex-shrink: 1;
     -unity-text-align: middle-center;
-    white-space: normal;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .dialogue-editor__palette-shortcut {
@@ -431,10 +478,10 @@
 .dialogue-editor__palette-shortcut-spacer {
     flex-grow: 0;
     flex-shrink: 0;
-    width: 68px;
-    min-width: 68px;
-    max-width: 68px;
-    margin-left: 8px;
+    width: 0;
+    min-width: 0;
+    max-width: 0;
+    margin-left: 0;
 }
 
 .dialogue-editor__palette-item.is-rebinding .dialogue-editor__palette-shortcut {
@@ -1439,8 +1486,7 @@
     color: #f4f8ff;
 }
 
-.dialogue-node__header-title-field:hover > .unity-base-field__input,
-.dialogue-node__header-title-field:focus-within > .unity-base-field__input {
+.dialogue-node__header-title-field:hover > .unity-base-field__input {
     background-color: rgba(17, 25, 39, 0.58);
     border-top-color: rgba(139, 184, 255, 0.42);
     border-right-color: rgba(139, 184, 255, 0.42);
@@ -1757,6 +1803,9 @@
 
 .dialogue-preview__variables-actions {
     flex-direction: row;
+    flex-grow: 0;
+    flex-shrink: 0;
+    margin-left: auto;
 }
 
 .dialogue-preview__variables-list {
@@ -1777,16 +1826,64 @@
     min-width: 0;
 }
 
-.dialogue-preview__variable-key,
-.dialogue-preview__variable-value {
+.dialogue-preview__variable-key {
     flex-grow: 1;
+    flex-shrink: 1;
+    flex-basis: 0;
     min-width: 0;
-    margin-right: 8px;
+    margin-right: 14px;
 }
 
 .dialogue-preview__variable-type {
-    width: 150px;
-    margin-right: 8px;
+    width: 220px;
+    min-width: 220px;
+    max-width: 220px;
+    flex-grow: 0;
+    flex-shrink: 0;
+    margin-right: 14px;
+}
+
+.dialogue-preview__variable-value {
+    width: 260px;
+    min-width: 180px;
+    max-width: 320px;
+    flex-grow: 0;
+    flex-shrink: 1;
+    margin-right: 14px;
+}
+
+.dialogue-preview__variable-bool {
+    width: 170px;
+    min-width: 170px;
+    max-width: 170px;
+    flex-grow: 0;
+    flex-shrink: 0;
+    margin-right: 14px;
+}
+
+.dialogue-preview__variable-key > .unity-base-field__label,
+.dialogue-preview__variable-type > .unity-base-field__label,
+.dialogue-preview__variable-value > .unity-base-field__label,
+.dialogue-preview__variable-bool > .unity-base-field__label {
+    color: #b6c5dd;
+    min-width: 48px;
+    width: 48px;
+    max-width: 48px;
+    white-space: nowrap;
+}
+
+.dialogue-preview__variable-key > .unity-base-field__input,
+.dialogue-preview__variable-type > .unity-base-field__input,
+.dialogue-preview__variable-value > .unity-base-field__input {
+    flex-grow: 1;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+}
+
+.dialogue-preview__variable-bool > .unity-base-field__input {
+    flex-grow: 0;
+    flex-shrink: 0;
 }
 
 .dialogue-preview__panel-header {
@@ -1799,11 +1896,21 @@
     border-bottom-color: #313d55;
 }
 
+.dialogue-preview__variables-header {
+    flex-direction: row;
+    align-items: center;
+}
+
 .dialogue-preview__panel-title {
     -unity-font-style: bold;
     color: #f2f6fc;
     font-size: 13px;
     margin-bottom: 3px;
+}
+
+.dialogue-preview__variables-header .dialogue-preview__panel-title {
+    margin-bottom: 0;
+    flex-grow: 1;
 }
 
 .dialogue-preview__panel-hint {

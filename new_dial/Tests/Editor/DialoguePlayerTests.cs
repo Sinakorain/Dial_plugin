@@ -71,6 +71,177 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
+        public void DatabaseVariables_CopyAndSessionStateAreIndependent()
+        {
+            var source = ScriptableObject.CreateInstance<DialogueDatabaseAsset>();
+            source.Variables.Add(new DialogueVariableDefinition
+            {
+                Key = "trust",
+                DisplayName = "Trust",
+                Type = DialogueArgumentType.Int,
+                DefaultValue = DialogueArgumentValue.FromInt(1)
+            });
+
+            var clone = ScriptableObject.CreateInstance<DialogueDatabaseAsset>();
+            clone.CopyFrom(source);
+            source.Variables[0].DefaultValue.IntValue = 5;
+
+            var state = DialogueVariableState.FromDatabase(clone);
+            Assert.That(state.TryGetValue("trust", out var value), Is.True);
+            Assert.That(value.IntValue, Is.EqualTo(1));
+
+            Assert.That(state.TrySetValueFromString("trust", "3", out _), Is.True);
+            Assert.That(state.TryGetValue("trust", out value), Is.True);
+            Assert.That(value.IntValue, Is.EqualTo(3));
+            Assert.That(clone.Variables[0].DefaultValue.IntValue, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void Conditions_EvaluateTypedVariableState()
+        {
+            var database = ScriptableObject.CreateInstance<DialogueDatabaseAsset>();
+            database.Variables.Add(new DialogueVariableDefinition
+            {
+                Key = "trust",
+                Type = DialogueArgumentType.Int,
+                DefaultValue = DialogueArgumentValue.FromInt(3)
+            });
+            database.Variables.Add(new DialogueVariableDefinition
+            {
+                Key = "door_open",
+                Type = DialogueArgumentType.Bool,
+                DefaultValue = DialogueArgumentValue.FromBool(true)
+            });
+
+            var state = DialogueVariableState.FromDatabase(database);
+            var evaluator = new DefaultDialogueConditionEvaluator();
+
+            Assert.That(evaluator.Evaluate(new ConditionData
+            {
+                Type = ConditionType.VariableCheck,
+                Key = "trust",
+                Operator = ">=",
+                Value = "3"
+            }, state), Is.True);
+
+            Assert.That(evaluator.Evaluate(new ConditionData
+            {
+                Type = ConditionType.VariableCheck,
+                Key = "door_open",
+                Operator = "Truthy"
+            }, state), Is.True);
+
+            Assert.That(evaluator.Evaluate(new ConditionData
+            {
+                Type = ConditionType.VariableCheck,
+                Key = "door_open",
+                Operator = "==",
+                Value = string.Empty
+            }, state), Is.True);
+        }
+
+        [Test]
+        public void BuiltInSetVariableFunction_UpdatesFollowingConditions()
+        {
+            var database = ScriptableObject.CreateInstance<DialogueDatabaseAsset>();
+            database.Variables.Add(new DialogueVariableDefinition
+            {
+                Key = "unlocked",
+                Type = DialogueArgumentType.Bool,
+                DefaultValue = DialogueArgumentValue.FromBool(false)
+            });
+
+            var dialogue = new DialogueEntry { Name = "Set Variable" };
+            var start = new DialogueTextNodeData { Title = "Start", IsStartNode = true };
+            var setVariable = new FunctionNodeData
+            {
+                Title = "Unlock",
+                FunctionId = DialogueBuiltInFunctions.SetVariableFunctionId,
+                Arguments = new List<DialogueArgumentEntry>
+                {
+                    new()
+                    {
+                        Name = DialogueBuiltInFunctions.VariableKeyArgument,
+                        Value = DialogueArgumentValue.FromString("unlocked")
+                    },
+                    new()
+                    {
+                        Name = DialogueBuiltInFunctions.VariableValueArgument,
+                        Value = DialogueArgumentValue.FromString("true")
+                    }
+                }
+            };
+            var target = new DialogueTextNodeData
+            {
+                Title = "Unlocked",
+                Condition = new ConditionData
+                {
+                    Type = ConditionType.VariableCheck,
+                    Key = "unlocked",
+                    Operator = "Truthy"
+                }
+            };
+
+            dialogue.Graph.Nodes.Add(start);
+            dialogue.Graph.Nodes.Add(setVariable);
+            dialogue.Graph.Nodes.Add(target);
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = start.Id, ToNodeId = setVariable.Id, Order = 0 });
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = setVariable.Id, ToNodeId = target.Id, Order = 0 });
+
+            var player = new DialoguePlayer(database);
+
+            Assert.That(player.Start(dialogue), Is.True);
+            Assert.That(player.Next(), Is.True);
+            Assert.That(player.CurrentNode, Is.EqualTo(target));
+        }
+
+        [Test]
+        public void BuiltInSetVariableFunction_InvalidValueStopsWhenPolicyStops()
+        {
+            var database = ScriptableObject.CreateInstance<DialogueDatabaseAsset>();
+            database.Variables.Add(new DialogueVariableDefinition
+            {
+                Key = "trust",
+                Type = DialogueArgumentType.Int,
+                DefaultValue = DialogueArgumentValue.FromInt(0)
+            });
+
+            var dialogue = new DialogueEntry { Name = "Invalid Set Variable" };
+            var start = new DialogueTextNodeData { IsStartNode = true };
+            var setVariable = new FunctionNodeData
+            {
+                FunctionId = DialogueBuiltInFunctions.SetVariableFunctionId,
+                FailurePolicy = DialogueExecutionFailurePolicy.StopDialogue,
+                Arguments = new List<DialogueArgumentEntry>
+                {
+                    new()
+                    {
+                        Name = DialogueBuiltInFunctions.VariableKeyArgument,
+                        Value = DialogueArgumentValue.FromString("trust")
+                    },
+                    new()
+                    {
+                        Name = DialogueBuiltInFunctions.VariableValueArgument,
+                        Value = DialogueArgumentValue.FromString("not-number")
+                    }
+                }
+            };
+            var target = new DialogueTextNodeData { Title = "Should not enter" };
+            dialogue.Graph.Nodes.Add(start);
+            dialogue.Graph.Nodes.Add(setVariable);
+            dialogue.Graph.Nodes.Add(target);
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = start.Id, ToNodeId = setVariable.Id, Order = 0 });
+            dialogue.Graph.Links.Add(new NodeLinkData { FromNodeId = setVariable.Id, ToNodeId = target.Id, Order = 0 });
+
+            var player = new DialoguePlayer(database);
+
+            Assert.That(player.Start(dialogue), Is.True);
+            Assert.That(player.Next(), Is.False);
+            Assert.That(player.CurrentLineNode, Is.Null);
+            Assert.That(player.LastRuntimeError, Does.Contain("expects Int"));
+        }
+
+        [Test]
         public void Choose_UsesChoiceModeOutputs()
         {
             var dialogue = new DialogueEntry

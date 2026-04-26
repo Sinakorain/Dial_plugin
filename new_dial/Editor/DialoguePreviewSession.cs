@@ -10,12 +10,20 @@ namespace NewDial.DialogueEditor
         private readonly List<DialoguePreviewTranscriptEntry> _transcript = new();
         private readonly List<DialoguePreviewBlockedChoice> _blockedChoices = new();
         private readonly Dictionary<string, string> _variables = new();
+        private readonly Dictionary<string, string> _currentVariables = new(StringComparer.Ordinal);
         private readonly IDialogueConditionEvaluator _conditionEvaluator = new DefaultDialogueConditionEvaluator();
+        private readonly DialogueDatabaseAsset _database;
         private DialoguePlayer _player;
 
         public DialoguePreviewSession(DialogueEntry dialogue, IDictionary<string, string> variables = null)
+            : this(dialogue, null, variables)
+        {
+        }
+
+        public DialoguePreviewSession(DialogueEntry dialogue, DialogueDatabaseAsset database, IDictionary<string, string> variables = null)
         {
             Dialogue = dialogue;
+            _database = database;
             SetVariables(variables, false);
             Replay();
         }
@@ -49,6 +57,19 @@ namespace NewDial.DialogueEditor
         public string CurrentSpeakerName => _player.CurrentSpeakerName;
 
         public string CurrentReason { get; private set; }
+
+        public IReadOnlyDictionary<string, string> CurrentVariables => _currentVariables;
+
+        public bool TryGetCurrentVariableValue(string key, out string value)
+        {
+            if (!string.IsNullOrWhiteSpace(key) && _currentVariables.TryGetValue(key, out value))
+            {
+                return true;
+            }
+
+            value = string.Empty;
+            return false;
+        }
 
         public void SetVariables(IDictionary<string, string> variables, bool replay = true)
         {
@@ -113,32 +134,57 @@ namespace NewDial.DialogueEditor
         {
             _transcript.Clear();
             _blockedChoices.Clear();
+            _currentVariables.Clear();
             CurrentReason = string.Empty;
 
-            var variableStore = new DictionaryDialogueVariableStore(_variables);
+            IDialogueVariableStore variableStore;
+            if (_database == null)
+            {
+                variableStore = new DictionaryDialogueVariableStore(_variables);
+            }
+            else
+            {
+                var variableState = DialogueVariableState.FromDatabase(_database);
+                foreach (var pair in _variables)
+                {
+                    if (!variableState.TrySetValueFromString(pair.Key, pair.Value, out _))
+                    {
+                        variableState.SetStringValue(pair.Key, pair.Value);
+                    }
+                }
+
+                variableStore = variableState;
+            }
+
             _player = new DialoguePlayer(_conditionEvaluator, variableStore);
 
             if (Dialogue == null)
             {
                 CurrentReason = DialogueEditorLocalization.Text("No dialogue is selected.");
+                CaptureCurrentVariables(variableStore);
                 return;
             }
 
             if (Dialogue.Graph == null)
             {
                 CurrentReason = DialogueEditorLocalization.Text("Missing graph.");
+                CaptureCurrentVariables(variableStore);
                 return;
             }
 
             if (!_conditionEvaluator.Evaluate(Dialogue.StartCondition, variableStore))
             {
-                CurrentReason = DialogueEditorLocalization.Format("Dialogue start blocked by condition: {0}", DescribeCondition(Dialogue.StartCondition));
+                CurrentReason = DialogueEditorLocalization.Format(
+                    "Dialogue-level start condition blocked: {0}",
+                    DescribeConditionWithCurrentValue(Dialogue.StartCondition, variableStore));
+                CaptureCurrentVariables(variableStore);
                 return;
             }
 
             if (FindStartNode(Dialogue) == null)
             {
                 CurrentReason = DialogueEditorLocalization.Text("Missing start node.");
+                CaptureCurrentVariables(variableStore);
                 return;
             }
 
@@ -151,6 +197,7 @@ namespace NewDial.DialogueEditor
             else
             {
                 CurrentReason = DialogueEditorLocalization.Text("Missing valid start node.");
+                CaptureCurrentVariables(variableStore);
                 return;
             }
 
@@ -197,6 +244,8 @@ namespace NewDial.DialogueEditor
             {
                 CurrentReason = DialogueEditorLocalization.Text("No choices are available with the current test variables.");
             }
+
+            CaptureCurrentVariables(variableStore);
         }
 
         public string GetChoiceExplanation(DialogueChoice choice)
@@ -340,6 +389,39 @@ namespace NewDial.DialogueEditor
             return DialogueEditorLocalization.Text("Choice");
         }
 
+        private void CaptureCurrentVariables(IDialogueVariableStore variableStore)
+        {
+            _currentVariables.Clear();
+            if (variableStore == null)
+            {
+                return;
+            }
+
+            var keys = new HashSet<string>(_variables.Keys.Where(key => !string.IsNullOrWhiteSpace(key)), StringComparer.Ordinal);
+            foreach (var definition in _database?.Variables ?? Enumerable.Empty<DialogueVariableDefinition>())
+            {
+                if (!string.IsNullOrWhiteSpace(definition?.Key))
+                {
+                    keys.Add(definition.Key);
+                }
+            }
+
+            foreach (var key in keys)
+            {
+                if (variableStore is IDialogueVariableState variableState &&
+                    variableState.TryGetValue(key, out var typedValue))
+                {
+                    _currentVariables[key] = typedValue.GetDisplayValue();
+                    continue;
+                }
+
+                if (variableStore.TryGetValue(key, out var stringValue))
+                {
+                    _currentVariables[key] = stringValue ?? string.Empty;
+                }
+            }
+        }
+
         private static string DescribeCondition(ConditionData condition)
         {
             if (condition == null || condition.Type == ConditionType.None)
@@ -359,6 +441,43 @@ namespace NewDial.DialogueEditor
             }
 
             return $"{condition.Type} {condition.Key} {comparisonOperator} {condition.Value}";
+        }
+
+        private static string DescribeConditionWithCurrentValue(ConditionData condition, IDialogueVariableStore variableStore)
+        {
+            var description = DescribeCondition(condition);
+            if (TryDescribeCurrentValue(condition, variableStore, out var currentValue))
+            {
+                return $"{description} ({DialogueEditorLocalization.Format("current value: {0}", currentValue)})";
+            }
+
+            return description;
+        }
+
+        private static bool TryDescribeCurrentValue(ConditionData condition, IDialogueVariableStore variableStore, out string currentValue)
+        {
+            currentValue = string.Empty;
+            if (condition?.Type != ConditionType.VariableCheck ||
+                string.IsNullOrWhiteSpace(condition.Key) ||
+                variableStore == null)
+            {
+                return false;
+            }
+
+            if (variableStore is IDialogueVariableState variableState &&
+                variableState.TryGetValue(condition.Key, out var typedValue))
+            {
+                currentValue = typedValue.GetDisplayValue();
+                return true;
+            }
+
+            if (variableStore.TryGetValue(condition.Key, out var stringValue))
+            {
+                currentValue = stringValue ?? string.Empty;
+                return true;
+            }
+
+            return false;
         }
     }
 

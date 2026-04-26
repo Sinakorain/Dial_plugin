@@ -17,7 +17,8 @@ This file describes the current working-tree behavior of `new_dial`, including c
 
 ### Data model
 
-- `DialogueDatabaseAsset` is the top-level `ScriptableObject` and stores a list of `NpcEntry`.
+- `DialogueDatabaseAsset` is the top-level `ScriptableObject` and stores database-wide `DialogueVariableDefinition` entries plus a list of `NpcEntry`.
+- `DialogueVariableDefinition` stores a variable `Key`, optional `DisplayName`, primitive `Type`, and typed default value.
 - `NpcEntry` stores an `Id`, a display `Name`, and a list of `DialogueEntry`.
 - `DialogueEntry` stores an `Id`, `Name`, per-dialogue `Speakers`, `StartCondition`, and a `DialogueGraphData`.
 - `DialogueSpeakerEntry` stores a stable `Id` and display `Name` for a speaker available inside one dialogue.
@@ -41,11 +42,14 @@ This file describes the current working-tree behavior of `new_dial`, including c
 - Executable nodes are entered immediately, do not display text or choices, and continue along the first valid outgoing link sorted by `Order` then stable link id.
 - Missing executors and execution failures are handled diagnostically through `DialogueExecutionResult` and node failure policy.
 - `IDialogueVariableStore` abstracts variable lookup.
-- `DictionaryDialogueVariableStore` is the built-in in-memory implementation.
+- `IDialogueVariableState` extends variable lookup with typed mutable values.
+- `DialogueVariableState` is the built-in session-state implementation initialized from database variable defaults.
+- `DictionaryDialogueVariableStore` remains the built-in string-only compatibility implementation.
+- `DialogueBuiltInFunctions.SetVariableFunctionId` (`newdial.variable.set`) is handled by `DialoguePlayer` before project executors and writes to the current mutable variable state.
 - `IDialogueConditionEvaluator` abstracts condition evaluation.
 - `DefaultDialogueConditionEvaluator` currently supports:
   - pass-through for `ConditionType.None`
-  - universal `ConditionType.VariableCheck` lookups through `IDialogueVariableStore`
+  - universal `ConditionType.VariableCheck` lookups through typed `IDialogueVariableState` when available, with `IDialogueVariableStore` string fallback
   - numeric comparisons for `>`, `<`, `>=`, `<=`
   - string comparisons for `==`, `!=`, and `Contains`
   - a `Truthy` operator for simple boolean-like values
@@ -56,6 +60,8 @@ This file describes the current working-tree behavior of `new_dial`, including c
 - `DialogueStartWindow` opens as a compact floating launcher from `Tools/New Dial/Dialogue Editor` and remains available from `Window/New Dial/Dialogue Editor`.
 - The compact start launcher can create a new `DialogueDatabaseAsset`, load an existing asset, or reveal a collapsed advanced `Import / Export` section inside the same window; expanding the section grows the utility window downward from its current top-left position.
 - `DialogueEditorWindow` is the main authoring surface. Its toolbar exposes `New`, `Load`, `Save`, `Preview`, `Localization`, `Delete`, `Dialogue Settings`, a per-user content-language switcher for authored text, and a separate `EN/RU` editor UI language switcher backed by `EditorPrefs`.
+- The left dock includes a `Variables` section for creating database-wide variables, editing keys/display names/types/default values, and warning about empty or duplicate keys.
+- The left dock uses collapsible `Project`, `Palette`, and `Variables` sections, with `Palette` shown before `Variables`.
 - The palette supports `Text Node`, `Comment`, `Function`, `Scene`, and `Debug`; palette items show saved editor shortcuts, double-click starts shortcut rebinding with a compact `Press` prompt, and shortcuts create nodes only while the graph canvas is focused. Shortcut-created nodes use the same empty-project flow as palette placement by creating an NPC and dialogue when needed, appear near the cursor when it is over the canvas, otherwise near the current viewport center, and are clamped into the visible viewport.
 - Shortcut-created nodes search nearby visible positions around the cursor or viewport center, so they avoid spawning directly on top of existing graph nodes when space is available.
 - Dialogue settings expose a speaker roster editor. Text node inspectors can bind a line to a speaker from that dialogue.
@@ -81,7 +87,7 @@ This file describes the current working-tree behavior of `new_dial`, including c
 - The graph empty-state warning is visible for an empty graph, hides as soon as the first text or comment node is created, and returns when the last node is deleted.
 - Selected NPC and dialogue metadata in the project panel uses compact inline ID and Where Used rows instead of nested cards.
 - Dialogue settings speaker roster rows keep the speaker name field and remove action on one line.
-- Text, answer, executable, and comment node titles are editable directly in the graph header. Text and answer body/button fields soft-wrap visually without inserting automatic newline characters. Single click selects without opening the inspector and double-clicking non-field node areas opens details. Lower-half drags outside inline fields still begin link creation, and node width stays stable while long text grows downward.
+- Text, answer, executable, and comment node titles are editable directly in the graph header. Text and answer body/button fields soft-wrap visually without inserting automatic newline characters. Single-clicking any node area opens details, inline fields remain directly editable, lower-half drags outside inline fields still begin link creation, and node width stays stable while long text grows downward.
 - Newly created graph nodes use globally numbered default titles based on the current graph size, for example `Text Node_1`, `Function_2`, and `Answer_3`.
 - Graph node meta hints use compact status text and clip inside the card instead of spilling past the node edge.
 - NPC, dialogue, and node `Id` values are explicitly editable in the editor, with generate and safe-regenerate actions plus immediate empty/duplicate warnings.
@@ -95,11 +101,13 @@ This file describes the current working-tree behavior of `new_dial`, including c
 - Text node `BodyText` supports `<b>`, `<i>`, and `<color=#RRGGBB>` markup. Unknown or malformed tags, including old `<mark>` highlight tags, remain in raw `BodyText` and render as plain text in editor previews.
 - Inspector, graph, current-line preview, and transcript surfaces render supported rich text through a shared segmented UI Toolkit renderer for bold, italic, and text color.
 - Text node inspectors include an `Answers` section. `Add Choice` creates a visible playable answer node and connects it as `Text question -> Answer line`; manually linked `Text -> Answer` outputs also appear as choices without requiring the legacy `UseOutputsAsChoices` flag.
-- Text and answer nodes can edit their primary text fields directly on the graph, while all node titles are edited from their headers; single-click selects a node or field, while double-clicking non-field node areas opens the details inspector.
+- Text and answer nodes can edit their primary text fields directly on the graph, while all node titles are edited from their headers; single-clicking any node area opens the details inspector.
 - Answer node inspectors edit `Button Text`, body text, speaker, voice key, localization key, conditions, outgoing next links, and deletion. The answer condition controls whether the choice appears.
 - Text nodes with outgoing answers show editor diagnostics for missing answers, broken targets, empty/fallback answer labels, legacy direct-choice links, conflicting link order, negative link order, and unreachable choice targets.
-- Condition editing uses generic `None`, `VariableCheck`, and `Custom` types; irrelevant fields are hidden, operators come from built-in metadata, hints explain expected values, and projects can register key suggestions.
-- The preview window includes a bool/number/string test-variable sandbox and explains blocked dialogue starts, unavailable choices, missing targets, branch ends, and generic fallback labels.
+- Condition editing uses generic `None`, `VariableCheck`, and `Custom` types; irrelevant fields are hidden, operators come from built-in metadata, database variables are suggested automatically, typed value controls appear for known variables, and projects can register extra key suggestions.
+- Function node metadata includes a built-in `Variables: Set Variable` function (`newdial.variable.set`) with variable-key selection and typed value editing.
+- The dialogue inspector labels the dialogue-level start condition as a start gate and provides a clear action so it is not confused with node or branch conditions.
+- The preview window starts from database variable defaults, shows database variables as editable sandbox controls, applies bool/number/string test-variable overrides, reflects runtime variable changes after built-in Set Variable execution, and explains blocked dialogue starts with current variable values when available.
 - Collapsible Where Used blocks show internal NPC/dialogue/node references and can include project-provided external references through an editor resolver registry.
 - Comment groups can own text nodes, answer nodes, executable nodes, and nested comment groups.
 - Comment inspectors expose separate delete actions for removing only the comment node or removing the whole comment group with its contained nodes.
@@ -131,6 +139,7 @@ The sample also includes:
 - `DialogueDatabaseAsset`: top-level serialized dialogue database asset intended for editor authoring and runtime consumption.
 - `NpcEntry`: serializable NPC container that groups dialogues.
 - `DialogueEntry`: serializable dialogue record with speakers, start condition, and graph payload.
+- `DialogueVariableDefinition`: serializable database-wide variable definition with typed default value.
 - `DialogueSpeakerEntry`: serializable per-dialogue speaker record.
 - `DialogueGraphData`: serializable graph container for node and link data.
 - `DialogueTextNodeData`: playable dialogue node model with localization key/text data plus optional speaker and voice-key metadata.
@@ -147,7 +156,10 @@ The sample also includes:
 - `DialogueChoice`: resolved branch option returned by `DialoguePlayer`.
 - `IDialogueConditionEvaluator`: extension point for custom condition evaluation.
 - `IDialogueVariableStore`: extension point for variable lookup.
-- `DictionaryDialogueVariableStore`: minimal built-in variable store implementation.
+- `IDialogueVariableState`: extension point for typed mutable variable state.
+- `DialogueVariableState`: built-in mutable session copy initialized from database variable defaults.
+- `DictionaryDialogueVariableStore`: minimal string-only variable store implementation.
+- `DialogueBuiltInFunctions`: built-in executable function ids, including `newdial.variable.set`.
 - `DialogueExecutionResult`: success/failure/pending/end-dialogue execution result.
 - `IDialogueExecutionRegistry`: optional metadata source for function and scene descriptors.
 - `IDialogueFunctionExecutor` and `IDialogueSceneExecutor`: project-side execution adapters.
@@ -182,5 +194,5 @@ EditMode coverage currently exists for:
 - identifier validation and node `Id` rename link preservation
 - choice-flow diagnostics for text nodes with answers and legacy choice-mode nodes
 - executable graph rendering and inspector behavior
-- guided condition editor behavior, preview blocked-state explanations, and Where Used resolver results
+- guided condition editor behavior, database variable suggestions, preview blocked-state explanations, preview/session variable mutation, and Where Used resolver results
 - localization table parsing, batch import, repeated text-data updates, TSV export, content-language editing, and Russian UI language-list refresh after import

@@ -194,17 +194,16 @@ namespace NewDial.DialogueEditor
 
         private void OnMouseDown(MouseDownEvent evt)
         {
-            if (evt.button != 0 || DialogueGraphView.IsInlineInteractiveTarget(evt.target as VisualElement))
+            if (evt.button != 0)
             {
                 return;
             }
 
             var worldPointerPosition = this.LocalToWorld(evt.localMousePosition);
             _graphView.SelectRuntimeNodeForPointerDrag(this);
-            if (evt.clickCount >= 2)
+            _graphView.RequestNodeInspector(Data);
+            if (DialogueGraphView.IsInlineInteractiveTarget(evt.target as VisualElement))
             {
-                _graphView.RequestNodeInspector(Data);
-                evt.StopImmediatePropagation();
                 return;
             }
 

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -34,6 +35,13 @@ namespace NewDial.DialogueEditor
         private Button _restartButton;
         private Button _jumpButton;
         private readonly List<DialoguePreviewVariable> _testVariables = new();
+
+        internal DialoguePreviewSession SessionForTests => _session;
+
+        internal void RefreshForTests()
+        {
+            RefreshView();
+        }
 
         public static void ShowWindow(DialogueEntry dialogue, DialogueEditorWindow owner)
         {
@@ -88,8 +96,16 @@ namespace NewDial.DialogueEditor
         {
             _dialogue = dialogue;
             _ownerWindow = owner;
-            _session = dialogue == null ? null : new DialoguePreviewSession(dialogue, BuildVariableMap());
+            EnsureDatabaseVariablesInPreviewList();
+            _session = dialogue == null ? null : new DialoguePreviewSession(dialogue, owner?.CurrentDatabase, BuildVariableMap());
             RefreshView();
+        }
+
+        internal void InitializeForTests(DialogueEntry dialogue, DialogueEditorWindow owner)
+        {
+            ApplyStyles();
+            BuildLayout();
+            SetDialogue(dialogue, owner);
         }
 
         private void RefreshDialogueReference(DialogueEditorWindow owner)
@@ -283,9 +299,10 @@ namespace NewDial.DialogueEditor
 
             var header = new VisualElement();
             header.AddToClassList("dialogue-preview__panel-header");
+            header.AddToClassList("dialogue-preview__variables-header");
             panel.Add(header);
 
-            var title = new Label(DialogueEditorLocalization.Text("Test Variables"));
+            var title = new Label(DialogueEditorLocalization.Text("Preview Variables"));
             title.AddToClassList("dialogue-preview__panel-title");
             header.Add(title);
 
@@ -494,6 +511,7 @@ namespace NewDial.DialogueEditor
                 return;
             }
 
+            EnsureDatabaseVariablesInPreviewList();
             _variablesContainer.Clear();
             if (_testVariables.Count == 0)
             {
@@ -507,23 +525,30 @@ namespace NewDial.DialogueEditor
             {
                 var variable = _testVariables[index];
                 var variableIndex = index;
+                var displayedValue = GetDisplayedVariableValue(variable);
                 var row = new VisualElement();
                 row.AddToClassList("dialogue-preview__variable-row");
 
                 var keyField = new TextField(DialogueEditorLocalization.Text("Key")) { value = variable.Key };
+                keyField.name = "preview-variable-key-field";
                 keyField.AddToClassList("dialogue-preview__variable-key");
+                keyField.SetEnabled(!variable.IsDatabaseVariable);
                 keyField.RegisterValueChangedCallback(evt =>
                 {
                     variable.Key = evt.newValue;
+                    variable.IsDatabaseVariable = false;
                     RestartPreviewWithVariables();
                 });
                 row.Add(keyField);
 
                 var typeField = new EnumField(DialogueEditorLocalization.Text("Type"), variable.Type);
+                typeField.name = "preview-variable-type-field";
                 typeField.AddToClassList("dialogue-preview__variable-type");
+                typeField.SetEnabled(!variable.IsDatabaseVariable);
                 typeField.RegisterValueChangedCallback(evt =>
                 {
                     variable.Type = (DialoguePreviewVariableType)evt.newValue;
+                    variable.IsDatabaseVariable = false;
                     if (variable.Type == DialoguePreviewVariableType.Bool &&
                         !bool.TryParse(variable.Value, out _))
                     {
@@ -538,8 +563,10 @@ namespace NewDial.DialogueEditor
                 {
                     var boolField = new Toggle(DialogueEditorLocalization.Text("Value"))
                     {
-                        value = bool.TryParse(variable.Value, out var boolValue) && boolValue
+                        value = bool.TryParse(displayedValue, out var boolValue) && boolValue,
+                        name = "preview-variable-bool-value-field"
                     };
+                    boolField.AddToClassList("dialogue-preview__variable-bool");
                     boolField.RegisterValueChangedCallback(evt =>
                     {
                         variable.Value = evt.newValue ? "true" : "false";
@@ -549,7 +576,8 @@ namespace NewDial.DialogueEditor
                 }
                 else
                 {
-                    var valueField = new TextField(DialogueEditorLocalization.Text("Value")) { value = variable.Value };
+                    var valueField = new TextField(DialogueEditorLocalization.Text("Value")) { value = displayedValue };
+                    valueField.name = "preview-variable-value-field";
                     valueField.AddToClassList("dialogue-preview__variable-value");
                     valueField.RegisterValueChangedCallback(evt =>
                     {
@@ -565,13 +593,27 @@ namespace NewDial.DialogueEditor
                     RestartPreviewWithVariables();
                 })
                 {
-                    text = DialogueEditorLocalization.Text("Remove")
+                    text = DialogueEditorLocalization.Text("Remove"),
+                    name = "preview-variable-remove-button"
                 };
                 removeButton.AddToClassList("dialogue-preview__mini-button");
+                removeButton.SetEnabled(!variable.IsDatabaseVariable);
                 row.Add(removeButton);
 
                 _variablesContainer.Add(row);
             }
+        }
+
+        private string GetDisplayedVariableValue(DialoguePreviewVariable variable)
+        {
+            if (_session != null &&
+                !string.IsNullOrWhiteSpace(variable?.Key) &&
+                _session.TryGetCurrentVariableValue(variable.Key, out var currentValue))
+            {
+                return currentValue;
+            }
+
+            return variable?.Value ?? string.Empty;
         }
 
         private void AddTestVariable()
@@ -593,7 +635,8 @@ namespace NewDial.DialogueEditor
 
         private void RestartPreviewWithVariables()
         {
-            _session = _dialogue == null ? null : new DialoguePreviewSession(_dialogue, BuildVariableMap());
+            EnsureDatabaseVariablesInPreviewList();
+            _session = _dialogue == null ? null : new DialoguePreviewSession(_dialogue, _ownerWindow?.CurrentDatabase, BuildVariableMap());
             RefreshView();
         }
 
@@ -609,6 +652,53 @@ namespace NewDial.DialogueEditor
             }
 
             return map;
+        }
+
+        private void EnsureDatabaseVariablesInPreviewList()
+        {
+            var databaseVariables = _ownerWindow?.CurrentDatabase?.Variables;
+            if (databaseVariables == null)
+            {
+                return;
+            }
+
+            foreach (var definition in databaseVariables
+                         .Where(variable => variable != null && !string.IsNullOrWhiteSpace(variable.Key))
+                         .GroupBy(variable => variable.Key)
+                         .Select(group => group.First()))
+            {
+                var existing = _testVariables.FirstOrDefault(variable => variable.Key == definition.Key);
+                if (existing != null)
+                {
+                    if (existing.IsDatabaseVariable)
+                    {
+                        existing.Type = ToPreviewVariableType(definition.Type);
+                    }
+
+                    continue;
+                }
+
+                var defaultValue = definition.DefaultValue?.Clone() ?? new DialogueArgumentValue { Type = definition.Type };
+                defaultValue.Type = definition.Type;
+                _testVariables.Add(new DialoguePreviewVariable
+                {
+                    Key = definition.Key,
+                    Type = ToPreviewVariableType(definition.Type),
+                    Value = defaultValue.GetDisplayValue(),
+                    IsDatabaseVariable = true
+                });
+            }
+        }
+
+        private static DialoguePreviewVariableType ToPreviewVariableType(DialogueArgumentType type)
+        {
+            return type switch
+            {
+                DialogueArgumentType.Bool => DialoguePreviewVariableType.Bool,
+                DialogueArgumentType.Int => DialoguePreviewVariableType.Number,
+                DialogueArgumentType.Float => DialoguePreviewVariableType.Number,
+                _ => DialoguePreviewVariableType.String
+            };
         }
 
         private void JumpToActiveNode()
@@ -665,5 +755,6 @@ namespace NewDial.DialogueEditor
         public string Key;
         public DialoguePreviewVariableType Type;
         public string Value;
+        public bool IsDatabaseVariable;
     }
 }

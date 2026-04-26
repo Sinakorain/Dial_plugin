@@ -3387,17 +3387,16 @@ namespace NewDial.DialogueEditor
 
         private void OnMouseDown(MouseDownEvent evt)
         {
-            if (evt.button != 0 || DialogueGraphView.IsInlineInteractiveTarget(evt.target as VisualElement))
+            if (evt.button != 0)
             {
                 return;
             }
 
             var worldPointerPosition = this.LocalToWorld(evt.localMousePosition);
             _graphView.SelectRuntimeNodeForPointerDrag(this);
-            if (evt.clickCount >= 2)
+            _graphView.RequestNodeInspector(Data);
+            if (DialogueGraphView.IsInlineInteractiveTarget(evt.target as VisualElement))
             {
-                _graphView.RequestNodeInspector(Data);
-                evt.StopImmediatePropagation();
                 return;
             }
 
@@ -3573,7 +3572,14 @@ namespace NewDial.DialogueEditor
 
             RegisterCallback<MouseDownEvent>(evt =>
             {
-                if (evt.button != 0 || DialogueGraphView.IsInlineInteractiveTarget(evt.target as VisualElement))
+                if (evt.button != 0)
+                {
+                    return;
+                }
+
+                _graphView.SelectCommentGroupForPointerDrag(Data);
+                _graphView.RequestNodeInspector(Data);
+                if (DialogueGraphView.IsInlineInteractiveTarget(evt.target as VisualElement))
                 {
                     return;
                 }
@@ -3585,18 +3591,9 @@ namespace NewDial.DialogueEditor
                     return;
                 }
 
-                if (evt.clickCount >= 2)
-                {
-                    _graphView.SelectCommentGroup(Data);
-                    _graphView.RequestNodeInspector(Data);
-                    evt.StopImmediatePropagation();
-                    return;
-                }
-
                 if (evt.target is not Button)
                 {
                     var worldPointerPosition = this.LocalToWorld(evt.localMousePosition);
-                    _graphView.SelectCommentGroupForPointerDrag(Data);
                     _graphView.BeginCommentDrag(Data);
                     _graphView.BeginSelectionPointerDrag(worldPointerPosition);
                     _pendingCommentSelect = true;

@@ -9,6 +9,7 @@ namespace NewDial.DialogueEditor
     {
         private readonly IDialogueConditionEvaluator _conditionEvaluator;
         private readonly IDialogueVariableStore _variableStore;
+        private readonly IDialogueVariableState _variableState;
         private readonly IDialogueFunctionExecutor _functionExecutor;
         private readonly IDialogueSceneExecutor _sceneExecutor;
         private readonly List<DialogueChoice> _choices = new();
@@ -25,8 +26,23 @@ namespace NewDial.DialogueEditor
         {
             _conditionEvaluator = conditionEvaluator ?? new DefaultDialogueConditionEvaluator();
             _variableStore = variableStore;
+            _variableState = variableStore as IDialogueVariableState;
             _functionExecutor = functionExecutor;
             _sceneExecutor = sceneExecutor;
+        }
+
+        public DialoguePlayer(
+            DialogueDatabaseAsset database,
+            IDialogueConditionEvaluator conditionEvaluator = null,
+            IDialogueVariableState variableState = null,
+            IDialogueFunctionExecutor functionExecutor = null,
+            IDialogueSceneExecutor sceneExecutor = null)
+            : this(
+                conditionEvaluator,
+                variableState ?? DialogueVariableState.FromDatabase(database),
+                functionExecutor,
+                sceneExecutor)
+        {
         }
 
         public event Action<DialogueTextNodeData> NodeChanged;
@@ -274,6 +290,11 @@ namespace NewDial.DialogueEditor
 
         private DialogueExecutionResult ExecuteFunctionNode(FunctionNodeData node)
         {
+            if (node.FunctionId == DialogueBuiltInFunctions.SetVariableFunctionId)
+            {
+                return ExecuteSetVariableNode(node);
+            }
+
             if (_functionExecutor == null)
             {
                 return DialogueExecutionResult.Failed($"Function node '{node.Title}' cannot execute because no function executor is registered.");
@@ -338,9 +359,34 @@ namespace NewDial.DialogueEditor
             return DialogueExecutionResult.Success(message);
         }
 
+        private DialogueExecutionResult ExecuteSetVariableNode(FunctionNodeData node)
+        {
+            if (_variableState == null)
+            {
+                return DialogueExecutionResult.Failed("Set Variable cannot execute because no mutable variable state is available.");
+            }
+
+            var key = GetArgumentDisplayValue(node.Arguments, DialogueBuiltInFunctions.VariableKeyArgument);
+            var value = GetArgumentDisplayValue(node.Arguments, DialogueBuiltInFunctions.VariableValueArgument);
+            if (!_variableState.TrySetValueFromString(key, value, out var error))
+            {
+                return DialogueExecutionResult.Failed(error);
+            }
+
+            return DialogueExecutionResult.Success($"Variable '{key}' set.");
+        }
+
         private DialogueExecutionContext CreateExecutionContext(BaseNodeData node)
         {
-            return new DialogueExecutionContext(_currentDialogue, _currentDialogue?.Graph, node, _variableStore);
+            return new DialogueExecutionContext(_currentDialogue, _currentDialogue?.Graph, node, _variableStore, _variableState);
+        }
+
+        private static string GetArgumentDisplayValue(IEnumerable<DialogueArgumentEntry> arguments, string name)
+        {
+            return arguments?
+                .FirstOrDefault(argument => argument != null && argument.Name == name)?
+                .Value?
+                .GetDisplayValue() ?? string.Empty;
         }
 
         private bool HandleExecutionResult(BaseNodeData node, DialogueExecutionResult result)

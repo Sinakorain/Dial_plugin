@@ -5,6 +5,8 @@ namespace NewDial.DialogueEditor
 {
     public class DefaultDialogueConditionEvaluator : IDialogueConditionEvaluator
     {
+        private const double NumericTolerance = 0.000001d;
+
         public bool Evaluate(ConditionData condition, IDialogueVariableStore variableStore)
         {
             if (condition == null || condition.Type == ConditionType.None)
@@ -22,15 +24,41 @@ namespace NewDial.DialogueEditor
                 return false;
             }
 
+            var comparisonOperator = string.IsNullOrWhiteSpace(condition.Operator) ? "==" : condition.Operator.Trim();
+            var expectedValue = condition.Value ?? string.Empty;
+
+            if (variableStore is IDialogueVariableState variableState &&
+                variableState.TryGetValue(condition.Key, out var typedValue))
+            {
+                return Compare(typedValue, comparisonOperator, expectedValue);
+            }
+
             if (!variableStore.TryGetValue(condition.Key, out var currentValue))
             {
                 return false;
             }
 
-            var comparisonOperator = string.IsNullOrWhiteSpace(condition.Operator) ? "==" : condition.Operator.Trim();
-            var expectedValue = condition.Value ?? string.Empty;
-
             return Compare(currentValue ?? string.Empty, comparisonOperator, expectedValue);
+        }
+
+        private static bool Compare(DialogueArgumentValue currentValue, string comparisonOperator, string expectedValue)
+        {
+            if (currentValue == null)
+            {
+                return false;
+            }
+
+            switch (currentValue.Type)
+            {
+                case DialogueArgumentType.Int:
+                    return CompareNumber(currentValue.IntValue, comparisonOperator, expectedValue);
+                case DialogueArgumentType.Float:
+                    return CompareNumber(currentValue.FloatValue, comparisonOperator, expectedValue);
+                case DialogueArgumentType.Bool:
+                    return CompareBool(currentValue.BoolValue, comparisonOperator, expectedValue);
+                default:
+                    return Compare(currentValue.StringValue ?? string.Empty, comparisonOperator, expectedValue);
+            }
         }
 
         private static bool Compare(string currentValue, string comparisonOperator, string expectedValue)
@@ -62,6 +90,56 @@ namespace NewDial.DialogueEditor
             return false;
         }
 
+        private static bool CompareNumber(double currentValue, string comparisonOperator, string expectedValue)
+        {
+            if (comparisonOperator == "Truthy")
+            {
+                return Math.Abs(currentValue) >= NumericTolerance;
+            }
+
+            if (!TryParseNumber(expectedValue, out var expectedNumber))
+            {
+                return false;
+            }
+
+            return comparisonOperator switch
+            {
+                "==" => Math.Abs(currentValue - expectedNumber) < NumericTolerance,
+                "!=" => Math.Abs(currentValue - expectedNumber) >= NumericTolerance,
+                ">" => currentValue > expectedNumber,
+                "<" => currentValue < expectedNumber,
+                ">=" => currentValue >= expectedNumber,
+                "<=" => currentValue <= expectedNumber,
+                _ => false
+            };
+        }
+
+        private static bool CompareBool(bool currentValue, string comparisonOperator, string expectedValue)
+        {
+            if (comparisonOperator == "Truthy")
+            {
+                return currentValue;
+            }
+
+            if (string.IsNullOrWhiteSpace(expectedValue) &&
+                (comparisonOperator == "==" || comparisonOperator == "!="))
+            {
+                expectedValue = "true";
+            }
+
+            if (!TryParseBool(expectedValue, out var expectedBool))
+            {
+                return false;
+            }
+
+            return comparisonOperator switch
+            {
+                "==" => currentValue == expectedBool,
+                "!=" => currentValue != expectedBool,
+                _ => false
+            };
+        }
+
         private static bool TryParseNumber(string value, out double number)
         {
             return double.TryParse(value, NumberStyles.Any, CultureInfo.InvariantCulture, out number);
@@ -72,6 +150,30 @@ namespace NewDial.DialogueEditor
             return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) ||
                    string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase) ||
                    string.Equals(value, "1", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool TryParseBool(string value, out bool boolValue)
+        {
+            if (bool.TryParse(value, out boolValue))
+            {
+                return true;
+            }
+
+            if (string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(value, "1", StringComparison.OrdinalIgnoreCase))
+            {
+                boolValue = true;
+                return true;
+            }
+
+            if (string.Equals(value, "no", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(value, "0", StringComparison.OrdinalIgnoreCase))
+            {
+                boolValue = false;
+                return true;
+            }
+
+            return false;
         }
     }
 }
