@@ -2,6 +2,17 @@
 
 Используй этот документ как прямой рабочий промпт для Codex. Цель: спроектировать и реализовать production-ready диалоговую систему внутри Unity 6.x проекта, которая нативно работает с пакетом `com.danilkashulin.newdial.dialogue-editor` версии `0.1.0` как с внешней зависимостью. Система должна уметь либо создаваться с нуля поверх `new_dial`, либо адаптировать уже существующий runtime-стек проекта без смены authoring-формата.
 
+## Как использовать это ТЗ с Codex
+
+Для лучшего результата начинай задачу с короткого уточнения контекста проекта и плана. В prompt для Codex полезно явно передать:
+
+- Goal: реализовать production runtime/presenter/persistence слой поверх authored данных `new_dial`.
+- Context: это ТЗ, `docs/current-state.md`, `new_dial/README.md`, текущие UI/save/event/audio сервисы проекта и любые существующие dialogue runtime файлы.
+- Constraints: не менять пакетную сериализуемую схему, editor tooling и authoring format `new_dial`; не переносить project-side UI/audio/save/gameplay ownership внутрь пакета.
+- Done when: критерии приемки и test plan из этого документа выполнены, тесты или manual verification note приложены, а интеграционные ограничения явно соблюдены.
+
+Если проект уже содержит подходящие runtime, UI, save или event слои, Codex должен сначала спланировать adapter-путь и только затем добавлять недостающий bridging code.
+
 ## Контекст
 
 Пакет `new_dial` уже предоставляет authoring и базовый runtime traversal, и именно этот код является источником истины для интеграции. Опираться нужно на следующие типы и их текущее поведение:

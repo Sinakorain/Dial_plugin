@@ -59,6 +59,17 @@ The start window can create a new `DialogueDatabaseAsset` or load an existing on
 - `Samples~`: importable package samples and sample usage notes
 - `Tests`: EditMode tests for runtime and editor behavior
 
+## Working on the package with Codex
+
+When using Codex, keep tasks scoped around the package source, Unity validation path, and documentation responsibilities:
+
+- source of truth: `package.json`, `Runtime`, `Editor`, and `Tests`
+- current implementation snapshot: `../docs/current-state.md`
+- reusable Codex workflow guidance: `../docs/codex-workflow.md`
+- user-facing package changes: record in `CHANGELOG.md` under `Unreleased`
+
+The repository does not currently define a shell build, lint, or CI command. Validate behavior changes with Unity 6.x and the `NewDial.DialogueEditor.Tests.Editor` EditMode test assembly when that environment is available.
+
 ## Feature matrix
 
 | Status | Capability | Notes |

@@ -21,6 +21,10 @@ This sample adds a menu item that creates a playable `DialogueDatabaseAsset` for
 4. Open the asset with `Tools/New Dial/Dialogue Editor`.
 5. Use the editor's `Preview` button to inspect the branching flow.
 
+## Codex notes
+
+When changing this sample, keep the generated content aligned with package behavior documented in `new_dial/README.md` and `docs/current-state.md`. User-facing sample changes should be recorded in `new_dial/CHANGELOG.md` under `Unreleased`.
+
 ## What it demonstrates
 
 - basic package onboarding

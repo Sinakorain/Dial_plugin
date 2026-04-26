@@ -12,6 +12,7 @@ This file describes the current working-tree behavior of `new_dial`, including c
 - Alternate editor entry point: `Window/New Dial/Dialogue Editor`
 - Sample creation entry point: `Tools/New Dial/Create Basic Adventure Sample`
 - Test assembly: `NewDial.DialogueEditor.Tests.Editor`
+- Codex workflow guidance: `docs/codex-workflow.md`
 
 ## Implemented
 
@@ -196,3 +197,10 @@ EditMode coverage currently exists for:
 - executable graph rendering and inspector behavior
 - guided condition editor behavior, database variable suggestions, preview blocked-state explanations, preview/session variable mutation, and Where Used resolver results
 - localization table parsing, batch import, repeated text-data updates, TSV export, content-language editing, and Russian UI language-list refresh after import
+
+## Documentation workflow
+
+- `AGENTS.md` intentionally stays short and points agents at the package source of truth plus `docs/codex-workflow.md`.
+- `docs/codex-workflow.md` captures reusable Codex prompt shape, planning, validation, documentation, configuration, and review guidance.
+- Documentation updates should stay grounded in code, tests, `new_dial/package.json`, or explicit integration task documents.
+- The repository still does not define a shell build, lint, CI, or release automation workflow.

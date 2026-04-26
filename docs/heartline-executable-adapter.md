@@ -2,6 +2,15 @@
 
 This repository branch implements the reusable `new_dial` package side only. Heartline integration should live in the Heartline project branch under its own `Assets/Scripts/Dialogue` code.
 
+## How to use this with Codex
+
+Use this document as task context for a project-side Heartline integration, not as permission to edit `new_dial` package internals. A good Codex prompt should include:
+
+- Goal: implement or update the Heartline executable adapter.
+- Context: this document, `new_dial/README.md`, `docs/current-state.md`, and the Heartline runtime services that will own execution, audio, scene loading, and save state.
+- Constraints: do not add Heartline gameplay, audio, Addressables, battle, deck, quest, reward, or save logic to `new_dial`.
+- Done when: registry metadata appears in the editor, runtime executors handle the listed ids safely, voiceover lookup receives `VoiceKey`, and the manual validation list below passes or has an explicit note.
+
 ## Package Boundary
 
 `new_dial` provides:

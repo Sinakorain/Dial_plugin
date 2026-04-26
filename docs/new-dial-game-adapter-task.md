@@ -1,5 +1,14 @@
 # ТЗ Для Codex: Адаптер Игры Под Executable Nodes `new_dial`
 
+## Как использовать это ТЗ с Codex
+
+Давай Codex это ТЗ как контекст для project-side задачи, а не как задачу на изменение пакета `new_dial`.
+
+- Goal: подключить игровые registry/executors/voiceover bridge к уже существующим executable node API.
+- Context: этот документ, `docs/current-state.md`, `new_dial/README.md` и реальные сервисы игрового проекта, которые отвечают за сессии, сцены, бой, аудио и сохранения.
+- Constraints: не менять сериализуемую схему и editor-код `new_dial`; не переносить игровую логику в пакет; не добавлять прямые audio/scene/battle references в node data.
+- Done when: editor видит metadata registry, runtime безопасно исполняет перечисленные function/scene ids, `VoiceKey` уходит в project-side audio bridge, старые text-only диалоги не ломаются, а тесты или manual validation ниже зафиксированы.
+
 ## Summary
 
 Нужно доработать игровой проект, не меняя пакет `new_dial`, чтобы редактор диалогов увидел проектные функции в `FunctionNode`, проектные сцены в `SceneNode`, а runtime смог выполнять эти ноды через игровые сервисы.

@@ -4,6 +4,8 @@
 
 This repository stores a Unity UPM package, not a standalone Unity project. Most contribution work happens inside `new_dial/`.
 
+For Codex-assisted work, use [`docs/codex-workflow.md`](docs/codex-workflow.md) for prompt shape, validation expectations, and review checklist details.
+
 ## Working with the package
 
 1. Open a Unity 6.x project that will consume the package.
@@ -19,6 +21,8 @@ This repository stores a Unity UPM package, not a standalone Unity project. Most
 - `docs/current-state.md`: implementation snapshot for the current working tree
 
 ## Validation workflow
+
+This repository does not currently define a repository-wide shell build, lint, or CI command. Do not document or rely on one unless it is added to the repository.
 
 ### EditMode tests
 
@@ -64,3 +68,4 @@ Add user-facing changes to `new_dial/CHANGELOG.md` under `Unreleased`. Leave rel
 - Relevant EditMode tests were run or their absence is called out
 - Manual smoke checks were updated when editor workflows changed
 - Docs and changelog match the implemented behavior
+- Codex task output was reviewed for stale assumptions, accidental metadata churn, and claims not backed by code, tests, or `package.json`

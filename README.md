@@ -15,6 +15,7 @@ The package is an MVP dialogue and cutscene editor for Unity 6.x. It combines a 
 
 - [`new_dial/`](new_dial/README.md): the package itself, including `Runtime`, `Editor`, `Samples~`, and `Tests`
 - [`docs/current-state.md`](docs/current-state.md): implementation snapshot of the current working tree
+- [`docs/codex-workflow.md`](docs/codex-workflow.md): reusable Codex task, validation, and review guidance for this repository
 - [`CONTRIBUTING.md`](CONTRIBUTING.md): contributor workflow and validation expectations
 - [`AGENTS.md`](AGENTS.md): short Codex-oriented repository instructions
 
@@ -22,7 +23,8 @@ The package is an MVP dialogue and cutscene editor for Unity 6.x. It combines a 
 
 - To use the package, begin with [`new_dial/README.md`](new_dial/README.md).
 - To understand what is implemented right now, read [`docs/current-state.md`](docs/current-state.md).
-- To contribute safely, read [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`AGENTS.md`](AGENTS.md).
+- To contribute safely, read [`CONTRIBUTING.md`](CONTRIBUTING.md).
+- To work with Codex, read [`AGENTS.md`](AGENTS.md) and [`docs/codex-workflow.md`](docs/codex-workflow.md).
 
 ## Package highlights
 

@@ -116,6 +116,8 @@
 
 ### Docs
 
+- Added `docs/codex-workflow.md` with reusable Codex task, planning, validation, documentation, and review guidance for the package repository.
+- Updated repository, package, sample, contribution, and integration-task docs to reference the Codex workflow and make task constraints/done criteria explicit.
 - Added repository-level `README.md`, `AGENTS.md`, and `CONTRIBUTING.md`.
 - Expanded package documentation and sample documentation to reflect current package behavior.
 - Added `docs/current-state.md` as a working-tree implementation snapshot.
