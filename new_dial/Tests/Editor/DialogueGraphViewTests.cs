@@ -689,6 +689,21 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
+        public void InteractiveBaseFieldWASD_DoesNotPanCanvas()
+        {
+            var view = new DialogueGraphView();
+            view.LoadGraph(new DialogueGraphData());
+            view.FocusCanvas();
+            var popup = new PopupField<string>("Mode", new[] { "One", "Two" }.ToList(), 0);
+            view.Add(popup);
+
+            SendKeyDown(popup, KeyCode.W);
+            view.StepKeyboardPan(1f);
+
+            Assert.That(view.viewTransform.position.y, Is.EqualTo(0f));
+        }
+
+        [Test]
         public void WasdKeyDown_OnFocusedCanvas_StartsGraphPan()
         {
             var view = new DialogueGraphView();
@@ -862,6 +877,50 @@ namespace NewDial.DialogueEditor.Tests
             var bodyField = nodeView.Q<TextField>("text-node-inline-body-field");
 
             SendKeyUp(bodyField, KeyCode.W);
+            view.StepKeyboardPan(1f);
+
+            Assert.That(view.viewTransform.position.y, Is.EqualTo(0f));
+        }
+
+        [Test]
+        public void WasdKeyUp_WithoutCanvasFocusAndNoActiveMovement_DoesNotConsumeEvent()
+        {
+            var view = new DialogueGraphView();
+            view.LoadGraph(new DialogueGraphData());
+            view.ReleaseCanvasFocus();
+
+            var keyState = SendKeyUpWithState(view, KeyCode.W);
+
+            Assert.That(keyState.DefaultPrevented, Is.False);
+            Assert.That(keyState.ImmediatePropagationStopped, Is.False);
+        }
+
+        [Test]
+        public void WasdKeyUp_WithoutCanvasFocusButActiveMovement_ConsumesAndStopsMovement()
+        {
+            var view = new DialogueGraphView();
+            view.LoadGraph(new DialogueGraphData());
+            view.ReleaseCanvasFocus();
+            view.SetMovementKeyState(KeyCode.W, true);
+
+            var keyState = SendKeyUpWithState(view, KeyCode.W);
+            view.FocusCanvas();
+            view.StepKeyboardPan(1f);
+
+            Assert.That(keyState.DefaultPrevented, Is.True);
+            Assert.That(keyState.ImmediatePropagationStopped, Is.True);
+            Assert.That(view.viewTransform.position.y, Is.EqualTo(0f));
+        }
+
+        [Test]
+        public void LoadGraphNull_ClearsWasdMovementState()
+        {
+            var view = new DialogueGraphView();
+            view.LoadGraph(new DialogueGraphData());
+            view.FocusCanvas();
+            view.SetMovementKeyState(KeyCode.W, true);
+
+            view.LoadGraph(null);
             view.StepKeyboardPan(1f);
 
             Assert.That(view.viewTransform.position.y, Is.EqualTo(0f));

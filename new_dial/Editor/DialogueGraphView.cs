@@ -155,6 +155,7 @@ namespace NewDial.DialogueEditor
         private bool _moveLeftPressed;
         private bool _moveRightPressed;
         private SelectionPointerDragState _selectionPointerDragState;
+        private IVisualElementScheduledItem _keyboardPanTick;
         private double _lastPanTickTime;
         private string _pendingFrameNodeId;
         private int _pendingFrameAttempts;
@@ -218,10 +219,19 @@ namespace NewDial.DialogueEditor
             RegisterCallback<KeyDownEvent>(OnKeyDown, TrickleDown.TrickleDown);
             RegisterCallback<KeyUpEvent>(OnKeyUp, TrickleDown.TrickleDown);
             RegisterCallback<FocusInEvent>(_ => SetCanvasFocusState(true));
+            RegisterCallback<FocusOutEvent>(_ => SetCanvasFocusState(false));
             RegisterCallback<BlurEvent>(_ => SetCanvasFocusState(false));
+            RegisterCallback<DetachFromPanelEvent>(_ =>
+            {
+                SetCanvasFocusState(false);
+                ResetMovementKeys();
+                PauseKeyboardPanTick();
+            });
+            RegisterCallback<AttachToPanelEvent>(_ => UpdateKeyboardPanTickState());
 
             _lastPanTickTime = EditorApplication.timeSinceStartup;
-            schedule.Execute(OnKeyboardPanTick).Every(16);
+            _keyboardPanTick = schedule.Execute(OnKeyboardPanTick).Every(16);
+            _keyboardPanTick.Pause();
         }
 
         public Action<BaseNodeData> SelectionChangedAction { get; set; }
@@ -261,6 +271,7 @@ namespace NewDial.DialogueEditor
                 CancelLinkDrag();
                 ClearHoveredLink();
                 CancelNodePlacement();
+                ResetMovementKeys();
 
                 if (_graph == null)
                 {
@@ -2022,12 +2033,30 @@ namespace NewDial.DialogueEditor
                     element is Slider ||
                     element is IntegerField ||
                     element is FloatField ||
-                    element is EnumField)
+                    element is EnumField ||
+                    element is ScrollView ||
+                    IsBaseFieldElement(element))
                 {
                     return true;
                 }
 
                 element = element.parent;
+            }
+
+            return false;
+        }
+
+        private static bool IsBaseFieldElement(VisualElement element)
+        {
+            var type = element.GetType();
+            while (type != null)
+            {
+                if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(BaseField<>))
+                {
+                    return true;
+                }
+
+                type = type.BaseType;
             }
 
             return false;
@@ -2458,6 +2487,7 @@ namespace NewDial.DialogueEditor
 
         internal void SetMovementKeyState(KeyCode keyCode, bool isPressed)
         {
+            var wasPressed = IsMovementKeyPressed(keyCode);
             switch (keyCode)
             {
                 case KeyCode.W:
@@ -2473,6 +2503,19 @@ namespace NewDial.DialogueEditor
                     _moveRightPressed = isPressed;
                     break;
             }
+
+            if (wasPressed == isPressed)
+            {
+                UpdateKeyboardPanTickState();
+                return;
+            }
+
+            if (isPressed && _hasCanvasFocus)
+            {
+                _lastPanTickTime = EditorApplication.timeSinceStartup;
+            }
+
+            UpdateKeyboardPanTickState();
         }
 
         internal void BeginSelectionPointerDrag()
@@ -2791,10 +2834,16 @@ namespace NewDial.DialogueEditor
 
         private void OnKeyUp(KeyUpEvent evt)
         {
-            if (TryMapMovementKey(evt.keyCode))
+            var isMovementKey = TryMapMovementKey(evt.keyCode);
+            var wasMovementKeyPressed = isMovementKey && IsMovementKeyPressed(evt.keyCode);
+            if (isMovementKey)
             {
                 SetMovementKeyState(evt.keyCode, false);
-                ConsumeKeyboardEvent(evt);
+                if (_hasCanvasFocus || wasMovementKeyPressed)
+                {
+                    ConsumeKeyboardEvent(evt);
+                }
+
                 return;
             }
 
@@ -2807,6 +2856,19 @@ namespace NewDial.DialogueEditor
 
         private void OnKeyboardPanTick()
         {
+            if (panel == null || !_hasCanvasFocus)
+            {
+                ResetMovementKeys();
+                PauseKeyboardPanTick();
+                return;
+            }
+
+            if (!HasMovementKeyPressed())
+            {
+                PauseKeyboardPanTick();
+                return;
+            }
+
             var now = EditorApplication.timeSinceStartup;
             var deltaTime = Mathf.Max(0f, (float)(now - _lastPanTickTime));
             _lastPanTickTime = now;
@@ -2817,6 +2879,16 @@ namespace NewDial.DialogueEditor
         {
             if (_hasCanvasFocus == focused)
             {
+                if (!focused)
+                {
+                    ResetMovementKeys();
+                    PauseKeyboardPanTick();
+                }
+                else
+                {
+                    UpdateKeyboardPanTickState();
+                }
+
                 return;
             }
 
@@ -2825,6 +2897,12 @@ namespace NewDial.DialogueEditor
             {
                 ResetMovementKeys();
             }
+            else
+            {
+                _lastPanTickTime = EditorApplication.timeSinceStartup;
+            }
+
+            UpdateKeyboardPanTickState();
 
             EnableInClassList("is-focused", focused);
             CanvasFocusChangedAction?.Invoke(focused);
@@ -2836,6 +2914,45 @@ namespace NewDial.DialogueEditor
             _moveDownPressed = false;
             _moveLeftPressed = false;
             _moveRightPressed = false;
+            UpdateKeyboardPanTickState();
+        }
+
+        private bool HasMovementKeyPressed()
+        {
+            return _moveUpPressed || _moveDownPressed || _moveLeftPressed || _moveRightPressed;
+        }
+
+        private bool IsMovementKeyPressed(KeyCode keyCode)
+        {
+            return keyCode switch
+            {
+                KeyCode.W => _moveUpPressed,
+                KeyCode.S => _moveDownPressed,
+                KeyCode.A => _moveLeftPressed,
+                KeyCode.D => _moveRightPressed,
+                _ => false
+            };
+        }
+
+        private void UpdateKeyboardPanTickState()
+        {
+            if (_keyboardPanTick == null)
+            {
+                return;
+            }
+
+            if (_hasCanvasFocus && HasMovementKeyPressed() && panel != null)
+            {
+                _keyboardPanTick.Resume();
+                return;
+            }
+
+            PauseKeyboardPanTick();
+        }
+
+        private void PauseKeyboardPanTick()
+        {
+            _keyboardPanTick?.Pause();
         }
 
         private static bool HasKeyboardPanModifier(KeyDownEvent evt)

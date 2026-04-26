@@ -116,7 +116,7 @@ This file describes the current working-tree behavior of `new_dial`, including c
 - Moving a parent comment group moves directly contained nodes and nested comment groups captured when the drag started; nodes newly overlapped during the drag are not attached mid-drag.
 - Cutting a selected root comment group removes the full nested hierarchy from the graph after copying it to the clipboard payload.
 - Clipboard shortcuts for copy, cut, and paste are implemented in the graph view.
-- WASD pans the focused graph canvas without changing zoom, including left and diagonal movement while zoomed out; handled movement keys consume default GraphView shortcuts, and typing in inline node fields or using modifier-key combinations does not move the canvas.
+- WASD pans the focused graph canvas without changing zoom, including left and diagonal movement while zoomed out; handled movement keys consume default GraphView shortcuts, typing in inline or other interactive graph fields does not move the canvas, and movement state is cleared when focus/panel/graph context is lost.
 - Graph links use restrained smoothed curves with shared render and hit-test geometry, avoiding large S-shaped waves while keeping the same top/bottom anchors.
 
 ### Sample content

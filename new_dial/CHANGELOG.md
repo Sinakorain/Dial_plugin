@@ -90,6 +90,7 @@
 - WASD graph panning is restored for focused canvas navigation while remaining blocked during inline field editing.
 - WASD graph panning now clears movement state on focus changes, inline fields, mouse leave, and modifier-key combinations, and preserves the current zoom while panning, including left and diagonal movement on zoomed-out graphs.
 - WASD graph panning now consumes handled key events so Unity GraphView shortcuts such as `A` cannot trigger frame or zoom changes while navigating the canvas.
+- WASD graph panning now runs its editor tick only while movement input is active, clears stale movement on graph reload or panel detach, and avoids consuming unrelated key-up events when the canvas is not focused.
 - Inline Text and Answer node text boxes now apply soft wrapping directly to their UI Toolkit text input internals.
 - Palette shortcut rebinding now shows the compact `Press` prompt so it fits inside the shortcut pill.
 - Palette shortcut rebinding now cancels pending palette clicks so double-clicking a palette item does not also create that node.
@@ -111,6 +112,7 @@
 - Added coverage for localization table parsing, first-import linear node creation/layout, repeat-import data-only updates, TSV export, and content-language editing.
 - Added coverage for batch localization import and Russian UI content-language refresh after import.
 - Added coverage for vertical localization import layout and WASD graph panning.
+- Added coverage for WASD key-up focus handling, interactive graph fields, and graph reload movement-state reset.
 
 ### Docs
 
