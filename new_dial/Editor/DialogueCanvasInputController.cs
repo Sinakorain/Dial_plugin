@@ -153,7 +153,7 @@ namespace NewDial.DialogueEditor
             {
                 if (_view.DeleteSelectionFromHotkey())
                 {
-                    evt.StopImmediatePropagation();
+                    ConsumeKeyboardEvent(evt);
                 }
 
                 return;
@@ -378,6 +378,7 @@ namespace NewDial.DialogueEditor
 #pragma warning disable 618
             evt.PreventDefault();
 #pragma warning restore 618
+            evt.imguiEvent?.Use();
         }
 
         private static KeyCode GetMovementKey(KeyDownEvent evt)

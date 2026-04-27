@@ -759,6 +759,28 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
+        public void PaletteShortcutAltDigit_UsesUnderlyingImguiEvent()
+        {
+            var view = new DialogueGraphView
+            {
+                PaletteShortcutResolver = shortcut =>
+                    shortcut.KeyCode == KeyCode.Alpha1 && shortcut.Alt
+                        ? (DialoguePaletteItemType?)DialoguePaletteItemType.TextNode
+                        : null
+            };
+            var handled = false;
+            view.PaletteShortcutAction = _ => handled = true;
+            view.FocusCanvas();
+
+            var keyState = SendKeyDownWithState(view, KeyCode.Alpha1, EventModifiers.Alt);
+
+            Assert.That(handled, Is.True);
+            Assert.That(keyState.DefaultPrevented, Is.True);
+            Assert.That(keyState.ImmediatePropagationStopped, Is.True);
+            Assert.That(keyState.ImguiEventUsed, Is.True);
+        }
+
+        [Test]
         public void WasdKeyDown_OnFocusedCanvas_StartsGraphPan()
         {
             var view = new DialogueGraphView();
@@ -2847,19 +2869,24 @@ namespace NewDial.DialogueEditor.Tests
 
         private readonly struct KeyEventState
         {
-            private KeyEventState(bool defaultPrevented, bool immediatePropagationStopped)
+            private KeyEventState(bool defaultPrevented, bool immediatePropagationStopped, bool imguiEventUsed)
             {
                 DefaultPrevented = defaultPrevented;
                 ImmediatePropagationStopped = immediatePropagationStopped;
+                ImguiEventUsed = imguiEventUsed;
             }
 
             public bool DefaultPrevented { get; }
             public bool ImmediatePropagationStopped { get; }
+            public bool ImguiEventUsed { get; }
 
             public static KeyEventState From(EventBase evt)
             {
 #pragma warning disable 618
-                return new KeyEventState(evt.isDefaultPrevented, evt.isImmediatePropagationStopped);
+                return new KeyEventState(
+                    evt.isDefaultPrevented,
+                    evt.isImmediatePropagationStopped,
+                    evt.imguiEvent?.type == EventType.Used);
 #pragma warning restore 618
             }
         }
