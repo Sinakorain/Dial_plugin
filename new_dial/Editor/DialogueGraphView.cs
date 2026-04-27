@@ -117,8 +117,6 @@ namespace NewDial.DialogueEditor
     public class DialogueGraphView : GraphView
     {
         private const float AnchorInset = 18f;
-        private const float KeyboardPanSpeed = 900f;
-        private const float MaxKeyboardPanDeltaTime = 0.05f;
         private const float FrameCenterTolerancePixels = 42f;
         private const float EdgeLayerPadding = 240f;
         private const float LinkAnchorInset = 18f;
@@ -141,6 +139,7 @@ namespace NewDial.DialogueEditor
         private readonly Label _placementGhostTitleLabel;
         private readonly Label _placementGhostHintLabel;
         private readonly Label _emptyStateLabel;
+        private readonly DialogueCanvasInputController _inputController;
 
         private DialogueGraphData _graph;
         private bool _isReloading;
@@ -151,14 +150,7 @@ namespace NewDial.DialogueEditor
         private Vector2 _activeLinkPointerWorld;
         private Rect _edgeLayerCanvasBounds = new(0f, 0f, 1f, 1f);
         private string _hoveredLinkId;
-        private bool _hasCanvasFocus;
-        private bool _moveUpPressed;
-        private bool _moveDownPressed;
-        private bool _moveLeftPressed;
-        private bool _moveRightPressed;
         private SelectionPointerDragState _selectionPointerDragState;
-        private IVisualElementScheduledItem _keyboardPanTick;
-        private double _lastPanTickTime;
         private string _pendingFrameNodeId;
         private int _pendingFrameAttempts;
         private string _activeCommentDragRootId;
@@ -214,26 +206,10 @@ namespace NewDial.DialogueEditor
             RegisterCallback<MouseLeaveEvent>(_ =>
             {
                 ClearHoveredLink();
-                ResetMovementKeys();
             });
             RegisterCallback<MouseDownEvent>(OnMouseDown, TrickleDown.TrickleDown);
             RegisterCallback<MouseUpEvent>(OnMouseUp, TrickleDown.TrickleDown);
-            RegisterCallback<KeyDownEvent>(OnKeyDown, TrickleDown.TrickleDown);
-            RegisterCallback<KeyUpEvent>(OnKeyUp, TrickleDown.TrickleDown);
-            RegisterCallback<FocusInEvent>(_ => SetCanvasFocusState(true));
-            RegisterCallback<FocusOutEvent>(_ => SetCanvasFocusState(false));
-            RegisterCallback<BlurEvent>(_ => SetCanvasFocusState(false));
-            RegisterCallback<DetachFromPanelEvent>(_ =>
-            {
-                SetCanvasFocusState(false);
-                ResetMovementKeys();
-                PauseKeyboardPanTick();
-            });
-            RegisterCallback<AttachToPanelEvent>(_ => UpdateKeyboardPanTickState());
-
-            _lastPanTickTime = EditorApplication.timeSinceStartup;
-            _keyboardPanTick = schedule.Execute(OnKeyboardPanTick).Every(16);
-            _keyboardPanTick.Pause();
+            _inputController = new DialogueCanvasInputController(this);
         }
 
         public Action<BaseNodeData> SelectionChangedAction { get; set; }
@@ -249,7 +225,7 @@ namespace NewDial.DialogueEditor
         internal Func<CommentNodeData, DialogueCommentDeleteChoice> CommentDeletePrompt { get; set; }
 
         public DialogueGraphData Graph => _graph;
-        public bool HasCanvasFocus => _hasCanvasFocus;
+        public bool HasCanvasFocus => _inputController?.HasCanvasFocus ?? false;
         internal bool IsLinkDragActiveForTests => _activeLinkSource != null;
         internal bool IsEdgeLayerInContentViewContainerForTests => _edgeLayer.parent == contentViewContainer;
         internal Rect EdgeLayerCanvasBoundsForTests => _edgeLayerCanvasBounds;
@@ -273,7 +249,7 @@ namespace NewDial.DialogueEditor
                 CancelLinkDrag();
                 ClearHoveredLink();
                 CancelNodePlacement();
-                ResetMovementKeys();
+                _inputController.ResetInputState();
 
                 if (_graph == null)
                 {
@@ -1013,14 +989,12 @@ namespace NewDial.DialogueEditor
 
         public void FocusCanvas()
         {
-            Focus();
-            SetCanvasFocusState(true);
+            _inputController.FocusCanvas();
         }
 
         internal void ReleaseCanvasFocus()
         {
-            SetCanvasFocusState(false);
-            Blur();
+            _inputController.ReleaseCanvasFocus();
         }
 
         public void FrameAndSelectNode(string nodeId)
@@ -2489,35 +2463,7 @@ namespace NewDial.DialogueEditor
 
         internal void SetMovementKeyState(KeyCode keyCode, bool isPressed)
         {
-            var wasPressed = IsMovementKeyPressed(keyCode);
-            switch (keyCode)
-            {
-                case KeyCode.W:
-                    _moveUpPressed = isPressed;
-                    break;
-                case KeyCode.S:
-                    _moveDownPressed = isPressed;
-                    break;
-                case KeyCode.A:
-                    _moveLeftPressed = isPressed;
-                    break;
-                case KeyCode.D:
-                    _moveRightPressed = isPressed;
-                    break;
-            }
-
-            if (wasPressed == isPressed)
-            {
-                UpdateKeyboardPanTickState();
-                return;
-            }
-
-            if (isPressed && _hasCanvasFocus)
-            {
-                _lastPanTickTime = EditorApplication.timeSinceStartup;
-            }
-
-            UpdateKeyboardPanTickState();
+            _inputController.SetMovementKeyState(keyCode, isPressed);
         }
 
         internal void BeginSelectionPointerDrag()
@@ -2609,13 +2555,12 @@ namespace NewDial.DialogueEditor
 
         internal void StepKeyboardPan(float deltaTimeSeconds)
         {
-            if (!_hasCanvasFocus || deltaTimeSeconds <= 0f)
-            {
-                return;
-            }
+            _inputController.StepKeyboardPan(deltaTimeSeconds);
+        }
 
-            var panDelta = CalculateKeyboardPanDelta(deltaTimeSeconds);
-            if (panDelta == Vector2.zero)
+        internal void ApplyKeyboardPanDelta(Vector2 screenPanDelta)
+        {
+            if (screenPanDelta == Vector2.zero)
             {
                 return;
             }
@@ -2624,48 +2569,10 @@ namespace NewDial.DialogueEditor
             var graphScale = GetCurrentGraphScale();
             var currentPan = GetCurrentGraphPan();
             UpdateViewTransform(
-                new Vector3(currentPan.x + panDelta.x, currentPan.y + panDelta.y, 0f),
+                new Vector3(currentPan.x + screenPanDelta.x, currentPan.y + screenPanDelta.y, 0f),
                 currentScale);
-            ApplySelectionPointerDragPan(panDelta, graphScale);
+            ApplySelectionPointerDragPan(screenPanDelta, graphScale);
             RefreshEdgeLayer();
-        }
-
-        private Vector2 CalculateKeyboardPanDelta(float deltaTimeSeconds)
-        {
-            var input = GetKeyboardPanInput();
-            if (input == Vector2.zero)
-            {
-                return Vector2.zero;
-            }
-
-            var clampedDeltaTime = Mathf.Min(deltaTimeSeconds, MaxKeyboardPanDeltaTime);
-            return input.normalized * (KeyboardPanSpeed * clampedDeltaTime);
-        }
-
-        private Vector2 GetKeyboardPanInput()
-        {
-            var input = Vector2.zero;
-            if (_moveUpPressed)
-            {
-                input.y += 1f;
-            }
-
-            if (_moveDownPressed)
-            {
-                input.y -= 1f;
-            }
-
-            if (_moveLeftPressed)
-            {
-                input.x += 1f;
-            }
-
-            if (_moveRightPressed)
-            {
-                input.x -= 1f;
-            }
-
-            return input;
         }
 
         private void ApplySelectionPointerDragPan(Vector2 screenPanDelta, float graphScale)
@@ -2740,242 +2647,15 @@ namespace NewDial.DialogueEditor
             return IsFinite(scale) && !Mathf.Approximately(scale, 0f) ? scale : 1f;
         }
 
-        private void OnKeyDown(KeyDownEvent evt)
-        {
-            var isMovementKey = TryMapMovementKey(evt.keyCode);
-            if (!_hasCanvasFocus)
-            {
-                if (isMovementKey)
-                {
-                    SetMovementKeyState(evt.keyCode, false);
-                }
-
-                return;
-            }
-
-            if (IsInlineInteractiveTarget(evt.target as VisualElement))
-            {
-                ResetMovementKeys();
-                return;
-            }
-
-            if (!evt.altKey && !evt.shiftKey && (evt.keyCode == KeyCode.Delete || evt.keyCode == KeyCode.Backspace))
-            {
-                if (DeleteSelectionFromHotkey())
-                {
-                    evt.StopImmediatePropagation();
-                }
-
-                return;
-            }
-
-            if (isMovementKey && HasKeyboardPanModifier(evt))
-            {
-                SetMovementKeyState(evt.keyCode, false);
-            }
-
-            if (evt.actionKey)
-            {
-                var handled = evt.keyCode switch
-                {
-                    KeyCode.C => CopySelectionToClipboard(),
-                    KeyCode.X => CutSelectionToClipboard(),
-                    KeyCode.V => PasteClipboard(),
-                    KeyCode.Y => PerformRedo(),
-                    KeyCode.Z => evt.shiftKey ? PerformRedo() : PerformUndo(),
-                    _ => false
-                };
-
-                if (handled)
-                {
-                    ConsumeKeyboardEvent(evt);
-                    return;
-                }
-            }
-
-            if (TryHandlePaletteShortcut(DialoguePaletteShortcut.FromEvent(evt)))
-            {
-                ConsumeKeyboardEvent(evt);
-                return;
-            }
-
-            if (isMovementKey && HasKeyboardPanModifier(evt))
-            {
-                ConsumeKeyboardEvent(evt);
-                return;
-            }
-
-            if (evt.actionKey || evt.altKey || evt.shiftKey)
-            {
-                return;
-            }
-
-            if (isMovementKey)
-            {
-                SetMovementKeyState(evt.keyCode, true);
-                ConsumeKeyboardEvent(evt);
-            }
-        }
-
         internal bool TryHandlePaletteShortcut(DialoguePaletteShortcut shortcut)
         {
-            if (!_hasCanvasFocus)
-            {
-                return false;
-            }
-
-            var itemType = PaletteShortcutResolver?.Invoke(shortcut);
-            if (itemType == null)
-            {
-                return false;
-            }
-
-            PaletteShortcutAction?.Invoke(itemType.Value);
-            return true;
+            return _inputController.TryHandlePaletteShortcut(shortcut);
         }
 
-        private void OnKeyUp(KeyUpEvent evt)
+        internal void SetCanvasFocusVisualState(bool focused)
         {
-            var isMovementKey = TryMapMovementKey(evt.keyCode);
-            var wasMovementKeyPressed = isMovementKey && IsMovementKeyPressed(evt.keyCode);
-            if (isMovementKey)
-            {
-                SetMovementKeyState(evt.keyCode, false);
-                if (_hasCanvasFocus || wasMovementKeyPressed)
-                {
-                    ConsumeKeyboardEvent(evt);
-                }
-
-                return;
-            }
-
-            if (IsInlineInteractiveTarget(evt.target as VisualElement))
-            {
-                ResetMovementKeys();
-                return;
-            }
-        }
-
-        private void OnKeyboardPanTick()
-        {
-            if (panel == null || !_hasCanvasFocus)
-            {
-                ResetMovementKeys();
-                PauseKeyboardPanTick();
-                return;
-            }
-
-            if (!HasMovementKeyPressed())
-            {
-                PauseKeyboardPanTick();
-                return;
-            }
-
-            var now = EditorApplication.timeSinceStartup;
-            var deltaTime = Mathf.Max(0f, (float)(now - _lastPanTickTime));
-            _lastPanTickTime = now;
-            StepKeyboardPan(deltaTime);
-        }
-
-        private void SetCanvasFocusState(bool focused)
-        {
-            if (_hasCanvasFocus == focused)
-            {
-                if (!focused)
-                {
-                    ResetMovementKeys();
-                    PauseKeyboardPanTick();
-                }
-                else
-                {
-                    UpdateKeyboardPanTickState();
-                }
-
-                return;
-            }
-
-            _hasCanvasFocus = focused;
-            if (!focused)
-            {
-                ResetMovementKeys();
-            }
-            else
-            {
-                _lastPanTickTime = EditorApplication.timeSinceStartup;
-            }
-
-            UpdateKeyboardPanTickState();
-
             EnableInClassList("is-focused", focused);
             CanvasFocusChangedAction?.Invoke(focused);
-        }
-
-        private void ResetMovementKeys()
-        {
-            _moveUpPressed = false;
-            _moveDownPressed = false;
-            _moveLeftPressed = false;
-            _moveRightPressed = false;
-            UpdateKeyboardPanTickState();
-        }
-
-        private bool HasMovementKeyPressed()
-        {
-            return _moveUpPressed || _moveDownPressed || _moveLeftPressed || _moveRightPressed;
-        }
-
-        private bool IsMovementKeyPressed(KeyCode keyCode)
-        {
-            return keyCode switch
-            {
-                KeyCode.W => _moveUpPressed,
-                KeyCode.S => _moveDownPressed,
-                KeyCode.A => _moveLeftPressed,
-                KeyCode.D => _moveRightPressed,
-                _ => false
-            };
-        }
-
-        private void UpdateKeyboardPanTickState()
-        {
-            if (_keyboardPanTick == null)
-            {
-                return;
-            }
-
-            if (_hasCanvasFocus && HasMovementKeyPressed() && panel != null)
-            {
-                _keyboardPanTick.Resume();
-                return;
-            }
-
-            PauseKeyboardPanTick();
-        }
-
-        private void PauseKeyboardPanTick()
-        {
-            _keyboardPanTick?.Pause();
-        }
-
-        private static bool HasKeyboardPanModifier(KeyDownEvent evt)
-        {
-            return evt.actionKey || evt.ctrlKey || evt.altKey || evt.shiftKey;
-        }
-
-        private static void ConsumeKeyboardEvent(EventBase evt)
-        {
-            evt.StopImmediatePropagation();
-#pragma warning disable 618
-            evt.PreventDefault();
-#pragma warning restore 618
-        }
-
-        private static bool TryMapMovementKey(KeyCode keyCode)
-        {
-            return keyCode == KeyCode.W ||
-                   keyCode == KeyCode.A ||
-                   keyCode == KeyCode.S ||
-                   keyCode == KeyCode.D;
         }
 
         private void UpdateEmptyState()
@@ -3250,13 +2930,13 @@ namespace NewDial.DialogueEditor
             mutate();
         }
 
-        private static bool PerformUndo()
+        internal static bool PerformUndo()
         {
             Undo.PerformUndo();
             return true;
         }
 
-        private static bool PerformRedo()
+        internal static bool PerformRedo()
         {
             Undo.PerformRedo();
             return true;

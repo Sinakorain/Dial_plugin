@@ -88,9 +88,12 @@
 - Localization imports now update existing dialogues by matching `Dialogue.Id` to the imported conversation id, creating only missing dialogues.
 - First-time localization imports now create a vertical top-to-bottom text-node chain instead of a horizontal row.
 - WASD graph panning is restored for focused canvas navigation while remaining blocked during inline field editing.
-- WASD graph panning now clears movement state on focus changes, inline fields, mouse leave, and modifier-key combinations, and preserves the current zoom while panning, including left and diagonal movement on zoomed-out graphs.
+- WASD graph panning now clears movement state on focus changes, inline fields, and modifier-key combinations, and preserves the current zoom while panning, including left and diagonal movement on zoomed-out graphs.
 - WASD graph panning now consumes handled key events so Unity GraphView shortcuts such as `A` cannot trigger frame or zoom changes while navigating the canvas.
+- WASD graph panning now also handles UI Toolkit character key events, preventing the built-in GraphView `A` frame-all shortcut from recentering the canvas.
 - WASD graph panning now runs its editor tick only while movement input is active, clears stale movement on graph reload or panel detach, and avoids consuming unrelated key-up events when the canvas is not focused.
+- Graph canvas keyboard and focus handling is now isolated in a dedicated input controller, and WASD now behaves as reserved camera-style viewport movement instead of being available as plain palette shortcuts.
+- WASD graph panning no longer clears active movement merely because the pointer leaves the canvas.
 - Inline Text and Answer node text boxes now apply soft wrapping directly to their UI Toolkit text input internals.
 - Palette shortcut rebinding now shows the compact `Press` prompt so it fits inside the shortcut pill.
 - Palette shortcut rebinding now cancels pending palette clicks so double-clicking a palette item does not also create that node.
@@ -113,6 +116,7 @@
 - Added coverage for batch localization import and Russian UI content-language refresh after import.
 - Added coverage for vertical localization import layout and WASD graph panning.
 - Added coverage for WASD key-up focus handling, interactive graph fields, and graph reload movement-state reset.
+- Added coverage for camera-direction WASD movement, character-based `A` input, mouse-leave handling, canvas copy/paste shortcuts, and reserved plain-WASD palette bindings.
 
 ### Docs
 

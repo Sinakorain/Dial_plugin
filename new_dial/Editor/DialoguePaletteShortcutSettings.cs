@@ -101,6 +101,14 @@ namespace NewDial.DialogueEditor
             KeyCode.Backspace
         };
 
+        private static readonly HashSet<KeyCode> ReservedPlainCanvasMovementKeys = new()
+        {
+            KeyCode.W,
+            KeyCode.A,
+            KeyCode.S,
+            KeyCode.D
+        };
+
         public static IReadOnlyList<DialoguePaletteItemType> OrderedItemTypes => ItemOrder;
 
         public static DialoguePaletteShortcut GetShortcut(DialoguePaletteItemType itemType)
@@ -112,6 +120,11 @@ namespace NewDial.DialogueEditor
 
         public static void SetShortcut(DialoguePaletteItemType itemType, DialoguePaletteShortcut shortcut)
         {
+            if (!IsBindable(shortcut))
+            {
+                return;
+            }
+
             var map = LoadMap();
             foreach (var key in ItemOrder)
             {
@@ -134,7 +147,7 @@ namespace NewDial.DialogueEditor
 
         public static DialoguePaletteItemType? FindMatchingItem(DialoguePaletteShortcut shortcut)
         {
-            if (!shortcut.IsAssigned)
+            if (!IsBindable(shortcut))
             {
                 return null;
             }
@@ -153,12 +166,14 @@ namespace NewDial.DialogueEditor
 
         public static bool IsBindable(DialoguePaletteShortcut shortcut)
         {
-            return shortcut.IsAssigned && !UnbindableKeys.Contains(shortcut.KeyCode);
+            return shortcut.IsAssigned &&
+                   !UnbindableKeys.Contains(shortcut.KeyCode) &&
+                   !IsReservedPlainMovementShortcut(shortcut);
         }
 
         public static string FormatShortcut(DialoguePaletteShortcut shortcut)
         {
-            if (!shortcut.IsAssigned)
+            if (!shortcut.IsAssigned || !IsBindable(shortcut))
             {
                 return DialogueEditorLocalization.Text("Unassigned");
             }
@@ -214,7 +229,8 @@ namespace NewDial.DialogueEditor
                         continue;
                     }
 
-                    map[itemType] = new DialoguePaletteShortcut(keyCode, item.Action, item.Shift, item.Alt);
+                    var shortcut = new DialoguePaletteShortcut(keyCode, item.Action, item.Shift, item.Alt);
+                    map[itemType] = IsBindable(shortcut) ? shortcut : default;
                 }
             }
             catch
@@ -223,6 +239,14 @@ namespace NewDial.DialogueEditor
             }
 
             return map;
+        }
+
+        private static bool IsReservedPlainMovementShortcut(DialoguePaletteShortcut shortcut)
+        {
+            return ReservedPlainCanvasMovementKeys.Contains(shortcut.KeyCode) &&
+                   !shortcut.Action &&
+                   !shortcut.Shift &&
+                   !shortcut.Alt;
         }
 
         private static void SaveMap(Dictionary<DialoguePaletteItemType, DialoguePaletteShortcut> map)

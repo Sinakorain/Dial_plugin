@@ -705,6 +705,59 @@ namespace NewDial.DialogueEditor.Tests
             Assert.That(view.viewTransform.position.y, Is.EqualTo(0f));
         }
 
+        [TestCase(KeyCode.W, 1f, 0, -1)]
+        [TestCase(KeyCode.A, 1f, -1, 0)]
+        [TestCase(KeyCode.S, 1f, 0, 1)]
+        [TestCase(KeyCode.D, 1f, 1, 0)]
+        [TestCase(KeyCode.W, 0.5f, 0, -1)]
+        [TestCase(KeyCode.A, 0.5f, -1, 0)]
+        [TestCase(KeyCode.S, 0.5f, 0, 1)]
+        [TestCase(KeyCode.D, 0.5f, 1, 0)]
+        public void WasdKeyDown_MovesVisibleCanvasCenterInCameraDirection(
+            KeyCode keyCode,
+            float scale,
+            int expectedXDirection,
+            int expectedYDirection)
+        {
+            var view = new DialogueGraphView();
+            view.LoadGraph(new DialogueGraphData());
+            view.FocusCanvas();
+            view.UpdateViewTransform(Vector3.zero, Vector3.one * scale);
+            var startCenter = view.GetCanvasCenter();
+
+            SendKeyDown(view, keyCode);
+            view.StepKeyboardPan(1f);
+
+            var centerDelta = view.GetCanvasCenter() - startCenter;
+            AssertDirection(centerDelta.x, expectedXDirection);
+            AssertDirection(centerDelta.y, expectedYDirection);
+        }
+
+        [Test]
+        public void WasdCharacterKeyDown_ConsumesACharacterBeforeGraphViewFrameShortcut()
+        {
+            var view = new DialogueGraphView();
+            var root = new VisualElement();
+            root.Add(view);
+            view.FocusCanvas();
+            var graphViewFrameShortcutReached = false;
+            root.RegisterCallback<KeyDownEvent>(evt =>
+            {
+                if (evt.character == 'a')
+                {
+                    graphViewFrameShortcutReached = true;
+                }
+            });
+
+            var keyState = SendKeyDownWithState(view, KeyCode.None, character: 'a');
+            view.StepKeyboardPan(1f);
+
+            Assert.That(graphViewFrameShortcutReached, Is.False);
+            Assert.That(keyState.DefaultPrevented, Is.True);
+            Assert.That(keyState.ImmediatePropagationStopped, Is.True);
+            Assert.That(view.viewTransform.position.x, Is.EqualTo(45f).Within(0.01f));
+        }
+
         [Test]
         public void WasdKeyDown_OnFocusedCanvas_StartsGraphPan()
         {
@@ -912,6 +965,20 @@ namespace NewDial.DialogueEditor.Tests
             Assert.That(keyState.DefaultPrevented, Is.True);
             Assert.That(keyState.ImmediatePropagationStopped, Is.True);
             Assert.That(view.viewTransform.position.y, Is.EqualTo(0f));
+        }
+
+        [Test]
+        public void WasdMouseLeave_DoesNotClearActiveMovement()
+        {
+            var view = new DialogueGraphView();
+            view.LoadGraph(new DialogueGraphData());
+            view.FocusCanvas();
+
+            SendKeyDown(view, KeyCode.W);
+            SendMouseLeave(view);
+            view.StepKeyboardPan(1f);
+
+            Assert.That(view.viewTransform.position.y, Is.EqualTo(45f).Within(0.01f));
         }
 
         [Test]
@@ -1887,6 +1954,37 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
+        public void CanvasKeyboardShortcuts_CopyPasteSelection_WorkThroughInputController()
+        {
+            var graph = new DialogueGraphData();
+            var node = new DialogueTextNodeData
+            {
+                Title = "Copy",
+                Position = new Vector2(100f, 100f)
+            };
+            graph.Nodes.Add(node);
+
+            var view = new DialogueGraphView();
+            view.LoadGraph(graph);
+            var nodeView = view.graphElements
+                .OfType<DialogueTextNodeView>()
+                .Single(element => element.Data.Id == node.Id);
+            view.SelectRuntimeNode(nodeView);
+            view.FocusCanvas();
+            var actionModifier = Application.platform == RuntimePlatform.OSXEditor
+                ? EventModifiers.Command
+                : EventModifiers.Control;
+
+            SendKeyDown(view, KeyCode.C, actionModifier);
+            SendKeyDown(view, KeyCode.V, actionModifier);
+
+            Assert.That(graph.Nodes.OfType<DialogueTextNodeData>(), Has.Count.EqualTo(2));
+            Assert.That(
+                graph.Nodes.OfType<DialogueTextNodeData>().Select(textNode => textNode.Id).Distinct().Count(),
+                Is.EqualTo(2));
+        }
+
+        [Test]
         public void CutSelectionToClipboard_RemovesEntireNestedCommentHierarchy()
         {
             var graph = new DialogueGraphData();
@@ -2682,6 +2780,17 @@ namespace NewDial.DialogueEditor.Tests
                    (t * t * t * end);
         }
 
+        private static void AssertDirection(float value, int expectedDirection)
+        {
+            if (expectedDirection == 0)
+            {
+                Assert.That(value, Is.EqualTo(0f).Within(0.01f));
+                return;
+            }
+
+            Assert.That(Mathf.Sign(value), Is.EqualTo(expectedDirection));
+        }
+
         private static DialogueGraphData GetResolvedGraph(DialogueDatabaseAsset database)
         {
             return database.Npcs[0].Dialogues[0].Graph;
@@ -2692,13 +2801,18 @@ namespace NewDial.DialogueEditor.Tests
             SendKeyDownWithState(target, keyCode, modifiers);
         }
 
-        private static KeyEventState SendKeyDownWithState(VisualElement target, KeyCode keyCode, EventModifiers modifiers = EventModifiers.None)
+        private static KeyEventState SendKeyDownWithState(
+            VisualElement target,
+            KeyCode keyCode,
+            EventModifiers modifiers = EventModifiers.None,
+            char character = '\0')
         {
             var keyEvent = new Event
             {
                 type = EventType.KeyDown,
                 keyCode = keyCode,
-                modifiers = modifiers
+                modifiers = modifiers,
+                character = character
             };
 
             using (var keyDown = KeyDownEvent.GetPooled(keyEvent))
@@ -2764,6 +2878,21 @@ namespace NewDial.DialogueEditor.Tests
             {
                 mouseDown.target = target;
                 target.SendEvent(mouseDown);
+            }
+        }
+
+        private static void SendMouseLeave(VisualElement target)
+        {
+            var mouseEvent = new Event
+            {
+                type = EventType.MouseLeaveWindow,
+                mousePosition = new Vector2(8f, 8f)
+            };
+
+            using (var mouseLeave = MouseLeaveEvent.GetPooled(mouseEvent))
+            {
+                mouseLeave.target = target;
+                target.SendEvent(mouseLeave);
             }
         }
 

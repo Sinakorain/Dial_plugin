@@ -409,6 +409,73 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
+        public void PaletteShortcutSettings_ReservePlainWasdAndAllowModifiedWasd()
+        {
+            Assert.That(DialoguePaletteShortcutSettings.IsBindable(new DialoguePaletteShortcut(KeyCode.W)), Is.False);
+            Assert.That(DialoguePaletteShortcutSettings.IsBindable(new DialoguePaletteShortcut(KeyCode.A)), Is.False);
+            Assert.That(DialoguePaletteShortcutSettings.IsBindable(new DialoguePaletteShortcut(KeyCode.S)), Is.False);
+            Assert.That(DialoguePaletteShortcutSettings.IsBindable(new DialoguePaletteShortcut(KeyCode.D)), Is.False);
+            Assert.That(DialoguePaletteShortcutSettings.IsBindable(new DialoguePaletteShortcut(KeyCode.W, alt: true)), Is.True);
+
+            DialoguePaletteShortcutSettings.SetShortcut(
+                DialoguePaletteItemType.Function,
+                new DialoguePaletteShortcut(KeyCode.W, alt: true));
+
+            Assert.That(
+                DialoguePaletteShortcutSettings.FindMatchingItem(new DialoguePaletteShortcut(KeyCode.W)),
+                Is.Null);
+            Assert.That(
+                DialoguePaletteShortcutSettings.FindMatchingItem(new DialoguePaletteShortcut(KeyCode.W, alt: true)),
+                Is.EqualTo(DialoguePaletteItemType.Function));
+        }
+
+        [Test]
+        public void PaletteShortcutSettings_LegacyPlainWasdBindingLoadsAsUnassigned()
+        {
+            EditorPrefs.SetString(
+                DialoguePaletteShortcutSettings.EditorPrefsKey,
+                "{\"Items\":[{\"ItemType\":\"Function\",\"KeyCode\":\"W\",\"Action\":false,\"Shift\":false,\"Alt\":false}]}");
+
+            var shortcut = DialoguePaletteShortcutSettings.GetShortcut(DialoguePaletteItemType.Function);
+
+            Assert.That(shortcut.IsAssigned, Is.False);
+            Assert.That(DialoguePaletteShortcutSettings.FormatShortcut(shortcut), Is.EqualTo("Unassigned"));
+            Assert.That(DialoguePaletteShortcutSettings.FindMatchingItem(new DialoguePaletteShortcut(KeyCode.W)), Is.Null);
+        }
+
+        [Test]
+        public void PaletteShortcut_ModifiedWasdRebindCreatesNode()
+        {
+            var database = CreateDatabase("PaletteShortcutModifiedWasd");
+            var dialogue = database.Npcs[0].Dialogues[0];
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                var functionItem = window.rootVisualElement.Q<VisualElement>("palette-item-function");
+                Assert.That(functionItem, Is.Not.Null);
+
+                DoubleClick(functionItem);
+                SendKeyDown(functionItem, KeyCode.W, EventModifiers.Alt);
+
+                Assert.That(GetPaletteShortcutText(window, "function"), Is.EqualTo("Alt+W"));
+
+                var graphView = window.GraphViewForTests;
+                graphView.FocusCanvas();
+                var handled = graphView.TryHandlePaletteShortcut(new DialoguePaletteShortcut(KeyCode.W, alt: true));
+
+                Assert.That(handled, Is.True);
+                Assert.That(dialogue.Graph.Nodes.OfType<FunctionNodeData>(), Has.Count.EqualTo(1));
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
         public void PaletteShortcut_RebindSavesAndRendersAfterWindowRebuild()
         {
             var database = CreateDatabase("PaletteShortcutPersist");
