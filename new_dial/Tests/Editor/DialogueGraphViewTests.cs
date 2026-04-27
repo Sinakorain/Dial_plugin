@@ -781,6 +781,36 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
+        public void PaletteShortcutAltModifierDownAndUp_UsesUnderlyingImguiEvent()
+        {
+            var view = new DialogueGraphView();
+            view.FocusCanvas();
+
+            var keyDownState = SendKeyDownWithState(view, KeyCode.LeftAlt);
+            var keyUpState = SendKeyUpWithState(view, KeyCode.LeftAlt);
+
+            Assert.That(keyDownState.DefaultPrevented, Is.True);
+            Assert.That(keyDownState.ImmediatePropagationStopped, Is.True);
+            Assert.That(keyDownState.ImguiEventUsed, Is.True);
+            Assert.That(keyUpState.DefaultPrevented, Is.True);
+            Assert.That(keyUpState.ImmediatePropagationStopped, Is.True);
+            Assert.That(keyUpState.ImguiEventUsed, Is.True);
+        }
+
+        [Test]
+        public void PaletteShortcutAltDigitKeyUp_UsesUnderlyingImguiEvent()
+        {
+            var view = new DialogueGraphView();
+            view.FocusCanvas();
+
+            var keyState = SendKeyUpWithState(view, KeyCode.Alpha1, EventModifiers.Alt);
+
+            Assert.That(keyState.DefaultPrevented, Is.True);
+            Assert.That(keyState.ImmediatePropagationStopped, Is.True);
+            Assert.That(keyState.ImguiEventUsed, Is.True);
+        }
+
+        [Test]
         public void WasdKeyDown_OnFocusedCanvas_StartsGraphPan()
         {
             var view = new DialogueGraphView();

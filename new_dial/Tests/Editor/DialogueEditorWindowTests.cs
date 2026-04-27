@@ -409,6 +409,41 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
+        public void PaletteShortcutAltModifierImguiEvents_AreConsumedByWindowBeforeSystemMenu()
+        {
+            var database = CreateDatabase("PaletteShortcutAltImgui");
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                window.InitializeForTests(database);
+                var graphView = window.GraphViewForTests;
+                graphView.FocusCanvas();
+                var altDown = new Event { type = EventType.KeyDown, keyCode = KeyCode.LeftAlt };
+                var digitUp = new Event
+                {
+                    type = EventType.KeyUp,
+                    keyCode = KeyCode.Alpha1,
+                    modifiers = EventModifiers.Alt
+                };
+                var altUp = new Event { type = EventType.KeyUp, keyCode = KeyCode.LeftAlt };
+
+                Assert.That(window.ConsumeGraphPaletteShortcutImguiEventForTests(altDown), Is.True);
+                Assert.That(window.ConsumeGraphPaletteShortcutImguiEventForTests(digitUp), Is.True);
+                Assert.That(window.ConsumeGraphPaletteShortcutImguiEventForTests(altUp), Is.True);
+
+                Assert.That(altDown.type, Is.EqualTo(EventType.Used));
+                Assert.That(digitUp.type, Is.EqualTo(EventType.Used));
+                Assert.That(altUp.type, Is.EqualTo(EventType.Used));
+            }
+            finally
+            {
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
         public void PaletteShortcutSettings_ReservePlainWasdAndAllowModifiedWasd()
         {
             Assert.That(DialoguePaletteShortcutSettings.IsBindable(new DialoguePaletteShortcut(KeyCode.W)), Is.False);

@@ -149,6 +149,13 @@ namespace NewDial.DialogueEditor
                 return;
             }
 
+            if (IsAltModifierKey(evt.keyCode))
+            {
+                ResetMovementKeys();
+                ConsumeKeyboardEvent(evt);
+                return;
+            }
+
             if (!evt.altKey && !evt.shiftKey && (evt.keyCode == KeyCode.Delete || evt.keyCode == KeyCode.Backspace))
             {
                 if (_view.DeleteSelectionFromHotkey())
@@ -209,6 +216,13 @@ namespace NewDial.DialogueEditor
 
         private void OnKeyUp(KeyUpEvent evt)
         {
+            if (_hasCanvasFocus &&
+                (IsAltModifierKey(evt.keyCode) || (evt.altKey && IsPaletteShortcutCandidateKey(evt.keyCode))))
+            {
+                ConsumeKeyboardEvent(evt);
+                return;
+            }
+
             var movementKey = GetMovementKey(evt.keyCode);
             var isMovementKey = movementKey != KeyCode.None;
             var wasMovementKeyPressed = isMovementKey && IsMovementKeyPressed(movementKey);
@@ -409,6 +423,18 @@ namespace NewDial.DialogueEditor
                 KeyCode.D => KeyCode.D,
                 _ => KeyCode.None
             };
+        }
+
+        private static bool IsAltModifierKey(KeyCode keyCode)
+        {
+            return keyCode == KeyCode.LeftAlt || keyCode == KeyCode.RightAlt;
+        }
+
+        private static bool IsPaletteShortcutCandidateKey(KeyCode keyCode)
+        {
+            return keyCode is >= KeyCode.Alpha0 and <= KeyCode.Alpha9 ||
+                   keyCode is >= KeyCode.Keypad0 and <= KeyCode.Keypad9 ||
+                   keyCode is >= KeyCode.A and <= KeyCode.Z;
         }
     }
 }

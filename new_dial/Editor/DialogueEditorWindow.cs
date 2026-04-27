@@ -128,6 +128,36 @@ namespace NewDial.DialogueEditor
             RefreshAll();
         }
 
+        private void OnGUI()
+        {
+            ConsumeGraphPaletteShortcutImguiEvent(Event.current);
+        }
+
+        internal bool ConsumeGraphPaletteShortcutImguiEventForTests(Event evt)
+        {
+            return ConsumeGraphPaletteShortcutImguiEvent(evt);
+        }
+
+        private bool ConsumeGraphPaletteShortcutImguiEvent(Event evt)
+        {
+            if (evt == null ||
+                _graphView == null ||
+                !_graphView.HasCanvasFocus ||
+                IsPaletteShortcutRebinding)
+            {
+                return false;
+            }
+
+            if (evt.type == EventType.KeyDown && IsAltModifierKey(evt.keyCode) ||
+                evt.type == EventType.KeyUp && (IsAltModifierKey(evt.keyCode) || (evt.alt && IsPaletteShortcutCandidateKey(evt.keyCode))))
+            {
+                evt.Use();
+                return true;
+            }
+
+            return false;
+        }
+
         private void OnEditorLanguageChanged()
         {
             titleContent = new GUIContent(DialogueEditorLocalization.Text("Dialogue Graph"));
@@ -3597,6 +3627,18 @@ namespace NewDial.DialogueEditor
                     choiceNode.SpeakerId = speakerId ?? string.Empty;
                     break;
             }
+        }
+
+        private static bool IsAltModifierKey(KeyCode keyCode)
+        {
+            return keyCode == KeyCode.LeftAlt || keyCode == KeyCode.RightAlt;
+        }
+
+        private static bool IsPaletteShortcutCandidateKey(KeyCode keyCode)
+        {
+            return keyCode is >= KeyCode.Alpha0 and <= KeyCode.Alpha9 ||
+                   keyCode is >= KeyCode.Keypad0 and <= KeyCode.Keypad9 ||
+                   keyCode is >= KeyCode.A and <= KeyCode.Z;
         }
 
         [Serializable]
