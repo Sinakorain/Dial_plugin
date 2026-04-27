@@ -33,6 +33,7 @@ namespace NewDial.DialogueEditor
         private bool _hasHandledClosePrompt;
         private bool _lifecycleHooksRegistered;
         private bool _isProcessingUndoRedo;
+        private bool _dirtyStateDeferredDuringUndoGesture;
         private int _activeUndoGestureGroup = -1;
         private string _savedStateSnapshot = string.Empty;
 
@@ -75,6 +76,7 @@ namespace NewDial.DialogueEditor
             _savedStateSnapshot = _database == null
                 ? string.Empty
                 : DialogueEditorAutosaveStore.CaptureSnapshotJson(_database);
+            _dirtyStateDeferredDuringUndoGesture = false;
             SyncDirtyState(false);
         }
 
@@ -126,36 +128,6 @@ namespace NewDial.DialogueEditor
             ApplyStyles();
             BuildLayout();
             RefreshAll();
-        }
-
-        private void OnGUI()
-        {
-            ConsumeGraphPaletteShortcutImguiEvent(Event.current);
-        }
-
-        internal bool ConsumeGraphPaletteShortcutImguiEventForTests(Event evt)
-        {
-            return ConsumeGraphPaletteShortcutImguiEvent(evt);
-        }
-
-        private bool ConsumeGraphPaletteShortcutImguiEvent(Event evt)
-        {
-            if (evt == null ||
-                _graphView == null ||
-                !_graphView.HasCanvasFocus ||
-                IsPaletteShortcutRebinding)
-            {
-                return false;
-            }
-
-            if (evt.type == EventType.KeyDown && IsAltModifierKey(evt.keyCode) ||
-                evt.type == EventType.KeyUp && (IsAltModifierKey(evt.keyCode) || (evt.alt && IsPaletteShortcutCandidateKey(evt.keyCode))))
-            {
-                evt.Use();
-                return true;
-            }
-
-            return false;
         }
 
         private void OnEditorLanguageChanged()
@@ -657,6 +629,7 @@ namespace NewDial.DialogueEditor
             EditorUtility.SetDirty(_database);
             AssetDatabase.SaveAssets();
             _savedStateSnapshot = DialogueEditorAutosaveStore.CaptureSnapshotJson(_database);
+            _dirtyStateDeferredDuringUndoGesture = false;
             SyncDirtyState(false);
             if (showNotification)
             {
@@ -3629,18 +3602,6 @@ namespace NewDial.DialogueEditor
             }
         }
 
-        private static bool IsAltModifierKey(KeyCode keyCode)
-        {
-            return keyCode == KeyCode.LeftAlt || keyCode == KeyCode.RightAlt;
-        }
-
-        private static bool IsPaletteShortcutCandidateKey(KeyCode keyCode)
-        {
-            return keyCode is >= KeyCode.Alpha0 and <= KeyCode.Alpha9 ||
-                   keyCode is >= KeyCode.Keypad0 and <= KeyCode.Keypad9 ||
-                   keyCode is >= KeyCode.A and <= KeyCode.Z;
-        }
-
         [Serializable]
         private sealed class RichTextColorList
         {
@@ -4095,7 +4056,19 @@ namespace NewDial.DialogueEditor
                 EditorUtility.SetDirty(_database);
             }
 
-            SyncDirtyState(_activeUndoGestureGroup == -1);
+            if (_activeUndoGestureGroup != -1)
+            {
+                var wasDeferred = _dirtyStateDeferredDuringUndoGesture;
+                _dirtyStateDeferredDuringUndoGesture = true;
+                _hasUnsavedChanges = true;
+                if (!wasDeferred)
+                {
+                    RefreshStatus();
+                }
+                return;
+            }
+
+            SyncDirtyState(true);
         }
 
         private void ClearAutosaveSnapshot()
@@ -4165,6 +4138,7 @@ namespace NewDial.DialogueEditor
             var selectedNodeId = _selectedNode?.Id;
 
             _activeUndoGestureGroup = -1;
+            _dirtyStateDeferredDuringUndoGesture = false;
             _isProcessingUndoRedo = true;
             try
             {
@@ -4517,9 +4491,14 @@ namespace NewDial.DialogueEditor
             }
 
             var group = _activeUndoGestureGroup;
+            var shouldSyncDirtyState = _dirtyStateDeferredDuringUndoGesture;
             _activeUndoGestureGroup = -1;
+            _dirtyStateDeferredDuringUndoGesture = false;
             Undo.CollapseUndoOperations(group);
-            MarkChanged();
+            if (shouldSyncDirtyState)
+            {
+                SyncDirtyState(true);
+            }
         }
 
         private void SyncDirtyState(bool persistAutosave)

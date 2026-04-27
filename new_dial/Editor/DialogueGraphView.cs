@@ -99,6 +99,8 @@ namespace NewDial.DialogueEditor
         public Vector2 CurrentWorldPointerPosition { get; set; }
         public float StartGraphScale { get; }
         public Vector2 KeyboardPanCanvasOffset { get; set; }
+        public Vector2 LastAppliedCanvasDelta { get; set; }
+        public bool HasAppliedCanvasDelta { get; set; }
         public IReadOnlyList<SelectionPointerDragNodeStart> RootCommentStarts { get; }
         public IReadOnlyList<SelectionPointerDragNodeStart> DirectNodeStarts { get; }
 
@@ -127,12 +129,16 @@ namespace NewDial.DialogueEditor
         private const float LinkPreviewThickness = 3.8f;
         private const float PaletteShortcutPlacementGap = 32f;
         private const float PaletteShortcutOverlapPadding = 8f;
+        private const float DragDeltaEpsilon = 0.001f;
         internal static readonly Vector2 TextNodeInitialSize = new(280f, 170f);
         internal static readonly Vector2 CommentNodeInitialSize = new(420f, 260f);
 
         private readonly Dictionary<string, DialogueTextNodeView> _textNodeViews = new();
         private readonly Dictionary<string, DialogueExecutableNodeView> _executableNodeViews = new();
         private readonly Dictionary<string, DialogueCommentNodeView> _commentNodeViews = new();
+        private readonly Dictionary<string, BaseNodeData> _nodeLookup = new();
+        private readonly Dictionary<string, List<NodeLinkData>> _outgoingLinkLookup = new();
+        private readonly List<DialogueEdgeGeometry> _edgeGeometryCache = new();
         private readonly GridBackground _gridBackground;
         private readonly DialogueEdgeLayer _edgeLayer;
         private readonly VisualElement _placementGhost;
@@ -143,6 +149,14 @@ namespace NewDial.DialogueEditor
 
         private DialogueGraphData _graph;
         private bool _isReloading;
+        private bool _nodeLookupDirty = true;
+        private bool _outgoingLinkLookupDirty = true;
+        private bool _edgeLayerBoundsDirty = true;
+        private bool _edgeGeometryDirty = true;
+        private bool _isApplyingSelectionPointerDragPositions;
+        private bool _selectionPointerDragChanged;
+        private bool _batchedNodeMoveNeedsEdgeRefresh;
+        private bool _batchedNodeMoveNeedsLayeringRestore;
         private Vector2 _lastPointerPosition;
         private DialoguePaletteItemType? _placementNodeType;
         private IDialogueRuntimeNodeView _activeLinkSource;
@@ -242,6 +256,7 @@ namespace NewDial.DialogueEditor
             try
             {
                 _graph = graph;
+                InvalidateGraphDataCaches();
                 DeleteElements(graphElements.ToList());
                 _textNodeViews.Clear();
                 _executableNodeViews.Clear();
@@ -380,7 +395,7 @@ namespace NewDial.DialogueEditor
             ApplyUndoableChange("Add Answer", () =>
             {
                 sourceNode.UseOutputsAsChoices = true;
-                var existingAnswerCount = DialogueGraphUtility.GetOutgoingLinks(_graph, sourceNode.Id).Count;
+                var existingAnswerCount = GetOutgoingLinks(sourceNode.Id).Count;
                 var choicePosition = sourceNode.Position + new Vector2(320f, existingAnswerCount * 120f);
                 var choiceNode = new DialogueChoiceNodeData
                 {
@@ -398,6 +413,7 @@ namespace NewDial.DialogueEditor
                     Order = existingAnswerCount
                 });
                 DialogueGraphUtility.NormalizeLinkOrder(_graph, sourceNode.Id);
+                InvalidateGraphDataCaches();
 
                 CreateExecutableNodeView(choiceNode);
                 RefreshNodeVisuals();
@@ -946,6 +962,7 @@ namespace NewDial.DialogueEditor
 
         public void RefreshNodeVisuals()
         {
+            InvalidateGraphDataCaches();
             foreach (var view in _textNodeViews.Values)
             {
                 view.RefreshFromData();
@@ -969,6 +986,37 @@ namespace NewDial.DialogueEditor
             return SpeakerNameResolver?.Invoke(node) ?? string.Empty;
         }
 
+        internal BaseNodeData GetNodeData(string nodeId)
+        {
+            EnsureNodeLookup();
+            return !string.IsNullOrWhiteSpace(nodeId) && _nodeLookup.TryGetValue(nodeId, out var node)
+                ? node
+                : null;
+        }
+
+        internal bool UsesChoices(DialogueTextNodeData node)
+        {
+            return node != null && (node.UseOutputsAsChoices || HasAnswerOutputs(node));
+        }
+
+        private bool HasAnswerOutputs(DialogueTextNodeData node)
+        {
+            if (node == null)
+            {
+                return false;
+            }
+
+            foreach (var link in GetOutgoingLinks(node.Id))
+            {
+                if (GetNodeData(link.ToNodeId) is DialogueChoiceNodeData)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         public void RefreshLinksForNode(string nodeId)
         {
             if (_graph == null || string.IsNullOrWhiteSpace(nodeId))
@@ -976,6 +1024,7 @@ namespace NewDial.DialogueEditor
                 return;
             }
 
+            InvalidateOutgoingLinkCache();
             RefreshNodeVisuals();
             MarkChanged();
         }
@@ -1150,11 +1199,12 @@ namespace NewDial.DialogueEditor
                 {
                     FromNodeId = fromNodeId,
                     ToNodeId = toNodeId,
-                    Order = DialogueGraphUtility.GetOutgoingLinks(_graph, fromNodeId).Count
+                    Order = GetOutgoingLinks(fromNodeId).Count
                 };
 
                 _graph.Links.Add(createdLink);
                 DialogueGraphUtility.NormalizeLinkOrder(_graph, fromNodeId);
+                InvalidateOutgoingLinkCache();
 
                 if (markChanged)
                 {
@@ -1193,6 +1243,7 @@ namespace NewDial.DialogueEditor
                 }
 
                 DialogueGraphUtility.NormalizeLinkOrder(_graph, link.FromNodeId);
+                InvalidateOutgoingLinkCache();
 
                 if (reloadGraph)
                 {
@@ -1299,6 +1350,14 @@ namespace NewDial.DialogueEditor
 
         internal void NotifyNodeMoved()
         {
+            InvalidateEdgeLayerCache(boundsDirty: true);
+            if (_isApplyingSelectionPointerDragPositions)
+            {
+                _batchedNodeMoveNeedsEdgeRefresh = true;
+                _batchedNodeMoveNeedsLayeringRestore = true;
+                return;
+            }
+
             RefreshEdgeLayer();
             RestoreCommentNodeLayering();
             MarkChanged();
@@ -1489,6 +1548,110 @@ namespace NewDial.DialogueEditor
             GraphChangedAction?.Invoke();
         }
 
+        private void InvalidateGraphDataCaches()
+        {
+            _nodeLookupDirty = true;
+            _outgoingLinkLookupDirty = true;
+            InvalidateEdgeLayerCache(boundsDirty: true);
+        }
+
+        private void InvalidateOutgoingLinkCache()
+        {
+            _outgoingLinkLookupDirty = true;
+            InvalidateEdgeLayerCache(boundsDirty: true);
+        }
+
+        private void InvalidateEdgeLayerCache(bool boundsDirty)
+        {
+            _edgeGeometryDirty = true;
+            if (boundsDirty)
+            {
+                _edgeLayerBoundsDirty = true;
+            }
+        }
+
+        private void EnsureNodeLookup()
+        {
+            if (!_nodeLookupDirty)
+            {
+                return;
+            }
+
+            _nodeLookup.Clear();
+            if (_graph?.Nodes != null)
+            {
+                foreach (var node in _graph.Nodes)
+                {
+                    if (node == null || string.IsNullOrWhiteSpace(node.Id))
+                    {
+                        continue;
+                    }
+
+                    _nodeLookup[node.Id] = node;
+                }
+            }
+
+            _nodeLookupDirty = false;
+        }
+
+        private void EnsureOutgoingLinkLookup()
+        {
+            if (!_outgoingLinkLookupDirty)
+            {
+                return;
+            }
+
+            _outgoingLinkLookup.Clear();
+            if (_graph?.Links != null)
+            {
+                foreach (var link in _graph.Links)
+                {
+                    if (link == null || string.IsNullOrWhiteSpace(link.FromNodeId))
+                    {
+                        continue;
+                    }
+
+                    if (!_outgoingLinkLookup.TryGetValue(link.FromNodeId, out var links))
+                    {
+                        links = new List<NodeLinkData>();
+                        _outgoingLinkLookup[link.FromNodeId] = links;
+                    }
+
+                    links.Add(link);
+                }
+            }
+
+            foreach (var links in _outgoingLinkLookup.Values)
+            {
+                links.Sort(CompareLinksByTraversalOrder);
+            }
+
+            _outgoingLinkLookupDirty = false;
+        }
+
+        private static int CompareLinksByTraversalOrder(NodeLinkData left, NodeLinkData right)
+        {
+            if (ReferenceEquals(left, right))
+            {
+                return 0;
+            }
+
+            if (left == null)
+            {
+                return 1;
+            }
+
+            if (right == null)
+            {
+                return -1;
+            }
+
+            var orderComparison = left.Order.CompareTo(right.Order);
+            return orderComparison != 0
+                ? orderComparison
+                : string.Compare(left.Id, right.Id, StringComparison.Ordinal);
+        }
+
         private string BuildDefaultNodeTitle(string baseTitle)
         {
             var normalizedBaseTitle = string.IsNullOrWhiteSpace(baseTitle)
@@ -1532,9 +1695,17 @@ namespace NewDial.DialogueEditor
             EndUndoGestureAction?.Invoke();
         }
 
-        internal IEnumerable<NodeLinkData> GetOutgoingLinks(string nodeId)
+        internal IReadOnlyList<NodeLinkData> GetOutgoingLinks(string nodeId)
         {
-            return DialogueGraphUtility.GetOutgoingLinks(_graph, nodeId);
+            if (_graph == null || string.IsNullOrWhiteSpace(nodeId))
+            {
+                return Array.Empty<NodeLinkData>();
+            }
+
+            EnsureOutgoingLinkLookup();
+            return _outgoingLinkLookup.TryGetValue(nodeId, out var links)
+                ? links
+                : Array.Empty<NodeLinkData>();
         }
 
         internal int GetRenderedLinkCount()
@@ -1544,11 +1715,7 @@ namespace NewDial.DialogueEditor
                 return 0;
             }
 
-            return _graph.Links.Count(link =>
-                link != null &&
-                !string.IsNullOrWhiteSpace(link.ToNodeId) &&
-                TryGetRuntimeNodeView(link.FromNodeId, out _) &&
-                TryGetRuntimeNodeView(link.ToNodeId, out _));
+            return GetEdgeGeometries().Count(geometry => geometry.Link != null);
         }
 
         internal void BeginLinkDrag(IDialogueRuntimeNodeView sourceView, Vector2 worldPointerPosition)
@@ -1644,6 +1811,7 @@ namespace NewDial.DialogueEditor
 
                     if (changed)
                     {
+                        InvalidateGraphDataCaches();
                         RefreshEdgeLayer();
                         RestoreCommentNodeLayering();
                         UpdateEmptyState();
@@ -1782,6 +1950,25 @@ namespace NewDial.DialogueEditor
 
         private IEnumerable<DialogueEdgeGeometry> GetEdgeGeometries()
         {
+            EnsureEdgeGeometryCache();
+            return _edgeGeometryCache;
+        }
+
+        private void EnsureEdgeGeometryCache()
+        {
+            SyncEdgeLayerBounds();
+            if (!_edgeGeometryDirty)
+            {
+                return;
+            }
+
+            _edgeGeometryCache.Clear();
+            BuildEdgeGeometryCache(_edgeGeometryCache);
+            _edgeGeometryDirty = false;
+        }
+
+        private void BuildEdgeGeometryCache(List<DialogueEdgeGeometry> geometries)
+        {
             foreach (var link in _graph?.Links ?? Enumerable.Empty<NodeLinkData>())
             {
                 if (link == null ||
@@ -1797,14 +1984,14 @@ namespace NewDial.DialogueEditor
                 var targetRect = GetRuntimeNodeCanvasRect(targetView);
                 var sourceAnchor = GetBottomAnchorCanvas(sourceRect, targetRect.center.x);
                 var targetAnchor = GetTopAnchorCanvas(targetRect, sourceRect.center.x);
-                yield return new DialogueEdgeGeometry(
+                geometries.Add(new DialogueEdgeGeometry(
                     sourceAnchor - _edgeLayerCanvasBounds.position,
                     targetAnchor - _edgeLayerCanvasBounds.position,
                     isHovered
                         ? new Color(0.74f, 0.86f, 1f, 0.98f)
                         : new Color(0.88f, 0.9f, 0.96f, 0.92f),
                     isHovered ? LinkHoverThickness : LinkThickness,
-                    link);
+                    link));
             }
 
             if (_activeLinkSource != null)
@@ -1818,18 +2005,18 @@ namespace NewDial.DialogueEditor
                 }
 
                 var sourceAnchor = GetBottomAnchorCanvas(sourceRect, previewEndCanvas.x);
-                yield return new DialogueEdgeGeometry(
+                geometries.Add(new DialogueEdgeGeometry(
                     sourceAnchor - _edgeLayerCanvasBounds.position,
                     previewEndCanvas - _edgeLayerCanvasBounds.position,
                     new Color(0.55f, 0.76f, 1f, 0.98f),
-                    LinkPreviewThickness);
+                    LinkPreviewThickness));
             }
         }
 
         internal IReadOnlyList<DialogueEdgeGeometry> GetEdgeGeometriesForTests()
         {
-            SyncEdgeLayerBounds();
-            return GetEdgeGeometries().ToList();
+            EnsureEdgeGeometryCache();
+            return _edgeGeometryCache.ToList();
         }
 
         private Rect GetRuntimeNodeCanvasRect(IDialogueRuntimeNodeView view)
@@ -1897,6 +2084,7 @@ namespace NewDial.DialogueEditor
         private bool UpdateHoveredLink(Vector2 canvasPosition)
         {
             var nextHoveredLinkId = _activeLinkSource == null &&
+                                    !IsSelectionPointerDragActive &&
                                     TryFindLinkAtCanvasPosition(canvasPosition, out var link)
                 ? link.Id
                 : null;
@@ -1907,7 +2095,7 @@ namespace NewDial.DialogueEditor
             }
 
             _hoveredLinkId = nextHoveredLinkId;
-            RefreshEdgeLayer();
+            RefreshEdgeLayer(boundsDirty: false);
             return true;
         }
 
@@ -1919,7 +2107,7 @@ namespace NewDial.DialogueEditor
             }
 
             _hoveredLinkId = null;
-            RefreshEdgeLayer();
+            RefreshEdgeLayer(boundsDirty: false);
         }
 
         private float GetLinkHitTestCanvasDistance()
@@ -2364,17 +2552,30 @@ namespace NewDial.DialogueEditor
 
         private void RefreshEdgeLayer()
         {
+            RefreshEdgeLayer(boundsDirty: true);
+        }
+
+        private void RefreshEdgeLayer(bool boundsDirty)
+        {
+            InvalidateEdgeLayerCache(boundsDirty);
             SyncEdgeLayerBounds();
             _edgeLayer.MarkDirtyRepaint();
         }
 
         private void SyncEdgeLayerBounds()
         {
+            if (!_edgeLayerBoundsDirty)
+            {
+                return;
+            }
+
             _edgeLayerCanvasBounds = CalculateEdgeLayerCanvasBounds();
             _edgeLayer.style.left = _edgeLayerCanvasBounds.x;
             _edgeLayer.style.top = _edgeLayerCanvasBounds.y;
             _edgeLayer.style.width = Mathf.Max(1f, _edgeLayerCanvasBounds.width);
             _edgeLayer.style.height = Mathf.Max(1f, _edgeLayerCanvasBounds.height);
+            _edgeLayerBoundsDirty = false;
+            _edgeGeometryDirty = true;
         }
 
         private Rect CalculateEdgeLayerCanvasBounds()
@@ -2475,6 +2676,7 @@ namespace NewDial.DialogueEditor
         {
             var state = CreateSelectionPointerDragState(worldPointerPosition);
             _selectionPointerDragState = state.HasNodes ? state : null;
+            _selectionPointerDragChanged = false;
         }
 
         internal void ContinueSelectionPointerDrag(Vector2 worldPointerPosition)
@@ -2490,7 +2692,19 @@ namespace NewDial.DialogueEditor
 
         internal void EndSelectionPointerDrag()
         {
+            var shouldMarkChanged = _selectionPointerDragState != null && _selectionPointerDragChanged;
             _selectionPointerDragState = null;
+            _selectionPointerDragChanged = false;
+
+            if (shouldMarkChanged)
+            {
+                MarkChanged();
+            }
+
+            if (_activeLinkSource == null && panel != null)
+            {
+                UpdateHoveredLink(WorldToCanvasPosition(_lastPointerPosition));
+            }
         }
 
         internal bool IsSelectionPointerDragActive => _selectionPointerDragState != null;
@@ -2596,25 +2810,70 @@ namespace NewDial.DialogueEditor
             }
 
             var totalDelta = _selectionPointerDragState.TotalCanvasDelta;
-            foreach (var start in _selectionPointerDragState.RootCommentStarts)
+            if (!_selectionPointerDragState.HasAppliedCanvasDelta &&
+                IsApproximatelyZero(totalDelta))
             {
-                if (start.Node == null)
-                {
-                    continue;
-                }
-
-                start.Node.SetPosition(new Rect(start.StartRect.position + totalDelta, start.StartRect.size));
+                return;
             }
 
-            foreach (var start in _selectionPointerDragState.DirectNodeStarts)
+            if (_selectionPointerDragState.HasAppliedCanvasDelta &&
+                IsApproximately(totalDelta, _selectionPointerDragState.LastAppliedCanvasDelta))
             {
-                if (start.Node == null)
+                return;
+            }
+
+            _selectionPointerDragState.HasAppliedCanvasDelta = true;
+            _selectionPointerDragState.LastAppliedCanvasDelta = totalDelta;
+            _selectionPointerDragChanged = true;
+            _batchedNodeMoveNeedsEdgeRefresh = false;
+            _batchedNodeMoveNeedsLayeringRestore = false;
+            _isApplyingSelectionPointerDragPositions = true;
+            try
+            {
+                foreach (var start in _selectionPointerDragState.RootCommentStarts)
                 {
-                    continue;
+                    if (start.Node == null)
+                    {
+                        continue;
+                    }
+
+                    start.Node.SetPosition(new Rect(start.StartRect.position + totalDelta, start.StartRect.size));
                 }
 
-                start.Node.SetPosition(new Rect(start.StartRect.position + totalDelta, start.StartRect.size));
+                foreach (var start in _selectionPointerDragState.DirectNodeStarts)
+                {
+                    if (start.Node == null)
+                    {
+                        continue;
+                    }
+
+                    start.Node.SetPosition(new Rect(start.StartRect.position + totalDelta, start.StartRect.size));
+                }
             }
+            finally
+            {
+                _isApplyingSelectionPointerDragPositions = false;
+            }
+
+            if (_batchedNodeMoveNeedsEdgeRefresh)
+            {
+                RefreshEdgeLayer();
+            }
+
+            if (_batchedNodeMoveNeedsLayeringRestore)
+            {
+                RestoreCommentNodeLayering();
+            }
+        }
+
+        private static bool IsApproximately(Vector2 left, Vector2 right)
+        {
+            return (left - right).sqrMagnitude <= DragDeltaEpsilon * DragDeltaEpsilon;
+        }
+
+        private static bool IsApproximatelyZero(Vector2 value)
+        {
+            return value.sqrMagnitude <= DragDeltaEpsilon * DragDeltaEpsilon;
         }
 
         internal Rect AdjustSelectionPointerDragPosition(Node node, Rect newPos)
@@ -3130,12 +3389,9 @@ namespace NewDial.DialogueEditor
 
         public void RefreshFromData()
         {
-            var outgoingCount = _graphView
-                .GetOutgoingLinks(Data.Id)
-                .Count(link => !string.IsNullOrWhiteSpace(link.ToNodeId));
-            var answerCount = _graphView
-                .GetOutgoingLinks(Data.Id)
-                .Count(link => DialogueGraphUtility.GetNode(_graphView.Graph, link.ToNodeId) is DialogueChoiceNodeData);
+            var outgoingLinks = _graphView.GetOutgoingLinks(Data.Id);
+            var outgoingCount = outgoingLinks.Count(link => !string.IsNullOrWhiteSpace(link.ToNodeId));
+            var answerCount = outgoingLinks.Count(link => _graphView.GetNodeData(link.ToNodeId) is DialogueChoiceNodeData);
 
             title = string.Empty;
             _titleField.SetValueWithoutNotify(Data.Title ?? string.Empty);
@@ -3147,7 +3403,7 @@ namespace NewDial.DialogueEditor
             var speakerName = _graphView.ResolveSpeakerName(Data);
             var linkSummary = outgoingCount == 0
                 ? DialogueEditorLocalization.Text("Drag lower half to connect")
-                : DialogueGraphUtility.UsesChoices(_graphView.Graph, Data)
+                : _graphView.UsesChoices(Data)
                     ? DialogueEditorLocalization.Format("{0} answer{1}", answerCount > 0 ? answerCount : outgoingCount, (answerCount > 0 ? answerCount : outgoingCount) == 1 ? string.Empty : "s")
                     : DialogueEditorLocalization.Format("{0} link{1}", outgoingCount, outgoingCount == 1 ? string.Empty : "s");
             _metaLabel.text = string.IsNullOrWhiteSpace(speakerName)

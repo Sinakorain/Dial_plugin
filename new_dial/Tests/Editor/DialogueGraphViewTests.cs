@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Danil Kashulin. All rights reserved.
 
+using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
 using UnityEditor;
@@ -756,58 +757,6 @@ namespace NewDial.DialogueEditor.Tests
             Assert.That(keyState.DefaultPrevented, Is.True);
             Assert.That(keyState.ImmediatePropagationStopped, Is.True);
             Assert.That(view.viewTransform.position.x, Is.EqualTo(45f).Within(0.01f));
-        }
-
-        [Test]
-        public void PaletteShortcutAltDigit_UsesUnderlyingImguiEvent()
-        {
-            var view = new DialogueGraphView
-            {
-                PaletteShortcutResolver = shortcut =>
-                    shortcut.KeyCode == KeyCode.Alpha1 && shortcut.Alt
-                        ? (DialoguePaletteItemType?)DialoguePaletteItemType.TextNode
-                        : null
-            };
-            var handled = false;
-            view.PaletteShortcutAction = _ => handled = true;
-            view.FocusCanvas();
-
-            var keyState = SendKeyDownWithState(view, KeyCode.Alpha1, EventModifiers.Alt);
-
-            Assert.That(handled, Is.True);
-            Assert.That(keyState.DefaultPrevented, Is.True);
-            Assert.That(keyState.ImmediatePropagationStopped, Is.True);
-            Assert.That(keyState.ImguiEventUsed, Is.True);
-        }
-
-        [Test]
-        public void PaletteShortcutAltModifierDownAndUp_UsesUnderlyingImguiEvent()
-        {
-            var view = new DialogueGraphView();
-            view.FocusCanvas();
-
-            var keyDownState = SendKeyDownWithState(view, KeyCode.LeftAlt);
-            var keyUpState = SendKeyUpWithState(view, KeyCode.LeftAlt);
-
-            Assert.That(keyDownState.DefaultPrevented, Is.True);
-            Assert.That(keyDownState.ImmediatePropagationStopped, Is.True);
-            Assert.That(keyDownState.ImguiEventUsed, Is.True);
-            Assert.That(keyUpState.DefaultPrevented, Is.True);
-            Assert.That(keyUpState.ImmediatePropagationStopped, Is.True);
-            Assert.That(keyUpState.ImguiEventUsed, Is.True);
-        }
-
-        [Test]
-        public void PaletteShortcutAltDigitKeyUp_UsesUnderlyingImguiEvent()
-        {
-            var view = new DialogueGraphView();
-            view.FocusCanvas();
-
-            var keyState = SendKeyUpWithState(view, KeyCode.Alpha1, EventModifiers.Alt);
-
-            Assert.That(keyState.DefaultPrevented, Is.True);
-            Assert.That(keyState.ImmediatePropagationStopped, Is.True);
-            Assert.That(keyState.ImguiEventUsed, Is.True);
         }
 
         [Test]
@@ -2496,6 +2445,122 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
+        public void ContinueSelectionPointerDrag_ManySelectedNodes_BatchesChangeAndKeepsLinkGeometry()
+        {
+            var graph = new DialogueGraphData();
+            var nodes = new List<DialogueTextNodeData>();
+            for (var index = 0; index < 60; index++)
+            {
+                var node = new DialogueTextNodeData
+                {
+                    Title = $"Node {index + 1}",
+                    Position = new Vector2((index % 10) * 320f, (index / 10) * 220f)
+                };
+                nodes.Add(node);
+                graph.Nodes.Add(node);
+            }
+
+            for (var index = 0; index < nodes.Count - 1; index++)
+            {
+                graph.Links.Add(new NodeLinkData
+                {
+                    FromNodeId = nodes[index].Id,
+                    ToNodeId = nodes[index + 1].Id,
+                    Order = 0
+                });
+            }
+
+            var originalPositions = nodes.ToDictionary(node => node.Id, node => node.Position);
+            var changeCount = 0;
+            var view = new DialogueGraphView
+            {
+                GraphChangedAction = () => changeCount++
+            };
+            view.LoadGraph(graph);
+            foreach (var nodeView in view.graphElements.OfType<DialogueTextNodeView>())
+            {
+                view.AddToSelection(nodeView);
+            }
+
+            var dragDelta = new Vector2(30f, 45f);
+            view.BeginSelectionPointerDrag(Vector2.zero);
+            view.ContinueSelectionPointerDrag(dragDelta);
+
+            Assert.That(changeCount, Is.EqualTo(0));
+            foreach (var node in nodes)
+            {
+                Assert.That(node.Position, Is.EqualTo(originalPositions[node.Id] + dragDelta));
+            }
+
+            view.EndSelectionPointerDrag();
+
+            Assert.That(changeCount, Is.EqualTo(1));
+            Assert.That(view.GetRenderedLinkCount(), Is.EqualTo(nodes.Count - 1));
+            var geometry = view.GetEdgeGeometriesForTests()
+                .Single(edge => edge.Link?.FromNodeId == nodes[0].Id);
+            var expectedStart = GetExpectedBottomAnchor(
+                new Rect(nodes[0].Position, DialogueGraphView.TextNodeInitialSize),
+                new Rect(nodes[1].Position, DialogueGraphView.TextNodeInitialSize).center.x);
+            var expectedEnd = GetExpectedTopAnchor(
+                new Rect(nodes[1].Position, DialogueGraphView.TextNodeInitialSize),
+                new Rect(nodes[0].Position, DialogueGraphView.TextNodeInitialSize).center.x);
+
+            Assert.That(geometry.Start + view.EdgeLayerCanvasBoundsForTests.position, Is.EqualTo(expectedStart));
+            Assert.That(geometry.End + view.EdgeLayerCanvasBoundsForTests.position, Is.EqualTo(expectedEnd));
+        }
+
+        [Test]
+        public void ContinueSelectionPointerDrag_CommentGroup_BatchesChangeAndMovesNestedNodesOnce()
+        {
+            var graph = new DialogueGraphData();
+            var rootComment = new CommentNodeData
+            {
+                Title = "Root",
+                Position = new Vector2(80f, 80f),
+                Area = new Rect(80f, 80f, 700f, 520f)
+            };
+            var nestedComment = new CommentNodeData
+            {
+                Title = "Nested",
+                Position = new Vector2(140f, 140f),
+                Area = new Rect(140f, 140f, 360f, 240f)
+            };
+            var child = new DialogueTextNodeData
+            {
+                Title = "Child",
+                Position = new Vector2(180f, 180f)
+            };
+            graph.Nodes.Add(rootComment);
+            graph.Nodes.Add(nestedComment);
+            graph.Nodes.Add(child);
+
+            var changeCount = 0;
+            var view = new DialogueGraphView
+            {
+                GraphChangedAction = () => changeCount++
+            };
+            view.LoadGraph(graph);
+            view.SelectCommentGroup(rootComment);
+
+            var delta = new Vector2(70f, 35f);
+            view.BeginCommentDrag(rootComment);
+            view.BeginSelectionPointerDrag(Vector2.zero);
+            view.ContinueSelectionPointerDrag(delta);
+
+            Assert.That(changeCount, Is.EqualTo(0));
+
+            view.EndSelectionPointerDrag();
+            view.EndCommentDrag(rootComment);
+
+            Assert.That(changeCount, Is.EqualTo(1));
+            Assert.That(rootComment.Position, Is.EqualTo(new Vector2(150f, 115f)));
+            Assert.That(rootComment.Area.position, Is.EqualTo(new Vector2(150f, 115f)));
+            Assert.That(nestedComment.Position, Is.EqualTo(new Vector2(210f, 175f)));
+            Assert.That(nestedComment.Area.position, Is.EqualTo(new Vector2(210f, 175f)));
+            Assert.That(child.Position, Is.EqualTo(new Vector2(250f, 215f)));
+        }
+
+        [Test]
         public void StepKeyboardPan_DraggingSelectedCommentGroup_MovesChildOnlyOnce()
         {
             var graph = new DialogueGraphData();
@@ -2744,6 +2809,7 @@ namespace NewDial.DialogueEditor.Tests
             database.Npcs.Add(npc);
 
             var activeUndoGroup = -1;
+            var undoDatabase = database;
             var view = new DialogueGraphView
             {
                 ApplyUndoableChangeAction = (actionName, mutate) =>
@@ -2751,7 +2817,7 @@ namespace NewDial.DialogueEditor.Tests
                     Undo.IncrementCurrentGroup();
                     var group = Undo.GetCurrentGroup();
                     Undo.SetCurrentGroupName(actionName);
-                    Undo.RegisterCompleteObjectUndo(database, actionName);
+                    Undo.RegisterCompleteObjectUndo(undoDatabase, actionName);
                     mutate();
                     Undo.CollapseUndoOperations(group);
                 },
@@ -2765,7 +2831,7 @@ namespace NewDial.DialogueEditor.Tests
                     Undo.IncrementCurrentGroup();
                     activeUndoGroup = Undo.GetCurrentGroup();
                     Undo.SetCurrentGroupName(actionName);
-                    Undo.RegisterCompleteObjectUndo(database, actionName);
+                    Undo.RegisterCompleteObjectUndo(undoDatabase, actionName);
                 },
                 EndUndoGestureAction = () =>
                 {
@@ -2899,24 +2965,19 @@ namespace NewDial.DialogueEditor.Tests
 
         private readonly struct KeyEventState
         {
-            private KeyEventState(bool defaultPrevented, bool immediatePropagationStopped, bool imguiEventUsed)
+            private KeyEventState(bool defaultPrevented, bool immediatePropagationStopped)
             {
                 DefaultPrevented = defaultPrevented;
                 ImmediatePropagationStopped = immediatePropagationStopped;
-                ImguiEventUsed = imguiEventUsed;
             }
 
             public bool DefaultPrevented { get; }
             public bool ImmediatePropagationStopped { get; }
-            public bool ImguiEventUsed { get; }
 
             public static KeyEventState From(EventBase evt)
             {
 #pragma warning disable 618
-                return new KeyEventState(
-                    evt.isDefaultPrevented,
-                    evt.isImmediatePropagationStopped,
-                    evt.imguiEvent?.type == EventType.Used);
+                return new KeyEventState(evt.isDefaultPrevented, evt.isImmediatePropagationStopped);
 #pragma warning restore 618
             }
         }

@@ -45,6 +45,7 @@
 - Graph links are now slightly thicker, highlight subtly on hover, and can be removed with `Cmd`/`Ctrl` + left click on the link.
 - Graph links now use restrained smoothed curves instead of large S-shaped waves.
 - Graph link hover and click hit-testing now uses panel-space pointer coordinates so the interactive zone matches the visual link more closely.
+- Graph node dragging now batches selected-node/comment-group movement work, caches graph lookups and edge geometry, and defers autosave snapshots until drag/resize undo gestures finish to reduce editor freezes on large graphs.
 - `Cmd`/`Ctrl` + `Delete`/`Backspace` on the graph canvas now uses the same comment-delete prompt as plain `Delete`/`Backspace`.
 - Selected NPC and dialogue metadata in the project panel now uses compact inline rows instead of nested cards.
 - Left dock sections now use collapsible Project, Palette, and Variables foldouts, with Palette shown before Variables.
@@ -91,7 +92,6 @@
 - WASD graph panning now clears movement state on focus changes, inline fields, and modifier-key combinations, and preserves the current zoom while panning, including left and diagonal movement on zoomed-out graphs.
 - WASD graph panning now consumes handled key events so Unity GraphView shortcuts such as `A` cannot trigger frame or zoom changes while navigating the canvas.
 - WASD graph panning now also handles UI Toolkit character key events, preventing the built-in GraphView `A` frame-all shortcut from recentering the canvas.
-- Handled graph canvas keyboard shortcuts now mark the whole Alt chord, including window-level modifier down/up events, as used to avoid Windows system beeps for shortcuts such as `Alt+1`.
 - WASD graph panning now runs its editor tick only while movement input is active, clears stale movement on graph reload or panel detach, and avoids consuming unrelated key-up events when the canvas is not focused.
 - Graph canvas keyboard and focus handling is now isolated in a dedicated input controller, and WASD now behaves as reserved camera-style viewport movement instead of being available as plain palette shortcuts.
 - WASD graph panning no longer clears active movement merely because the pointer leaves the canvas.
@@ -117,7 +117,8 @@
 - Added coverage for batch localization import and Russian UI content-language refresh after import.
 - Added coverage for vertical localization import layout and WASD graph panning.
 - Added coverage for WASD key-up focus handling, interactive graph fields, and graph reload movement-state reset.
-- Added coverage for camera-direction WASD movement, character-based `A` input, Alt-chord event consumption, mouse-leave handling, canvas copy/paste shortcuts, and reserved plain-WASD palette bindings.
+- Added coverage for camera-direction WASD movement, character-based `A` input, mouse-leave handling, canvas copy/paste shortcuts, and reserved plain-WASD palette bindings.
+- Added coverage for batched mass-node drag, comment-group drag, link geometry after batched movement, and deferred autosave during drag gestures.
 
 ### Docs
 

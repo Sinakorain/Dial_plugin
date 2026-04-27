@@ -409,41 +409,6 @@ namespace NewDial.DialogueEditor.Tests
         }
 
         [Test]
-        public void PaletteShortcutAltModifierImguiEvents_AreConsumedByWindowBeforeSystemMenu()
-        {
-            var database = CreateDatabase("PaletteShortcutAltImgui");
-            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
-
-            try
-            {
-                window.InitializeForTests(database);
-                var graphView = window.GraphViewForTests;
-                graphView.FocusCanvas();
-                var altDown = new Event { type = EventType.KeyDown, keyCode = KeyCode.LeftAlt };
-                var digitUp = new Event
-                {
-                    type = EventType.KeyUp,
-                    keyCode = KeyCode.Alpha1,
-                    modifiers = EventModifiers.Alt
-                };
-                var altUp = new Event { type = EventType.KeyUp, keyCode = KeyCode.LeftAlt };
-
-                Assert.That(window.ConsumeGraphPaletteShortcutImguiEventForTests(altDown), Is.True);
-                Assert.That(window.ConsumeGraphPaletteShortcutImguiEventForTests(digitUp), Is.True);
-                Assert.That(window.ConsumeGraphPaletteShortcutImguiEventForTests(altUp), Is.True);
-
-                Assert.That(altDown.type, Is.EqualTo(EventType.Used));
-                Assert.That(digitUp.type, Is.EqualTo(EventType.Used));
-                Assert.That(altUp.type, Is.EqualTo(EventType.Used));
-            }
-            finally
-            {
-                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
-                window.Close();
-            }
-        }
-
-        [Test]
         public void PaletteShortcutSettings_ReservePlainWasdAndAllowModifiedWasd()
         {
             Assert.That(DialoguePaletteShortcutSettings.IsBindable(new DialoguePaletteShortcut(KeyCode.W)), Is.False);
@@ -687,6 +652,81 @@ namespace NewDial.DialogueEditor.Tests
                 Assert.That(bodyField, Is.Not.Null);
 
                 bodyField.value = "Updated body text";
+
+                Assert.That(window.HasUnsavedChangesForTests, Is.True);
+                Assert.That(File.Exists(snapshotPath), Is.True);
+
+                Undo.PerformUndo();
+
+                Assert.That(window.HasUnsavedChangesForTests, Is.False);
+                Assert.That(File.Exists(snapshotPath), Is.False);
+            }
+            finally
+            {
+                if (File.Exists(snapshotPath))
+                {
+                    File.Delete(snapshotPath);
+                }
+
+                DialogueEditorAutosaveStore.ClearSnapshot(DialogueEditorAutosaveStore.GetStorageKey(database));
+                window.Close();
+            }
+        }
+
+        [Test]
+        public void MassNodeDrag_DefersAutosaveUntilUndoGestureEnds()
+        {
+            var database = CreateDatabase("MassDragAutosave");
+            var snapshotPath = DialogueEditorAutosaveStore.GetSnapshotPath(DialogueEditorAutosaveStore.GetStorageKey(database));
+            var dialogue = database.Npcs[0].Dialogues[0];
+            var graph = dialogue.Graph;
+            var previousNode = (DialogueTextNodeData)graph.Nodes[0];
+            for (var index = 1; index < 55; index++)
+            {
+                var node = new DialogueTextNodeData
+                {
+                    Title = $"Node {index + 1}",
+                    Position = new Vector2((index % 10) * 300f, (index / 10) * 210f)
+                };
+                graph.Nodes.Add(node);
+                graph.Links.Add(new NodeLinkData
+                {
+                    FromNodeId = previousNode.Id,
+                    ToNodeId = node.Id,
+                    Order = 0
+                });
+                previousNode = node;
+            }
+
+            var window = ScriptableObject.CreateInstance<DialogueEditorWindow>();
+
+            try
+            {
+                if (File.Exists(snapshotPath))
+                {
+                    File.Delete(snapshotPath);
+                }
+
+                window.InitializeForTests(database);
+                window.SaveBaselineForTests();
+                var graphView = window.GraphViewForTests;
+                foreach (var nodeView in graphView.graphElements.OfType<DialogueTextNodeView>())
+                {
+                    graphView.AddToSelection(nodeView);
+                }
+
+                graphView.BeginSelectionPointerDrag(Vector2.zero);
+                graphView.ContinueSelectionPointerDrag(new Vector2(48f, 24f));
+
+                Assert.That(window.HasUnsavedChangesForTests, Is.False);
+                Assert.That(File.Exists(snapshotPath), Is.False);
+
+                graphView.EndSelectionPointerDrag();
+
+                Assert.That(window.HasUnsavedChangesForTests, Is.True);
+                Assert.That(File.Exists(snapshotPath), Is.False);
+
+                graphView.EndUndoGesture();
 
                 Assert.That(window.HasUnsavedChangesForTests, Is.True);
                 Assert.That(File.Exists(snapshotPath), Is.True);
