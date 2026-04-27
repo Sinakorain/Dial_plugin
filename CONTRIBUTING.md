@@ -6,6 +6,8 @@ This repository stores a Unity UPM package, not a standalone Unity project. Most
 
 For Codex-assisted work, use [`docs/codex-workflow.md`](docs/codex-workflow.md) for prompt shape, validation expectations, and review checklist details.
 
+This repository is proprietary. Public visibility is for review, evaluation, and contest-related access only, and does not grant reuse, redistribution, resale, or derivative-work rights. See [`LICENSE.md`](LICENSE.md).
+
 ## Working with the package
 
 1. Open a Unity 6.x project that will consume the package.
@@ -57,6 +59,12 @@ In practice that usually means touching one or more of these files:
 - `new_dial/CHANGELOG.md`
 
 Update the root `README.md` only when the repository entry point or document map changes.
+
+## Licensing expectations
+
+- Do not add third-party code, assets, fonts, images, or samples unless their license is known and compatible with a proprietary Unity Asset Store package.
+- Keep copyright and license notices aligned between the repository root and `new_dial/`.
+- Record any license or ownership-facing package metadata change in `new_dial/CHANGELOG.md` under `Unreleased`.
 
 ## Changelog policy
 

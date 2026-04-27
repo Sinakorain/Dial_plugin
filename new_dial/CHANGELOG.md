@@ -116,6 +116,7 @@
 
 ### Docs
 
+- Added proprietary license files and package metadata notices that reserve all rights while the repository is publicly visible for review.
 - Added `docs/codex-workflow.md` with reusable Codex task, planning, validation, documentation, and review guidance for the package repository.
 - Updated repository, package, sample, contribution, and integration-task docs to reference the Codex workflow and make task constraints/done criteria explicit.
 - Added repository-level `README.md`, `AGENTS.md`, and `CONTRIBUTING.md`.

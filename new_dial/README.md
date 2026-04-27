@@ -5,6 +5,11 @@
 - Package name: `com.danilkashulin.newdial.dialogue-editor`
 - Version: `0.1.0`
 - Unity: `6000.0`
+- License: proprietary; see [`LICENSE.md`](LICENSE.md)
+
+Copyright (c) 2026 Danil Kashulin. All rights reserved.
+
+This package is publicly visible for review, evaluation, and contest-related access only. Public access does not grant permission to use, copy, modify, publish, distribute, sell, resell, or create derivative works from the package without prior written permission.
 
 The package is intentionally scoped as an MVP. It already includes a reusable runtime dialogue data model, editor authoring tools, preview support, autosave, sample content, and EditMode tests, but it is not yet a full production narrative stack.
 
@@ -159,3 +164,7 @@ These APIs are suitable for the current MVP package workflow, but they should no
 - Function and scene nodes intentionally use only primitive arguments. Project-specific payloads such as battles, deck state, rewards, and quest outcomes belong in project-side executors.
 - The preview variable sandbox starts from database variable defaults, shows database variables as editable sandbox controls, reflects runtime changes from built-in Set Variable nodes, lets test values override them, and uses the built-in editor-side condition evaluator; it is not intended to exactly reproduce project runtime logic.
 - For a fuller implementation snapshot, see [`../docs/current-state.md`](../docs/current-state.md).
+
+## License
+
+All package contents are proprietary and protected by copyright. No rights are granted except for review access expressly allowed by the copyright holder. See [`LICENSE.md`](LICENSE.md).

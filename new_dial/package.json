@@ -4,6 +4,7 @@
   "displayName": "New Dial Dialogue Editor",
   "description": "MVP dialogue and cutscene node editor for Unity 6.x with reusable runtime data, graph editing, preview, and samples.",
   "unity": "6000.0",
+  "license": "SEE LICENSE IN LICENSE.md",
   "author": {
     "name": "Danil Kashulin"
   },

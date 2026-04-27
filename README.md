@@ -4,6 +4,10 @@
 
 The package is an MVP dialogue and cutscene editor for Unity 6.x. It combines a reusable runtime dialogue data model with editor tooling for graph-based authoring, preview, autosave, sample content, and EditMode tests.
 
+Copyright (c) 2026 Danil Kashulin. All rights reserved.
+
+This repository is publicly visible for review, evaluation, and contest-related access only. Public access does not grant permission to use, copy, modify, publish, distribute, sell, resell, or create derivative works from this repository or the `new_dial` package without prior written permission. See [`LICENSE.md`](LICENSE.md).
+
 ## Current status
 
 - Active MVP package, not a finished production narrative stack
@@ -25,6 +29,10 @@ The package is an MVP dialogue and cutscene editor for Unity 6.x. It combines a 
 - To understand what is implemented right now, read [`docs/current-state.md`](docs/current-state.md).
 - To contribute safely, read [`CONTRIBUTING.md`](CONTRIBUTING.md).
 - To work with Codex, read [`AGENTS.md`](AGENTS.md) and [`docs/codex-workflow.md`](docs/codex-workflow.md).
+
+## License
+
+All repository contents are proprietary and protected by copyright. No rights are granted except for review access expressly allowed by the copyright holder. See [`LICENSE.md`](LICENSE.md).
 
 ## Package highlights
 

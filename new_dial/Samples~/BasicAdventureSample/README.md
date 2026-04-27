@@ -2,6 +2,8 @@
 
 This sample adds a menu item that creates a playable `DialogueDatabaseAsset` for the package's current MVP workflow.
 
+Copyright (c) 2026 Danil Kashulin. All rights reserved. This sample is part of the proprietary `New Dial Dialogue Editor` package and is covered by the package license in `new_dial/LICENSE.md`.
+
 ## What it creates
 
 - 1 NPC: `Innkeeper`

@@ -8,6 +8,7 @@ This file describes the current working-tree behavior of `new_dial`, including c
 - Display name: `New Dial Dialogue Editor`
 - Version: `0.1.0`
 - Unity target: `6000.0`
+- License: proprietary; all rights reserved; see `new_dial/LICENSE.md`
 - Main editor entry point: `Tools/New Dial/Dialogue Editor`
 - Alternate editor entry point: `Window/New Dial/Dialogue Editor`
 - Sample creation entry point: `Tools/New Dial/Create Basic Adventure Sample`

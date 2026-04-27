@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Danil Kashulin. All rights reserved.
+
 using System.Linq;
 using UnityEditor.Experimental.GraphView;
 using UnityEngine;

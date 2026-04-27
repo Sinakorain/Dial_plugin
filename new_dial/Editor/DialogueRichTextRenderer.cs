@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Danil Kashulin. All rights reserved.
+
 using UnityEngine;
 using UnityEngine.UIElements;
 
